@@ -9,7 +9,7 @@ function createConfig(overrides?: Partial<GatewayConfig>): GatewayConfig {
   return {
     version: 1,
     gateway: {
-      port: 3000,
+      port: 9500,
       defaultStrategy: "priority-chain",
       healthCheckInterval: 30000,
       connectionTimeout: 10000,

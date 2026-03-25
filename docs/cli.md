@@ -15,7 +15,7 @@ browser-gateway serve [options]
 | Option | Description | Default |
 |--------|-------------|---------|
 | `--config <path>` | Path to gateway.yml | `./gateway.yml` |
-| `--port <number>` | Override server port | 3000 |
+| `--port <number>` | Override server port | 9500 |
 | `--no-ui` | Disable the web dashboard | Dashboard enabled |
 
 Examples:
@@ -90,7 +90,7 @@ npx browser-gateway serve --config ./gateway.yml
 |----------|-------------|---------|
 | `BG_TOKEN` | Auth token for all connections | None (no auth) |
 | `BG_BACKEND_URL` | Single backend URL (no config file needed) | None |
-| `BG_PORT` | Server port | 3000 |
+| `BG_PORT` | Server port | 9500 |
 | `BG_MAX_CONCURRENT` | Max connections for default backend | 10 |
 | `BG_CONFIG_PATH` | Path to config file | `./gateway.yml` |
 

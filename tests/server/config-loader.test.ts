@@ -42,7 +42,7 @@ backends:
 
     const config = loadConfig(TEST_CONFIG_PATH);
     expect(config.version).toBe(1);
-    expect(config.gateway.port).toBe(3000);
+    expect(config.gateway.port).toBe(9500);
     expect(config.gateway.defaultStrategy).toBe("priority-chain");
     expect(config.gateway.connectionTimeout).toBe(10000);
     expect(config.gateway.cooldown.defaultMs).toBe(30000);

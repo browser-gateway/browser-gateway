@@ -7,7 +7,7 @@ Run browser-gateway in Docker for production deployments.
 ```bash
 docker run -d \
   --name browser-gateway \
-  -p 3000:3000 \
+  -p 9500:9500 \
   -v ./gateway.yml:/app/gateway.yml:ro \
   -e PROVIDER_TOKEN=your-token \
   ghcr.io/browser-gateway/server:latest
@@ -20,7 +20,7 @@ services:
   browser-gateway:
     image: ghcr.io/browser-gateway/server:latest
     ports:
-      - "3000:3000"
+      - "9500:9500"
     volumes:
       - ./gateway.yml:/app/gateway.yml:ro
     environment:
@@ -36,7 +36,7 @@ No config file needed for single-backend setups:
 ```bash
 docker run -d \
   --name browser-gateway \
-  -p 3000:3000 \
+  -p 9500:9500 \
   -e BG_BACKEND_URL=ws://your-backend:3000 \
   -e BG_TOKEN=my-secret \
   ghcr.io/browser-gateway/server:latest
@@ -60,7 +60,7 @@ Secrets in the config use `${ENV_VAR}` references. Pass the actual values as env
 
 ```bash
 -e BG_BACKEND_URL=ws://backend:3000
--e BG_PORT=3000
+-e BG_PORT=9500
 -e BG_TOKEN=my-secret
 ```
 
@@ -74,7 +74,7 @@ The gateway needs to reach your browser backends. Common patterns:
 services:
   browser-gateway:
     image: ghcr.io/browser-gateway/server:latest
-    ports: ["3000:3000"]
+    ports: ["9500:9500"]
     volumes:
       - ./gateway.yml:/app/gateway.yml:ro
 
@@ -118,7 +118,7 @@ services:
   browser-gateway:
     image: ghcr.io/browser-gateway/server:latest
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9500/health"]
       interval: 10s
       timeout: 5s
       retries: 3

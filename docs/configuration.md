@@ -19,7 +19,7 @@ If no file is found, the gateway falls back to environment variables.
 version: 1
 
 gateway:
-  port: 3000                          # Server port (default: 3000)
+  port: 9500                          # Server port (default: 3000)
   defaultStrategy: priority-chain      # Routing strategy (see Load Balancing docs)
   connectionTimeout: 10000             # Max ms to wait for backend connection (default: 10000)
                                        # Tip: increase to 20000-30000 for cloud providers that
@@ -116,7 +116,7 @@ For simple setups, you can skip the config file entirely:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `BG_BACKEND_URL` | Single backend WebSocket URL | Required if no config file |
-| `BG_PORT` | Server port | 3000 |
+| `BG_PORT` | Server port | 9500 |
 | `BG_TOKEN` | Auth token (if set, all connections require it) | None |
 | `BG_MAX_CONCURRENT` | Max concurrent connections for the default backend | 10 |
 | `BG_CONFIG_PATH` | Path to config file | `./gateway.yml` |

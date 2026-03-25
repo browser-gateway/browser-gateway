@@ -69,7 +69,7 @@ function buildConfigFromEnv(): Record<string, unknown> {
   const config: Record<string, unknown> = {
     version: 1,
     gateway: {
-      port: parseInt(process.env.BG_PORT ?? "3000", 10),
+      port: parseInt(process.env.BG_PORT ?? "9500", 10),
     },
     backends: {
       default: {

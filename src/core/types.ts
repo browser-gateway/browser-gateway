@@ -21,7 +21,7 @@ const SessionsSchema = z.object({
 });
 
 const GatewaySettingsSchema = z.object({
-  port: z.number().int().default(3000),
+  port: z.number().int().default(9500),
   defaultStrategy: z
     .enum(["priority-chain", "round-robin", "least-connections"])
     .default("priority-chain"),

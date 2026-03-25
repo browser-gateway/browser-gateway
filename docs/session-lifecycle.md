@@ -38,7 +38,7 @@ The gateway has no knowledge of these backend-specific behaviors. It's a transpa
 No special cleanup needed. The browser process is managed by the backend.
 
 ```typescript
-const browser = await chromium.connect('ws://gateway:3000/v1/connect');
+const browser = await chromium.connect('ws://gateway:9500/v1/connect');
 await page.goto('https://example.com');
 await browser.close();  // WebSocket closes, gateway cleans up. Done.
 ```
@@ -52,7 +52,7 @@ If your cloud provider has session management (create/release lifecycle), handle
 const session = await provider.sessions.create();
 
 // Connect through the gateway
-const browser = await chromium.connectOverCDP('ws://gateway:3000/v1/connect');
+const browser = await chromium.connectOverCDP('ws://gateway:9500/v1/connect');
 await page.goto('https://example.com');
 await browser.close();
 
@@ -73,7 +73,7 @@ This is the same model used by reverse proxies like nginx and HAProxy - they man
 You can check active sessions at any time:
 
 ```bash
-curl http://localhost:3000/v1/sessions
+curl http://localhost:9500/v1/sessions
 ```
 
 ```json

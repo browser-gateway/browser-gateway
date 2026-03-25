@@ -34,7 +34,7 @@ One endpoint. Configure your backends. We route intelligently.
 const browser = await chromium.connect('wss://provider.example.com?token=xxx');
 
 // After: routed through browser-gateway with automatic failover
-const browser = await chromium.connect('ws://localhost:3000/v1/connect');
+const browser = await chromium.connect('ws://localhost:9500/v1/connect');
 ```
 
 ---
@@ -46,10 +46,11 @@ const browser = await chromium.connect('ws://localhost:3000/v1/connect');
 - **Per-Backend Limits** - Set `maxConcurrent` per backend, gateway enforces it
 - **Load Balancing** - Priority chain, round-robin, or least-connections
 - **Cooldown System** - Automatically skip failing backends, recover after TTL
-- **Health Monitoring** - Real-time backend status via API
-- **Dashboard** - Built-in web UI for live visibility (enabled by default)
-- **CLI** - `serve`, `check`, `status` commands
+- **Status API** - Real-time backend health, active sessions, and metrics
+- **Auth** - Optional token-based auth for all endpoints
+- **CLI** - `serve`, `check`, `version`, `help`
 - **Protocol Agnostic** - Works with Playwright, Puppeteer, any WebSocket protocol
+- **ws:// and wss://** - Supports both plain and TLS backends
 
 ---
 
@@ -94,10 +95,10 @@ browser-gateway serve
 import { chromium } from 'playwright-core';
 
 // For Playwright run-server backends
-const browser = await chromium.connect('ws://localhost:3000/v1/connect');
+const browser = await chromium.connect('ws://localhost:9500/v1/connect');
 
 // For Chrome/CDP backends
-const browser = await chromium.connectOverCDP('ws://localhost:3000/v1/connect');
+const browser = await chromium.connectOverCDP('ws://localhost:9500/v1/connect');
 
 const page = await browser.newPage();
 await page.goto('https://example.com');
@@ -130,7 +131,7 @@ BG_TOKEN=my-secret-token browser-gateway serve
 Clients include the token:
 
 ```typescript
-const browser = await chromium.connect('ws://localhost:3000/v1/connect?token=my-secret-token');
+const browser = await chromium.connect('ws://localhost:9500/v1/connect?token=my-secret-token');
 ```
 
 ---
@@ -195,7 +196,7 @@ browser-gateway help                     # Show help
 
 ```bash
 docker run -d \
-  -p 3000:3000 \
+  -p 9500:9500 \
   -v ./gateway.yml:/app/gateway.yml:ro \
   -e PROVIDER_TOKEN=xxx \
   ghcr.io/browser-gateway/server:latest
@@ -205,7 +206,7 @@ docker run -d \
 
 ## How It Works
 
-1. Client connects to `ws://gateway:3000/v1/connect`
+1. Client connects to `ws://gateway:9500/v1/connect`
 2. Gateway selects a backend (priority, health, capacity)
 3. Gateway opens a raw TCP connection to the backend
 4. HTTP upgrade request is forwarded to the backend
@@ -233,18 +234,32 @@ The gateway never parses or modifies WebSocket messages. It's a transparent pipe
 
 ## Roadmap
 
-- [x] WebSocket proxy with failover
+### Shipped (v0.1)
+- [x] WebSocket proxy with automatic failover
 - [x] Per-backend concurrency limits
 - [x] TTL-based cooldown system
-- [x] Load balancing strategies
-- [x] CLI (serve, check)
-- [x] Status API
-- [ ] Web dashboard
-- [ ] Quota tracking (monthly usage limits)
-- [ ] Webhook notifications
+- [x] Load balancing (priority-chain, round-robin, least-connections)
+- [x] ws:// and wss:// (TLS) backend support
+- [x] Token-based auth (WebSocket + HTTP API)
+- [x] Status and sessions API
+- [x] Idle session timeout
+- [x] CLI (serve, check, version)
+- [x] Zero-config mode (env vars only)
+
+### Next (v0.2)
+- [ ] Web dashboard (real-time backend status, sessions, metrics)
+- [ ] Health check probes (periodic backend connectivity checks)
+- [ ] `browser-gateway init` (interactive config generator)
+- [ ] Docker image on GHCR
+- [ ] Latency-optimized routing strategy
+
+### Planned
+- [ ] Quota tracking (monthly usage limits per backend)
+- [ ] Webhook notifications (backend down, quota warnings)
 - [ ] Pre-connect hooks (for providers needing session creation)
+- [ ] Config hot-reload (apply changes without restart)
 - [ ] REST convenience endpoints (screenshot, content, PDF)
-- [ ] Multi-instance support (Redis)
+- [ ] Multi-instance support (Redis shared state)
 - [ ] OpenTelemetry integration
 
 ---

@@ -84,7 +84,7 @@ If you only have one backend configured, the cooldown threshold is much higher (
 ## Checking Failover Status
 
 ```bash
-curl http://localhost:3000/v1/status
+curl http://localhost:9500/v1/status
 ```
 
 ```json

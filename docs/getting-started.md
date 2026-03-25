@@ -21,7 +21,7 @@ If you have one backend, you don't need a config file:
 BG_BACKEND_URL=ws://your-backend:3000 browser-gateway serve
 ```
 
-That's it. Your gateway is running at `ws://localhost:3000/v1/connect`.
+That's it. Your gateway is running at `ws://localhost:9500/v1/connect`.
 
 ## Option 2: Config File (Multiple Backends)
 
@@ -58,10 +58,10 @@ browser-gateway serve
 import { chromium } from 'playwright-core';
 
 // For Playwright run-server backends
-const browser = await chromium.connect('ws://localhost:3000/v1/connect');
+const browser = await chromium.connect('ws://localhost:9500/v1/connect');
 
 // For Chrome CDP backends
-const browser = await chromium.connectOverCDP('ws://localhost:3000/v1/connect');
+const browser = await chromium.connectOverCDP('ws://localhost:9500/v1/connect');
 ```
 
 ### Puppeteer
@@ -70,7 +70,7 @@ const browser = await chromium.connectOverCDP('ws://localhost:3000/v1/connect');
 const puppeteer = require('puppeteer-core');
 
 const browser = await puppeteer.connect({
-  browserWSEndpoint: 'ws://localhost:3000/v1/connect'
+  browserWSEndpoint: 'ws://localhost:9500/v1/connect'
 });
 ```
 
@@ -82,13 +82,13 @@ The gateway proxies raw WebSocket bytes. Any client that connects via WebSocket 
 
 ```bash
 # Check health
-curl http://localhost:3000/health
+curl http://localhost:9500/health
 
 # Check backend status
-curl http://localhost:3000/v1/status
+curl http://localhost:9500/v1/status
 
 # Check active sessions
-curl http://localhost:3000/v1/sessions
+curl http://localhost:9500/v1/sessions
 
 # Test backend connectivity
 browser-gateway check
@@ -105,7 +105,7 @@ BG_TOKEN=my-secret-token browser-gateway serve
 Clients include the token:
 
 ```typescript
-const browser = await chromium.connect('ws://localhost:3000/v1/connect?token=my-secret-token');
+const browser = await chromium.connect('ws://localhost:9500/v1/connect?token=my-secret-token');
 ```
 
 ## Next Steps

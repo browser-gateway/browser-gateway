@@ -28,7 +28,7 @@ Usage:
 
 Options:
   --config <path>    Path to gateway.yml (default: ./gateway.yml)
-  --port <number>    Override port (default: 3000)
+  --port <number>    Override port (default: 9500)
   --no-ui            Disable the web dashboard
   -v, --version      Print version
   -h, --help         Show help

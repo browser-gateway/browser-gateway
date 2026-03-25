@@ -43,7 +43,9 @@
     "start": "node dist/server/index.js",
     "test": "vitest",
     "test:run": "vitest run",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
+    "publish": "npm run build && npm publish --access public"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.11",
