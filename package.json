@@ -1,0 +1,69 @@
+{
+  "name": "browser-gateway",
+  "version": "0.1.0",
+  "description": "The Unified Interface for Headless Browsers. Route, balance, and failover across any CDP endpoint.",
+  "keywords": [
+    "browser",
+    "gateway",
+    "proxy",
+    "cdp",
+    "chrome-devtools-protocol",
+    "playwright",
+    "puppeteer",
+    "headless",
+    "headless-browser",
+    "failover",
+    "load-balancer",
+    "websocket"
+  ],
+  "homepage": "https://browsergateway.io",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/browser-gateway/browser-gateway.git"
+  },
+  "bugs": {
+    "url": "https://github.com/browser-gateway/browser-gateway/issues"
+  },
+  "license": "MIT",
+  "author": "browser-gateway",
+  "type": "module",
+  "main": "dist/server/index.js",
+  "types": "dist/server/index.d.ts",
+  "bin": {
+    "browser-gateway": "dist/server/index.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/server/index.ts",
+    "build": "tsc",
+    "start": "node dist/server/index.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.11",
+    "hono": "^4.12.9",
+    "pino": "^9.6.0",
+    "ws": "^8.20.0",
+    "yaml": "^2.8.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.12.0",
+    "@types/ws": "^8.18.1",
+    "pino-pretty": "^13.0.0",
+    "playwright-core": "^1.58.2",
+    "puppeteer-core": "^24.40.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

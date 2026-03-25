@@ -1,0 +1,40 @@
+version: 1
+
+gateway:
+  port: 3000
+  defaultStrategy: priority-chain   # priority-chain | round-robin | least-connections
+
+  cooldown:
+    defaultMs: 30000                # Skip failing backend for 30s
+    failureThreshold: 0.5           # Cooldown if >50% of connections fail
+    minRequestVolume: 3             # Need 3+ attempts before evaluating
+
+  sessions:
+    idleTimeoutMs: 300000           # Close idle sessions after 5 min
+
+backends:
+  cloud-provider:
+    url: wss://provider.example.com?token=${PROVIDER_TOKEN}
+    limits:
+      maxConcurrent: 5
+    priority: 1
+
+  my-playwright:
+    url: ws://localhost:4000
+    limits:
+      maxConcurrent: 10
+    priority: 2
+
+  # Add as many backends as you need:
+  #
+  # my-chrome:
+  #   url: ws://192.168.1.100:9222/devtools/browser/UUID
+  #   limits:
+  #     maxConcurrent: 1
+  #   priority: 3
+
+dashboard:
+  enabled: true
+
+logging:
+  level: info                       # debug | info | warn | error
