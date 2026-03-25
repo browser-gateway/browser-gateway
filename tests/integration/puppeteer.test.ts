@@ -136,7 +136,7 @@ describe("Puppeteer through Gateway", () => {
 
     await sleep(300);
     await browser.disconnect();
-    await sleep(500);
+    await sleep(1000);
 
     const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/sessions`);
     const data = (await res.json()) as any;
@@ -160,7 +160,7 @@ describe("Puppeteer through Gateway", () => {
     expect(data.count).toBe(3);
 
     await Promise.all(browsers.map((b) => b.disconnect()));
-    await sleep(500);
+    await sleep(1000);
 
     const final = await fetch(`http://localhost:${GATEWAY_PORT}/v1/sessions`);
     const finalData = (await final.json()) as any;

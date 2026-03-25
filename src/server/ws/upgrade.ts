@@ -2,10 +2,21 @@ import { IncomingMessage } from "node:http";
 import { Duplex } from "node:stream";
 import { createConnection, type Socket } from "node:net";
 import { connect as tlsConnect } from "node:tls";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { BackendState } from "../../core/types.js";
+
+function safeTokenCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
+function extractBearerToken(header: string | undefined): string | undefined {
+  if (!header) return undefined;
+  if (!header.startsWith("Bearer ")) return undefined;
+  return header.slice(7);
+}
 
 export function createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string) {
 
@@ -21,9 +32,9 @@ export function createWebSocketHandler(gateway: Gateway, logger: Logger, token?:
     if (token) {
       const reqToken =
         url.searchParams.get("token") ??
-        req.headers.authorization?.replace("Bearer ", "");
+        extractBearerToken(req.headers.authorization);
 
-      if (reqToken !== token) {
+      if (!reqToken || !safeTokenCompare(reqToken, token)) {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
@@ -112,34 +123,42 @@ function pipeToBackend(
     }
 
     let gotUpgradeResponse = false;
+    let cleanedUp = false;
     let messageCount = 0;
     const startTime = Date.now();
 
-    backendSocket.once("data", (data) => {
-      const response = data.toString();
+    let responseBuffer = Buffer.alloc(0);
 
-      if (response.includes("101")) {
+    backendSocket.on("data", function onData(chunk) {
+      if (gotUpgradeResponse) return;
+
+      responseBuffer = Buffer.concat([responseBuffer, chunk]);
+      const headerEnd = responseBuffer.indexOf("\r\n\r\n");
+      if (headerEnd === -1) return;
+
+      backendSocket.removeListener("data", onData);
+
+      const headerStr = responseBuffer.subarray(0, headerEnd).toString();
+      const remainder = responseBuffer.subarray(headerEnd + 4);
+
+      if (headerStr.startsWith("HTTP/1.1 101")) {
         gotUpgradeResponse = true;
 
         gateway.sessions.create(sessionId, backend.id);
         logger.info({ sessionId, backendId: backend.id }, "session established");
 
-        clientSocket.write(data);
+        clientSocket.write(responseBuffer);
 
         clientSocket.pipe(backendSocket);
         backendSocket.pipe(clientSocket);
 
-        const trackActivity = () => {
-          messageCount++;
-          gateway.sessions.recordActivity(sessionId);
-        };
-        clientSocket.on("data", trackActivity);
-        backendSocket.on("data", trackActivity);
+        clientSocket.on("data", () => gateway.sessions.recordActivity(sessionId));
+        backendSocket.on("data", () => gateway.sessions.recordActivity(sessionId));
 
         resolve(true);
       } else {
         logger.warn(
-          { sessionId, backendId: backend.id, response: response.slice(0, 200) },
+          { sessionId, backendId: backend.id, response: headerStr.slice(0, 200) },
           "backend rejected upgrade"
         );
         backendSocket.destroy();
@@ -148,7 +167,8 @@ function pipeToBackend(
     });
 
     const cleanup = (source: string) => () => {
-      if (!gotUpgradeResponse) return;
+      if (!gotUpgradeResponse || cleanedUp) return;
+      cleanedUp = true;
 
       const session = gateway.sessions.remove(sessionId);
       gateway.releaseSlot(sessionId, backend.id);
@@ -161,7 +181,7 @@ function pipeToBackend(
           sessionId,
           backendId: backend.id,
           durationMs,
-          messageCount: session?.messageCount ?? messageCount,
+          messageCount: session?.messageCount ?? 0,
           source,
         },
         "session ended"
@@ -195,7 +215,7 @@ function buildUpgradeRequest(backendUrl: URL, originalReq: IncomingMessage): str
   let request = `GET ${path} HTTP/1.1\r\n`;
   request += `Host: ${backendUrl.host}\r\n`;
 
-  const skipHeaders = new Set(["host", "connection", "upgrade"]);
+  const skipHeaders = new Set(["host", "connection", "upgrade", "authorization"]);
 
   for (let i = 0; i < originalReq.rawHeaders.length; i += 2) {
     const key = originalReq.rawHeaders[i];

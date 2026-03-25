@@ -49,7 +49,6 @@ export class CooldownTracker {
     wins.push(now);
 
     backend.successCount++;
-    this.failures.delete(backend.id);
 
     if (backend.cooldownUntil && now >= backend.cooldownUntil) {
       backend.cooldownUntil = null;

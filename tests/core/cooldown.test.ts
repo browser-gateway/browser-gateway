@@ -75,13 +75,27 @@ describe("CooldownTracker", () => {
     expect(backend.cooldownUntil).toBeNull();
   });
 
-  it("should reset failure count on success", () => {
+  it("should use sliding window with mixed successes and failures", () => {
     const backend = createBackend("test");
-    cooldown.recordFailure(backend);
+    cooldown.recordSuccess(backend);
     cooldown.recordFailure(backend);
     cooldown.recordSuccess(backend);
     cooldown.recordFailure(backend);
 
+    // 2 failures out of 4 total = 50% failure rate, hits threshold but we have mixed results
+    // With minRequestVolume=3 and failureThreshold=0.5, this should trigger cooldown
+    // because 2/4 = 0.5 which is >= 0.5
+    expect(backend.cooldownUntil).not.toBeNull();
+  });
+
+  it("should not cooldown when successes outweigh failures", () => {
+    const backend = createBackend("test");
+    cooldown.recordSuccess(backend);
+    cooldown.recordSuccess(backend);
+    cooldown.recordSuccess(backend);
+    cooldown.recordFailure(backend);
+
+    // 1 failure out of 4 total = 25% failure rate, below 50% threshold
     expect(backend.cooldownUntil).toBeNull();
   });
 });

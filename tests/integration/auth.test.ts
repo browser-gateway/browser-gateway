@@ -127,14 +127,33 @@ describe("Auth - BG_TOKEN enforcement", () => {
     ws.close();
   });
 
-  it("should reject HTTP status endpoint without token", async () => {
+  it("should reject HTTP /v1/status without token", async () => {
     const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`);
-    // Note: HTTP endpoints don't have auth yet in v1 - only WebSocket
-    // This test documents current behavior
+    expect(res.status).toBe(401);
+  });
+
+  it("should reject HTTP /v1/sessions without token", async () => {
+    const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/sessions`);
+    expect(res.status).toBe(401);
+  });
+
+  it("should accept HTTP /v1/status with correct token", async () => {
+    const res = await fetch(
+      `http://localhost:${GATEWAY_PORT}/v1/status?token=${AUTH_TOKEN}`
+    );
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.status).toBe("ok");
+  });
+
+  it("should accept HTTP /v1/status with Authorization header", async () => {
+    const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`, {
+      headers: { Authorization: `Bearer ${AUTH_TOKEN}` },
+    });
     expect(res.status).toBe(200);
   });
 
-  it("should return health check without auth", async () => {
+  it("should return health check without auth (always public)", async () => {
     const res = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
     expect(res.status).toBe(200);
   });

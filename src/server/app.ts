@@ -1,14 +1,33 @@
 import { Hono } from "hono";
-import { cors } from "hono/cors";
+import { timingSafeEqual } from "node:crypto";
 import type { Gateway } from "../core/index.js";
 
-export function createApp(gateway: Gateway) {
-  const app = new Hono();
+function safeTokenCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
-  app.use("*", cors());
+export function createApp(gateway: Gateway, token?: string) {
+  const app = new Hono();
 
   app.get("/health", (c) => {
     return c.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.use("/v1/*", async (c, next) => {
+    if (!token) return next();
+
+    const reqToken =
+      c.req.query("token") ??
+      (c.req.header("authorization")?.startsWith("Bearer ")
+        ? c.req.header("authorization")!.slice(7)
+        : undefined);
+
+    if (!reqToken || !safeTokenCompare(reqToken, token)) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    return next();
   });
 
   app.get("/v1/status", (c) => {

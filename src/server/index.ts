@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createServer } from "node:http";
-import { serve } from "@hono/node-server";
+import type { Duplex } from "node:stream";
 import pino from "pino";
 import { Gateway } from "../core/index.js";
 import { loadConfig } from "./config/loader.js";
@@ -80,8 +80,8 @@ async function startServer() {
   });
 
   const gateway = new Gateway(config, logger);
-  const app = createApp(gateway);
   const token = process.env.BG_TOKEN;
+  const app = createApp(gateway, token);
 
   if (token) {
     logger.info("auth enabled - BG_TOKEN is set");
@@ -90,6 +90,17 @@ async function startServer() {
   }
 
   const { handleUpgrade } = createWebSocketHandler(gateway, logger, token);
+
+  const activeSockets = new Map<string, { client: Duplex; backend: Duplex }>();
+
+  gateway.setIdleSessionHandler((sessionId) => {
+    const sockets = activeSockets.get(sessionId);
+    if (sockets) {
+      sockets.client.destroy();
+      sockets.backend.destroy();
+      activeSockets.delete(sessionId);
+    }
+  });
 
   const server = createServer(async (req, res) => {
     const response = await app.fetch(

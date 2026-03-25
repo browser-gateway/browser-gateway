@@ -17,6 +17,8 @@ export class Gateway {
 
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
+  private idleCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private onIdleSession?: (sessionId: string) => void;
 
   constructor(config: GatewayConfig, logger: Logger) {
     this.config = config;
@@ -103,6 +105,10 @@ export class Gateway {
     };
   }
 
+  setIdleSessionHandler(handler: (sessionId: string) => void): void {
+    this.onIdleSession = handler;
+  }
+
   start(): void {
     this.reconcileTimer = setInterval(() => {
       const backends = new Map(
@@ -117,12 +123,25 @@ export class Gateway {
       }
     }, 30_000);
 
+    const idleTimeoutMs = this.config.gateway.sessions.idleTimeoutMs;
+    this.idleCheckTimer = setInterval(() => {
+      const idleSessions = this.sessions.getIdleSessions(idleTimeoutMs);
+      for (const session of idleSessions) {
+        this.logger.warn(
+          { sessionId: session.id, backendId: session.backendId, idleMs: Date.now() - session.lastActivity },
+          "terminating idle session"
+        );
+        this.onIdleSession?.(session.id);
+      }
+    }, Math.min(idleTimeoutMs, 30_000));
+
     this.logger.info("gateway started");
   }
 
   stop(): void {
     if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
     if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+    if (this.idleCheckTimer) clearInterval(this.idleCheckTimer);
     this.logger.info("gateway stopped");
   }
 
