@@ -49,7 +49,7 @@ const args = process.argv.slice(2);
 const command = args[0] ?? "serve";
 
 if (command === "version" || args.includes("--version") || args.includes("-v")) {
-  console.log("browser-gateway v0.1.2");
+  console.log("browser-gateway v0.1.3");
   process.exit(0);
 }
 
