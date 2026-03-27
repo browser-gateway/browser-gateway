@@ -10,8 +10,11 @@ docker run -d \
   -p 9500:9500 \
   -v ./gateway.yml:/app/gateway.yml:ro \
   -e PROVIDER_TOKEN=your-token \
+  -e BG_TOKEN=your-gateway-secret \
   ghcr.io/browser-gateway/server:latest
 ```
+
+Open `http://localhost:9500/web` to access the dashboard.
 
 ## Docker Compose
 
@@ -29,21 +32,22 @@ services:
     restart: unless-stopped
 ```
 
-## Zero-Config Docker
+See `examples/docker-compose.yml` in the repo for a ready-to-use template.
 
-No config file needed for single-provider setups:
+## No Config File
+
+The gateway starts without a config file. You can add providers through the dashboard UI at `/web/providers`.
 
 ```bash
 docker run -d \
   --name browser-gateway \
   -p 9500:9500 \
-  -e BG_TOKEN=my-secret \
   ghcr.io/browser-gateway/server:latest
 ```
 
-## Configuration in Docker
+## Configuration
 
-### Option 1: Mount a config file
+### Mount a config file
 
 ```bash
 -v ./gateway.yml:/app/gateway.yml:ro
@@ -55,16 +59,17 @@ Secrets in the config use `${ENV_VAR}` references. Pass the actual values as env
 -e PROVIDER_TOKEN=xxx -e BACKUP_KEY=yyy
 ```
 
-### Option 2: Environment variables only
+### Environment variables
 
-```bash
--e BG_PORT=9500
--e BG_TOKEN=my-secret
-```
+| Variable | Description |
+|----------|-------------|
+| `BG_TOKEN` | Auth token for gateway access |
+| `BG_PORT` | Server port (default: 9500) |
+| `BG_CONFIG_PATH` | Path to config file (default: ./gateway.yml) |
 
 ## Networking
 
-The gateway needs to reach your browser providers. Common patterns:
+The gateway needs to reach your browser providers.
 
 ### Providers on the same Docker network
 
@@ -109,17 +114,12 @@ providers:
     url: wss://provider.example.com?token=${PROVIDER_TOKEN}
 ```
 
-## Health Checks
+## Health Check
 
-```yaml
-services:
-  browser-gateway:
-    image: ghcr.io/browser-gateway/server:latest
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9500/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+The Docker image has a built-in health check that polls `/health` every 30 seconds.
+
+```bash
+docker inspect browser-gateway --format='{{.State.Health.Status}}'
 ```
 
 ## Updating
@@ -129,4 +129,15 @@ docker compose pull
 docker compose up -d
 ```
 
-The gateway starts immediately. No migrations needed (all state is in-memory in v1).
+The gateway starts immediately. No migrations needed (all state is in-memory).
+
+## Image Details
+
+| Property | Value |
+|----------|-------|
+| Registry | `ghcr.io/browser-gateway/server` |
+| Base image | `node:22-slim` |
+| Size | ~370MB |
+| User | Non-root (`bguser`) |
+| Port | 9500 |
+| Health check | Built-in (30s interval) |
