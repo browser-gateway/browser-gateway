@@ -19,23 +19,23 @@ If no file is found, the gateway falls back to environment variables.
 version: 1
 
 gateway:
-  port: 9500                          # Server port (default: 3000)
+  port: 9500                          # Server port (default: 9500)
   defaultStrategy: priority-chain      # Routing strategy (see Load Balancing docs)
-  connectionTimeout: 10000             # Max ms to wait for backend connection (default: 10000)
+  connectionTimeout: 10000             # Max ms to wait for provider connection (default: 10000)
                                        # Tip: increase to 20000-30000 for cloud providers that
                                        # launch browsers on-demand (cold start can take 10-15s)
   healthCheckInterval: 30000           # ms between health checks (default: 30000)
 
   cooldown:
-    defaultMs: 30000                   # How long to skip a failing backend (default: 30000)
+    defaultMs: 30000                   # How long to skip a failing provider (default: 30000)
     failureThreshold: 0.5              # Cooldown when failure rate exceeds this (default: 0.5 = 50%)
     minRequestVolume: 3                # Min connection attempts before evaluating (default: 3)
 
   sessions:
     idleTimeoutMs: 300000              # Close idle sessions after this (default: 300000 = 5 min)
 
-backends:
-  backend-name:                        # Your name for this backend (any string)
+providers:
+  provider-name:                        # Your name for this provider (any string)
     url: wss://provider.com?token=xxx  # WebSocket URL including any auth params
     limits:
       maxConcurrent: 10                # Max simultaneous connections (optional)
@@ -48,14 +48,14 @@ logging:
   level: info                          # debug | info | warn | error (default: info)
 ```
 
-## Backends
+## Providers
 
 ### URL
 
-The URL is the WebSocket endpoint of your browser backend. It includes everything the backend needs for authentication - tokens, API keys, session IDs.
+The URL is the WebSocket endpoint of your browser provider. It includes everything the provider needs for authentication - tokens, API keys, session IDs.
 
 ```yaml
-backends:
+providers:
   # Cloud provider with token auth
   cloud-provider:
     url: wss://provider.example.com?token=${PROVIDER_TOKEN}
@@ -77,10 +77,10 @@ backends:
 
 ```yaml
 limits:
-  maxConcurrent: 10    # Max simultaneous connections to this backend
+  maxConcurrent: 10    # Max simultaneous connections to this provider
 ```
 
-When a backend reaches `maxConcurrent`, the gateway skips it and tries the next one. If not set, there is no connection limit.
+When a provider reaches `maxConcurrent`, the gateway skips it and tries the next one. If not set, there is no connection limit.
 
 ### Priority
 
@@ -88,14 +88,14 @@ When a backend reaches `maxConcurrent`, the gateway skips it and tries the next 
 priority: 1    # Lower = higher priority. Tried first in priority-chain strategy.
 ```
 
-Backends with the same priority are tried in config order.
+Providers with the same priority are tried in config order.
 
 ## Environment Variable Interpolation
 
 Use `${ENV_VAR}` syntax in any string value. The gateway resolves these at startup.
 
 ```yaml
-backends:
+providers:
   production:
     url: wss://service.com?token=${API_TOKEN}
 ```
@@ -104,37 +104,38 @@ Supports defaults with `${VAR:-default}`:
 
 ```yaml
 gateway:
-  port: ${BG_PORT:-3000}
+  port: ${BG_PORT:-9500}
 ```
 
 Secrets should ALWAYS use env vars. Never put actual tokens in the config file.
 
 ## Environment Variables (No Config File)
 
-For simple setups, you can skip the config file entirely:
+These environment variables can be set alongside or instead of a config file:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `BG_BACKEND_URL` | Single backend WebSocket URL | Required if no config file |
 | `BG_PORT` | Server port | 9500 |
-| `BG_TOKEN` | Auth token (if set, all connections require it) | None |
-| `BG_MAX_CONCURRENT` | Max concurrent connections for the default backend | 10 |
+| `BG_TOKEN` | Auth token (if set, all connections require it) | None (no auth) |
 | `BG_CONFIG_PATH` | Path to config file | `./gateway.yml` |
 
-Example:
+### .env File
+
+The gateway automatically loads a `.env` file from the current directory. Put secrets here instead of passing them inline:
 
 ```bash
-BG_BACKEND_URL=ws://localhost:4000 BG_TOKEN=secret browser-gateway serve
+# .env
+BG_TOKEN=my-secret-token
 ```
 
-This creates a single backend named "default" with the given URL.
+The `.env` file is loaded on startup. Environment variables set externally (e.g., via Docker `-e` flags) take precedence over `.env` values.
 
-## Multiple Backends Example
+## Multiple Providers Example
 
 ```yaml
 version: 1
 
-backends:
+providers:
   # Cloud provider - use first
   cloud-primary:
     url: wss://provider.example.com?token=${PRIMARY_TOKEN}

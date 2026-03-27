@@ -1,19 +1,23 @@
-import type { BackendState } from "../types.js";
-import type { BackendRegistry } from "../backends/registry.js";
+import type { ProviderState } from "../types.js";
+import type { ProviderRegistry } from "../providers/registry.js";
 import type { CooldownTracker } from "../tracking/cooldown.js";
 
-export type Strategy = "priority-chain" | "round-robin" | "least-connections";
+export type Strategy =
+  | "priority-chain"
+  | "round-robin"
+  | "least-connections"
+  | "latency-optimized";
 
-export class BackendSelector {
+export class ProviderSelector {
   private roundRobinIndex = 0;
 
   constructor(
-    private registry: BackendRegistry,
+    private registry: ProviderRegistry,
     private cooldown: CooldownTracker,
     private defaultStrategy: Strategy
   ) {}
 
-  getCandidates(strategy?: Strategy): BackendState[] {
+  getCandidates(strategy?: Strategy): ProviderState[] {
     const all = this.registry.getAllSortedByPriority();
 
     const available = all.filter((b) => {
@@ -32,9 +36,9 @@ export class BackendSelector {
   }
 
   private applyStrategy(
-    candidates: BackendState[],
+    candidates: ProviderState[],
     strategy: Strategy
-  ): BackendState[] {
+  ): ProviderState[] {
     switch (strategy) {
       case "priority-chain":
         return candidates;
@@ -47,8 +51,16 @@ export class BackendSelector {
       }
 
       case "least-connections": {
-        const sorted = [...candidates].sort((a, b) => a.active - b.active);
-        return sorted;
+        return [...candidates].sort((a, b) => a.active - b.active);
+      }
+
+      case "latency-optimized": {
+        return [...candidates].sort((a, b) => {
+          if (a.avgLatencyMs === 0 && b.avgLatencyMs === 0) return 0;
+          if (a.avgLatencyMs === 0) return 1;
+          if (b.avgLatencyMs === 0) return -1;
+          return a.avgLatencyMs - b.avgLatencyMs;
+        });
       }
 
       default:

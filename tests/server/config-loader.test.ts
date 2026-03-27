@@ -17,7 +17,7 @@ describe("Config Loader - YAML file", () => {
       TEST_CONFIG_PATH,
       `
 version: 1
-backends:
+providers:
   test:
     url: ws://localhost:4000
     priority: 1
@@ -26,15 +26,15 @@ backends:
 
     const config = loadConfig(TEST_CONFIG_PATH);
     expect(config.version).toBe(1);
-    expect(config.backends.test).toBeDefined();
-    expect(config.backends.test.url).toBe("ws://localhost:4000");
+    expect(config.providers.test).toBeDefined();
+    expect(config.providers.test.url).toBe("ws://localhost:4000");
   });
 
   it("should apply defaults for missing optional fields", () => {
     writeFileSync(
       TEST_CONFIG_PATH,
       `
-backends:
+providers:
   test:
     url: ws://localhost:4000
 `
@@ -50,19 +50,19 @@ backends:
     expect(config.gateway.sessions.idleTimeoutMs).toBe(300000);
     expect(config.dashboard.enabled).toBe(true);
     expect(config.logging.level).toBe("info");
-    expect(config.backends.test.priority).toBe(1);
+    expect(config.providers.test.priority).toBe(1);
   });
 
-  it("should reject config with no backends", () => {
+  it("should reject config with no providers", () => {
     writeFileSync(TEST_CONFIG_PATH, `version: 1\n`);
     expect(() => loadConfig(TEST_CONFIG_PATH)).toThrow("Invalid configuration");
   });
 
-  it("should reject config with invalid backend URL", () => {
+  it("should reject config with invalid provider URL", () => {
     writeFileSync(
       TEST_CONFIG_PATH,
       `
-backends:
+providers:
   test:
     url: not-a-url
 `
@@ -76,7 +76,7 @@ backends:
       `
 gateway:
   defaultStrategy: random-garbage
-backends:
+providers:
   test:
     url: ws://localhost:4000
 `
@@ -91,14 +91,14 @@ describe("Config Loader - Environment variable interpolation", () => {
     writeFileSync(
       TEST_CONFIG_PATH,
       `
-backends:
+providers:
   test:
     url: wss://provider.com?token=\${TEST_TOKEN}
 `
     );
 
     const config = loadConfig(TEST_CONFIG_PATH);
-    expect(config.backends.test.url).toBe("wss://provider.com?token=my-secret-123");
+    expect(config.providers.test.url).toBe("wss://provider.com?token=my-secret-123");
   });
 
   it("should replace missing env vars with empty string", () => {
@@ -106,14 +106,14 @@ backends:
     writeFileSync(
       TEST_CONFIG_PATH,
       `
-backends:
+providers:
   test:
     url: ws://provider.com?token=\${NONEXISTENT_VAR}
 `
     );
 
     const config = loadConfig(TEST_CONFIG_PATH);
-    expect(config.backends.test.url).toBe("ws://provider.com?token=");
+    expect(config.providers.test.url).toBe("ws://provider.com?token=");
   });
 
   it("should support default values with ${VAR:-default}", () => {
@@ -123,46 +123,28 @@ backends:
       `
 gateway:
   port: 8080
-backends:
+providers:
   test:
     url: ws://localhost:\${MISSING_PORT:-4000}
 `
     );
 
     const config = loadConfig(TEST_CONFIG_PATH);
-    expect(config.backends.test.url).toBe("ws://localhost:4000");
+    expect(config.providers.test.url).toBe("ws://localhost:4000");
   });
 });
 
-describe("Config Loader - Environment variable fallback", () => {
-  it("should build config from BG_BACKEND_URL when no file exists", () => {
-    vi.stubEnv("BG_BACKEND_URL", "ws://localhost:9000");
-
+describe("Config Loader - No config fallback", () => {
+  it("should return empty providers when no config file exists", () => {
     const config = loadConfig("/tmp/nonexistent-config.yml");
-    expect(config.backends.default).toBeDefined();
-    expect(config.backends.default.url).toBe("ws://localhost:9000");
+    expect(Object.keys(config.providers)).toHaveLength(0);
+    expect(config.gateway.port).toBe(9500);
   });
 
-  it("should throw when no config file and no BG_BACKEND_URL", () => {
-    delete process.env.BG_BACKEND_URL;
-    expect(() => loadConfig("/tmp/nonexistent-config.yml")).toThrow(
-      "No configuration found"
-    );
-  });
-
-  it("should use BG_PORT when building from env", () => {
-    vi.stubEnv("BG_BACKEND_URL", "ws://localhost:9000");
+  it("should use BG_PORT from env when no config file", () => {
     vi.stubEnv("BG_PORT", "8080");
 
     const config = loadConfig("/tmp/nonexistent-config.yml");
     expect(config.gateway.port).toBe(8080);
-  });
-
-  it("should use BG_MAX_CONCURRENT when building from env", () => {
-    vi.stubEnv("BG_BACKEND_URL", "ws://localhost:9000");
-    vi.stubEnv("BG_MAX_CONCURRENT", "20");
-
-    const config = loadConfig("/tmp/nonexistent-config.yml");
-    expect(config.backends.default.limits?.maxConcurrent).toBe(20);
   });
 });

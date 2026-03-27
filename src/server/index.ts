@@ -2,17 +2,54 @@
 
 import { createServer } from "node:http";
 import type { Duplex } from "node:stream";
+import { existsSync, readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import pino from "pino";
+
+loadEnvFile();
+
+function loadEnvFile(): void {
+  const envPath = join(process.cwd(), ".env");
+  if (!existsSync(envPath)) return;
+
+  const content = readFileSync(envPath, "utf-8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const eqIndex = trimmed.indexOf("=");
+    if (eqIndex === -1) continue;
+
+    const key = trimmed.slice(0, eqIndex).trim();
+    const value = trimmed.slice(eqIndex + 1).trim();
+
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
 import { Gateway } from "../core/index.js";
 import { loadConfig } from "./config/loader.js";
 import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
 
+function findWebDir(): string | undefined {
+  const candidates = [
+    join(process.cwd(), "web", "dist"),
+    join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web", "dist"),
+  ];
+  for (const dir of candidates) {
+    if (existsSync(join(dir, "index.html"))) return dir;
+  }
+  return undefined;
+}
+
 const args = process.argv.slice(2);
 const command = args[0] ?? "serve";
 
 if (command === "version" || args.includes("--version") || args.includes("-v")) {
-  console.log("browser-gateway v0.1.0");
+  console.log("browser-gateway v0.1.2");
   process.exit(0);
 }
 
@@ -22,7 +59,7 @@ browser-gateway - The Unified Interface for Headless Browsers
 
 Usage:
   browser-gateway serve [options]    Start the gateway server
-  browser-gateway check              Test connectivity to backends
+  browser-gateway check              Test connectivity to providers
   browser-gateway version            Print version
   browser-gateway help               Show this help
 
@@ -35,14 +72,12 @@ Options:
 
 Environment:
   BG_TOKEN           Auth token for gateway access (optional)
-  BG_BACKEND_URL     Single backend URL (alternative to config file)
   BG_PORT            Server port
   BG_CONFIG_PATH     Config file path
 
 Examples:
   browser-gateway serve
   browser-gateway serve --config ./my-config.yml --port 8080
-  BG_BACKEND_URL=ws://localhost:4000 browser-gateway serve
 `);
   process.exit(0);
 }
@@ -52,7 +87,7 @@ if (command === "serve" || !["check", "version", "help"].includes(command)) {
 }
 
 if (command === "check") {
-  checkBackends();
+  checkProviders();
 }
 
 async function startServer() {
@@ -81,7 +116,9 @@ async function startServer() {
 
   const gateway = new Gateway(config, logger);
   const token = process.env.BG_TOKEN;
-  const app = createApp(gateway, token);
+
+  const webDir = findWebDir();
+  const app = createApp(gateway, token, webDir);
 
   if (token) {
     logger.info("auth enabled - BG_TOKEN is set");
@@ -89,30 +126,53 @@ async function startServer() {
     logger.info("auth disabled - set BG_TOKEN to enable");
   }
 
+  if (gateway.registry.size() === 0) {
+    logger.warn("no providers configured - add providers to gateway.yml");
+    logger.warn("run `browser-gateway init` to create a config file");
+  }
+
   const { handleUpgrade } = createWebSocketHandler(gateway, logger, token);
 
-  const activeSockets = new Map<string, { client: Duplex; backend: Duplex }>();
+  const activeSockets = new Map<string, { client: Duplex; provider: Duplex }>();
 
   gateway.setIdleSessionHandler((sessionId) => {
     const sockets = activeSockets.get(sessionId);
     if (sockets) {
       sockets.client.destroy();
-      sockets.backend.destroy();
+      sockets.provider.destroy();
       activeSockets.delete(sessionId);
     }
   });
 
   const server = createServer(async (req, res) => {
+    const url = `http://localhost${req.url}`;
+    const headers = req.headers as Record<string, string>;
+    const method = req.method ?? "GET";
+
+    let body: ReadableStream | null = null;
+    if (method !== "GET" && method !== "HEAD") {
+      body = new ReadableStream({
+        start(controller) {
+          req.on("data", (chunk: Buffer) => controller.enqueue(chunk));
+          req.on("end", () => controller.close());
+          req.on("error", (err) => controller.error(err));
+        },
+      });
+    }
+
     const response = await app.fetch(
-      new Request(`http://localhost${req.url}`, {
-        method: req.method,
-        headers: req.headers as Record<string, string>,
+      new Request(url, {
+        method,
+        headers,
+        body,
+        // @ts-ignore - duplex required for streaming body in Node.js
+        duplex: body ? "half" : undefined,
       })
     );
 
     res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
-    const body = await response.arrayBuffer();
-    res.end(Buffer.from(body));
+    const responseBody = await response.arrayBuffer();
+    res.end(Buffer.from(responseBody));
   });
 
   server.on("upgrade", handleUpgrade);
@@ -121,11 +181,14 @@ async function startServer() {
 
   server.listen(config.gateway.port, () => {
     logger.info(
-      { port: config.gateway.port, backends: gateway.registry.size() },
+      { port: config.gateway.port, providers: gateway.registry.size() },
       `browser-gateway running on http://localhost:${config.gateway.port}`
     );
     logger.info(`WebSocket proxy at ws://localhost:${config.gateway.port}/v1/connect`);
     logger.info(`Status API at http://localhost:${config.gateway.port}/v1/status`);
+    if (webDir) {
+      logger.info(`Dashboard at http://localhost:${config.gateway.port}/web`);
+    }
   });
 
   const shutdown = () => {
@@ -142,7 +205,7 @@ async function startServer() {
   process.on("SIGTERM", shutdown);
 }
 
-async function checkBackends() {
+async function checkProviders() {
   const { default: WebSocket } = await import("ws");
 
   let config;
@@ -153,15 +216,15 @@ async function checkBackends() {
     process.exit(1);
   }
 
-  console.log("\nBackend Connectivity Check\n");
+  console.log("\nProvider Connectivity Check\n");
 
   let allHealthy = true;
 
-  for (const [id, backend] of Object.entries(config.backends)) {
+  for (const [id, provider] of Object.entries(config.providers)) {
     const start = Date.now();
     try {
       await new Promise<void>((resolve, reject) => {
-        const ws = new WebSocket(backend.url, { handshakeTimeout: 5000 });
+        const ws = new WebSocket(provider.url, { handshakeTimeout: 5000 });
         ws.on("open", () => {
           ws.close();
           resolve();
@@ -182,7 +245,7 @@ async function checkBackends() {
     }
   }
 
-  console.log(`\n${Object.keys(config.backends).length} backend(s) checked\n`);
+  console.log(`\n${Object.keys(config.providers).length} provider(s) checked\n`);
   process.exit(allHealthy ? 0 : 1);
 }
 

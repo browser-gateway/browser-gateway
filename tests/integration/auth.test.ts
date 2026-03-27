@@ -6,11 +6,11 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const GATEWAY_PORT = 15000;
-const BACKEND_PORT = 15001;
+const PROVIDER_PORT = 15001;
 const AUTH_TOKEN = "test-secret-token-12345";
 const CONFIG_PATH = "/tmp/bg-auth-test.yml";
 
-let backendServer: Server;
+let echoServer: Server;
 let gatewayProcess: ChildProcess;
 
 beforeAll(async () => {
@@ -19,8 +19,8 @@ beforeAll(async () => {
   wss.on("connection", (ws) => {
     ws.on("message", (data) => ws.send(data));
   });
-  backendServer = server;
-  server.listen(BACKEND_PORT);
+  echoServer = server;
+  server.listen(PROVIDER_PORT);
 
   writeFileSync(
     CONFIG_PATH,
@@ -29,9 +29,9 @@ version: 1
 gateway:
   port: ${GATEWAY_PORT}
   connectionTimeout: 5000
-backends:
+providers:
   echo:
-    url: ws://localhost:${BACKEND_PORT}
+    url: ws://localhost:${PROVIDER_PORT}
     priority: 1
 logging:
   level: error
@@ -53,7 +53,7 @@ logging:
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
-  backendServer?.close();
+  echoServer?.close();
   try { unlinkSync(CONFIG_PATH); } catch {}
   await sleep(500);
 });

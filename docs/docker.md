@@ -31,13 +31,12 @@ services:
 
 ## Zero-Config Docker
 
-No config file needed for single-backend setups:
+No config file needed for single-provider setups:
 
 ```bash
 docker run -d \
   --name browser-gateway \
   -p 9500:9500 \
-  -e BG_BACKEND_URL=ws://your-backend:3000 \
   -e BG_TOKEN=my-secret \
   ghcr.io/browser-gateway/server:latest
 ```
@@ -59,16 +58,15 @@ Secrets in the config use `${ENV_VAR}` references. Pass the actual values as env
 ### Option 2: Environment variables only
 
 ```bash
--e BG_BACKEND_URL=ws://backend:3000
 -e BG_PORT=9500
 -e BG_TOKEN=my-secret
 ```
 
 ## Networking
 
-The gateway needs to reach your browser backends. Common patterns:
+The gateway needs to reach your browser providers. Common patterns:
 
-### Backends on the same Docker network
+### Providers on the same Docker network
 
 ```yaml
 services:
@@ -86,27 +84,27 @@ services:
 
 Config:
 ```yaml
-backends:
+providers:
   playwright:
     url: ws://playwright:3000
 ```
 
-### Backends on the host machine
+### Providers on the host machine
 
 Use `host.docker.internal` (Docker Desktop) or `--network host` (Linux):
 
 ```yaml
-backends:
+providers:
   local-chrome:
     url: ws://host.docker.internal:9222/devtools/browser/UUID
 ```
 
-### External backends (cloud)
+### External providers (cloud)
 
 No special networking needed:
 
 ```yaml
-backends:
+providers:
   cloud-provider:
     url: wss://provider.example.com?token=${PROVIDER_TOKEN}
 ```

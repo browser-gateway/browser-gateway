@@ -9,9 +9,9 @@ describe("SessionTracker", () => {
   });
 
   it("should create and retrieve a session", () => {
-    const session = tracker.create("s1", "backend-a");
+    const session = tracker.create("s1", "provider-a");
     expect(session.id).toBe("s1");
-    expect(session.backendId).toBe("backend-a");
+    expect(session.providerId).toBe("provider-a");
     expect(session.messageCount).toBe(0);
     expect(session.connectedAt).toBeGreaterThan(0);
 

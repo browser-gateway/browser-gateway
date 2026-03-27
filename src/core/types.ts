@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const BackendConfigSchema = z.object({
+export const ProviderConfigSchema = z.object({
   url: z.string().url(),
   limits: z
     .object({
@@ -23,7 +23,7 @@ const SessionsSchema = z.object({
 const GatewaySettingsSchema = z.object({
   port: z.number().int().default(9500),
   defaultStrategy: z
-    .enum(["priority-chain", "round-robin", "least-connections"])
+    .enum(["priority-chain", "round-robin", "least-connections", "latency-optimized"])
     .default("priority-chain"),
   healthCheckInterval: z.number().int().default(30000),
   connectionTimeout: z.number().int().default(10000),
@@ -42,17 +42,17 @@ const LoggingSchema = z.object({
 export const GatewayConfigSchema = z.object({
   version: z.number().default(1),
   gateway: GatewaySettingsSchema.default(() => GatewaySettingsSchema.parse({})),
-  backends: z.record(z.string(), BackendConfigSchema),
+  providers: z.record(z.string(), ProviderConfigSchema),
   dashboard: DashboardSchema.default(() => DashboardSchema.parse({})),
   logging: LoggingSchema.default(() => LoggingSchema.parse({})),
 });
 
-export type BackendConfig = z.infer<typeof BackendConfigSchema>;
+export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 export type GatewayConfig = z.infer<typeof GatewayConfigSchema>;
 
-export interface BackendState {
+export interface ProviderState {
   id: string;
-  config: BackendConfig;
+  config: ProviderConfig;
   active: number;
   healthy: boolean;
   cooldownUntil: number | null;
@@ -65,7 +65,7 @@ export interface BackendState {
 
 export interface Session {
   id: string;
-  backendId: string;
+  providerId: string;
   connectedAt: number;
   lastActivity: number;
   messageCount: number;

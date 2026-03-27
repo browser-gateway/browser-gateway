@@ -5,7 +5,7 @@ import { connect as tlsConnect } from "node:tls";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
-import type { BackendState } from "../../core/types.js";
+import type { ProviderState } from "../../core/types.js";
 
 function safeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -42,40 +42,40 @@ export function createWebSocketHandler(gateway: Gateway, logger: Logger, token?:
     }
 
     const sessionId = randomUUID();
-    const candidates = gateway.selectBackendWithFallbacks();
+    const candidates = gateway.selectProviderWithFallbacks();
 
     if (candidates.length === 0) {
-      logger.warn({ sessionId }, "no backends available");
+      logger.warn({ sessionId }, "no providers available");
       socket.write(
         "HTTP/1.1 503 Service Unavailable\r\n" +
           "Content-Type: application/json\r\n\r\n" +
-          JSON.stringify({ error: "No backends available" })
+          JSON.stringify({ error: "No providers available" })
       );
       socket.destroy();
       return;
     }
 
-    for (const backend of candidates) {
-      if (!gateway.acquireSlot(backend.id, sessionId)) {
-        logger.debug({ sessionId, backendId: backend.id }, "backend at capacity, trying next");
+    for (const provider of candidates) {
+      if (!gateway.acquireSlot(provider.id, sessionId)) {
+        logger.debug({ sessionId, providerId: provider.id }, "provider at capacity, trying next");
         continue;
       }
 
-      const connected = await pipeToBackend(
-        gateway, logger, socket, head, req, sessionId, backend
+      const connected = await pipeToProvider(
+        gateway, logger, socket, head, req, sessionId, provider
       );
 
       if (connected) return;
 
-      gateway.releaseSlot(sessionId, backend.id);
-      gateway.recordFailure(backend.id);
+      gateway.releaseSlot(sessionId, provider.id);
+      gateway.recordFailure(provider.id);
     }
 
-    logger.error({ sessionId }, "all backends exhausted");
+    logger.error({ sessionId }, "all providers exhausted");
     socket.write(
       "HTTP/1.1 503 Service Unavailable\r\n" +
         "Content-Type: application/json\r\n\r\n" +
-        JSON.stringify({ error: "All backends unavailable" })
+        JSON.stringify({ error: "All providers unavailable" })
     );
     socket.destroy();
   }
@@ -83,42 +83,42 @@ export function createWebSocketHandler(gateway: Gateway, logger: Logger, token?:
   return { handleUpgrade };
 }
 
-function pipeToBackend(
+function pipeToProvider(
   gateway: Gateway,
   logger: Logger,
   clientSocket: Duplex,
   head: Buffer,
   req: IncomingMessage,
   sessionId: string,
-  backend: BackendState
+  provider: ProviderState
 ): Promise<boolean> {
   return new Promise((resolve) => {
-    const backendUrl = new URL(backend.config.url);
-    const isSecure = backendUrl.protocol === "wss:";
-    const port = parseInt(backendUrl.port || (isSecure ? "443" : "80"), 10);
-    const hostname = backendUrl.hostname;
+    const providerUrl = new URL(provider.config.url);
+    const isSecure = providerUrl.protocol === "wss:";
+    const port = parseInt(providerUrl.port || (isSecure ? "443" : "80"), 10);
+    const hostname = providerUrl.hostname;
 
-    logger.info({ sessionId, backendId: backend.id }, "connecting to backend");
+    logger.info({ sessionId, providerId: provider.id }, "connecting to provider");
 
     const timeout = setTimeout(() => {
-      logger.warn({ sessionId, backendId: backend.id }, "backend connection timed out");
-      backendSocket.destroy();
+      logger.warn({ sessionId, providerId: provider.id }, "provider connection timed out");
+      providerSocket.destroy();
       resolve(false);
     }, gateway.config.gateway.connectionTimeout);
 
-    const backendSocket = isSecure
+    const providerSocket = isSecure
       ? tlsConnect({ host: hostname, port, servername: hostname }, onConnect)
       : createConnection({ host: hostname, port }, onConnect);
 
     function onConnect() {
       clearTimeout(timeout);
-      logger.debug({ sessionId, backendId: backend.id }, "TCP connection established");
+      logger.debug({ sessionId, providerId: provider.id }, "TCP connection established");
 
-      const upgradeReq = buildUpgradeRequest(backendUrl, req);
-      backendSocket.write(upgradeReq);
+      const upgradeReq = buildUpgradeRequest(providerUrl, req);
+      providerSocket.write(upgradeReq);
 
       if (head.length > 0) {
-        backendSocket.write(head);
+        providerSocket.write(head);
       }
     }
 
@@ -129,14 +129,14 @@ function pipeToBackend(
 
     let responseBuffer = Buffer.alloc(0);
 
-    backendSocket.on("data", function onData(chunk) {
+    providerSocket.on("data", function onData(chunk) {
       if (gotUpgradeResponse) return;
 
       responseBuffer = Buffer.concat([responseBuffer, chunk]);
       const headerEnd = responseBuffer.indexOf("\r\n\r\n");
       if (headerEnd === -1) return;
 
-      backendSocket.removeListener("data", onData);
+      providerSocket.removeListener("data", onData);
 
       const headerStr = responseBuffer.subarray(0, headerEnd).toString();
       const remainder = responseBuffer.subarray(headerEnd + 4);
@@ -144,24 +144,24 @@ function pipeToBackend(
       if (headerStr.startsWith("HTTP/1.1 101")) {
         gotUpgradeResponse = true;
 
-        gateway.sessions.create(sessionId, backend.id);
-        logger.info({ sessionId, backendId: backend.id }, "session established");
+        gateway.sessions.create(sessionId, provider.id);
+        logger.info({ sessionId, providerId: provider.id }, "session established");
 
         clientSocket.write(responseBuffer);
 
-        clientSocket.pipe(backendSocket);
-        backendSocket.pipe(clientSocket);
+        clientSocket.pipe(providerSocket);
+        providerSocket.pipe(clientSocket);
 
         clientSocket.on("data", () => gateway.sessions.recordActivity(sessionId));
-        backendSocket.on("data", () => gateway.sessions.recordActivity(sessionId));
+        providerSocket.on("data", () => gateway.sessions.recordActivity(sessionId));
 
         resolve(true);
       } else {
         logger.warn(
-          { sessionId, backendId: backend.id, response: headerStr.slice(0, 200) },
-          "backend rejected upgrade"
+          { sessionId, providerId: provider.id, response: headerStr.slice(0, 200) },
+          "provider rejected upgrade"
         );
-        backendSocket.destroy();
+        providerSocket.destroy();
         resolve(false);
       }
     });
@@ -171,15 +171,15 @@ function pipeToBackend(
       cleanedUp = true;
 
       const session = gateway.sessions.remove(sessionId);
-      gateway.releaseSlot(sessionId, backend.id);
+      gateway.releaseSlot(sessionId, provider.id);
 
       const durationMs = Date.now() - startTime;
-      gateway.recordSuccess(backend.id, durationMs);
+      gateway.recordSuccess(provider.id, durationMs);
 
       logger.info(
         {
           sessionId,
-          backendId: backend.id,
+          providerId: provider.id,
           durationMs,
           messageCount: session?.messageCount ?? 0,
           source,
@@ -188,32 +188,32 @@ function pipeToBackend(
       );
 
       if (!clientSocket.destroyed) clientSocket.destroy();
-      if (!backendSocket.destroyed) backendSocket.destroy();
+      if (!providerSocket.destroyed) providerSocket.destroy();
     };
 
     clientSocket.on("close", cleanup("client"));
     clientSocket.on("error", cleanup("client-error"));
-    backendSocket.on("close", cleanup("backend"));
-    backendSocket.on("error", (err) => {
+    providerSocket.on("close", cleanup("provider"));
+    providerSocket.on("error", (err) => {
       clearTimeout(timeout);
       if (!gotUpgradeResponse) {
         logger.warn(
-          { sessionId, backendId: backend.id, error: err.message },
-          "backend connection failed"
+          { sessionId, providerId: provider.id, error: err.message },
+          "provider connection failed"
         );
         resolve(false);
       } else {
-        cleanup("backend-error")();
+        cleanup("provider-error")();
       }
     });
   });
 }
 
-function buildUpgradeRequest(backendUrl: URL, originalReq: IncomingMessage): string {
-  const path = backendUrl.pathname + backendUrl.search;
+function buildUpgradeRequest(providerUrl: URL, originalReq: IncomingMessage): string {
+  const path = providerUrl.pathname + providerUrl.search;
 
   let request = `GET ${path} HTTP/1.1\r\n`;
-  request += `Host: ${backendUrl.host}\r\n`;
+  request += `Host: ${providerUrl.host}\r\n`;
 
   const skipHeaders = new Set(["host", "connection", "upgrade", "authorization"]);
 

@@ -2,13 +2,13 @@
 
 **The Unified Interface for Headless Browsers.**
 
-Route connections across any browser backend with automatic failover, load balancing, and zero lock-in.
+Route connections across any browser provider with automatic failover, load balancing, and zero lock-in.
 
 ---
 
 ## What is this?
 
-`browser-gateway` is an open-source proxy router for remote browser connections. You bring your own browser backends. We handle routing, failover, load balancing, health monitoring, and usage tracking.
+`browser-gateway` is an open-source proxy router for remote browser connections. You bring your own browser providers. We handle routing, failover, load balancing, health monitoring, and usage tracking.
 
 ```
 Your cloud browser providers ---\
@@ -21,13 +21,13 @@ Any CDP-compatible endpoint ----/
 
 - **Vendor lock-in** - Coupled to one browser provider
 - **No failover** - Provider goes down, your app breaks
-- **Concurrency blindness** - No visibility into active sessions across backends
+- **Concurrency blindness** - No visibility into active sessions across providers
 - **Wasted free tiers** - Can't pool multiple providers into one endpoint
 - **Scaling cliff** - Outgrow one provider, re-architect everything
 
 ### The Solution
 
-One endpoint. Configure your backends. We route intelligently.
+One endpoint. Configure your providers. We route intelligently.
 
 ```typescript
 // Before: coupled to one provider
@@ -41,16 +41,16 @@ const browser = await chromium.connect('ws://localhost:9500/v1/connect');
 
 ## Features
 
-- **Connection Routing** - Route WebSocket/CDP connections to the right backend
-- **Automatic Failover** - Backend down? Next one instantly, zero client changes
-- **Per-Backend Limits** - Set `maxConcurrent` per backend, gateway enforces it
+- **Connection Routing** - Route WebSocket/CDP connections to the right provider
+- **Automatic Failover** - Provider down? Next one instantly, zero client changes
+- **Per-Provider Limits** - Set `maxConcurrent` per provider, gateway enforces it
 - **Load Balancing** - Priority chain, round-robin, or least-connections
-- **Cooldown System** - Automatically skip failing backends, recover after TTL
-- **Status API** - Real-time backend health, active sessions, and metrics
+- **Cooldown System** - Automatically skip failing providers, recover after TTL
+- **Status API** - Real-time provider health, active sessions, and metrics
 - **Auth** - Optional token-based auth for all endpoints
 - **CLI** - `serve`, `check`, `version`, `help`
 - **Protocol Agnostic** - Works with Playwright, Puppeteer, any WebSocket protocol
-- **ws:// and wss://** - Supports both plain and TLS backends
+- **ws:// and wss://** - Supports both plain and TLS providers
 
 ---
 
@@ -69,7 +69,7 @@ Create a `gateway.yml`:
 ```yaml
 version: 1
 
-backends:
+providers:
   primary:
     url: wss://provider.example.com?token=${PROVIDER_TOKEN}
     limits:
@@ -94,10 +94,10 @@ browser-gateway serve
 ```typescript
 import { chromium } from 'playwright-core';
 
-// For Playwright run-server backends
+// For Playwright run-server providers
 const browser = await chromium.connect('ws://localhost:9500/v1/connect');
 
-// For Chrome/CDP backends
+// For Chrome/CDP providers
 const browser = await chromium.connectOverCDP('ws://localhost:9500/v1/connect');
 
 const page = await browser.newPage();
@@ -106,33 +106,40 @@ console.log(await page.title());
 await browser.close();
 ```
 
-That's it. If your primary backend goes down, traffic automatically routes to the fallback.
+That's it. If your primary provider goes down, traffic automatically routes to the fallback.
 
 ---
-
-## Zero-Config Start
-
-No config file needed. Set one environment variable:
-
-```bash
-BG_BACKEND_URL=ws://localhost:4000 browser-gateway serve
-```
 
 ---
 
 ## Authentication
 
-Set `BG_TOKEN` to require a token for all connections:
+Set `BG_TOKEN` to require a token (or put it in a `.env` file):
 
 ```bash
 BG_TOKEN=my-secret-token browser-gateway serve
 ```
 
-Clients include the token:
+- **WebSocket clients** pass the token as `?token=` query param
+- **API clients** use `Authorization: Bearer <token>` header
+- **Dashboard** shows a login form, sets a secure HttpOnly cookie
+- **Health endpoint** (`/health`) is always public
 
 ```typescript
 const browser = await chromium.connect('ws://localhost:9500/v1/connect?token=my-secret-token');
 ```
+
+---
+
+## Dashboard
+
+Built-in web dashboard at `/web`:
+
+```
+http://localhost:9500/web
+```
+
+Shows real-time provider health, active sessions, connection metrics, and cooldown status. Dark theme by default with light theme toggle.
 
 ---
 
@@ -142,7 +149,7 @@ const browser = await chromium.connect('ws://localhost:9500/v1/connect?token=my-
 browser-gateway serve                    # Start the gateway
 browser-gateway serve --port 8080        # Custom port
 browser-gateway serve --config path.yml  # Custom config
-browser-gateway check                    # Test backend connectivity
+browser-gateway check                    # Test provider connectivity
 browser-gateway version                  # Print version
 browser-gateway help                     # Show help
 ```
@@ -154,7 +161,7 @@ browser-gateway help                     # Show help
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v1/connect` | WebSocket | Connect to a browser (the core feature) |
-| `/v1/status` | GET | Gateway health + backend status |
+| `/v1/status` | GET | Gateway health + provider status |
 | `/v1/sessions` | GET | Active sessions |
 | `/health` | GET | Simple health check |
 
@@ -165,7 +172,7 @@ browser-gateway help                     # Show help
   "status": "ok",
   "activeSessions": 7,
   "strategy": "priority-chain",
-  "backends": [
+  "providers": [
     {
       "id": "primary",
       "healthy": true,
@@ -207,11 +214,11 @@ docker run -d \
 ## How It Works
 
 1. Client connects to `ws://gateway:9500/v1/connect`
-2. Gateway selects a backend (priority, health, capacity)
-3. Gateway opens a raw TCP connection to the backend
-4. HTTP upgrade request is forwarded to the backend
-5. Backend responds with `101 Switching Protocols`
-6. Bidirectional TCP pipe established: `client <-> gateway <-> backend`
+2. Gateway selects a provider (priority, health, capacity)
+3. Gateway opens a raw TCP connection to the provider
+4. HTTP upgrade request is forwarded to the provider
+5. Provider responds with `101 Switching Protocols`
+6. Bidirectional TCP pipe established: `client <-> gateway <-> provider`
 7. All WebSocket messages forwarded transparently
 8. On disconnect: session cleaned up, metrics updated
 
@@ -225,7 +232,7 @@ The gateway never parses or modifies WebSocket messages. It's a transparent pipe
 - [Configuration Reference](./docs/configuration.md)
 - [How Failover Works](./docs/failover.md)
 - [Load Balancing Strategies](./docs/load-balancing.md)
-- [Supported Backends](./docs/backends.md)
+- [Supported Providers](./docs/providers.md)
 - [Session Lifecycle](./docs/session-lifecycle.md)
 - [CLI Reference](./docs/cli.md)
 - [Docker Deployment](./docs/docker.md)
@@ -234,28 +241,28 @@ The gateway never parses or modifies WebSocket messages. It's a transparent pipe
 
 ## Roadmap
 
-### Shipped (v0.1)
+### Shipped (v0.1.x)
 - [x] WebSocket proxy with automatic failover
-- [x] Per-backend concurrency limits
+- [x] Per-provider concurrency limits
 - [x] TTL-based cooldown system
-- [x] Load balancing (priority-chain, round-robin, least-connections)
-- [x] ws:// and wss:// (TLS) backend support
-- [x] Token-based auth (WebSocket + HTTP API)
+- [x] Load balancing (priority-chain, round-robin, least-connections, latency-optimized)
+- [x] ws:// and wss:// (TLS) provider support
+- [x] Token-based auth (WebSocket + HTTP API + dashboard cookie)
+- [x] Web dashboard with login, real-time status, sessions
+- [x] Health check probes (periodic provider connectivity)
 - [x] Status and sessions API
 - [x] Idle session timeout
+- [x] .env auto-loading
 - [x] CLI (serve, check, version)
-- [x] Zero-config mode (env vars only)
+- [x] Zero-config mode (starts with no providers, shows setup guide)
 
-### Next (v0.2)
-- [ ] Web dashboard (real-time backend status, sessions, metrics)
-- [ ] Health check probes (periodic backend connectivity checks)
+### Next
 - [ ] `browser-gateway init` (interactive config generator)
 - [ ] Docker image on GHCR
-- [ ] Latency-optimized routing strategy
 
 ### Planned
-- [ ] Quota tracking (monthly usage limits per backend)
-- [ ] Webhook notifications (backend down, quota warnings)
+- [ ] Quota tracking (monthly usage limits per provider)
+- [ ] Webhook notifications (provider down, quota warnings)
 - [ ] Pre-connect hooks (for providers needing session creation)
 - [ ] Config hot-reload (apply changes without restart)
 - [ ] REST convenience endpoints (screenshot, content, PDF)

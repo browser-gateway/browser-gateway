@@ -22,6 +22,8 @@ function deepInterpolate(obj: unknown): unknown {
   return obj;
 }
 
+export let loadedConfigPath: string | null = null;
+
 export function loadConfig(configPath?: string): GatewayConfig {
   const paths = [
     configPath,
@@ -36,12 +38,14 @@ export function loadConfig(configPath?: string): GatewayConfig {
     if (existsSync(p)) {
       const content = readFileSync(p, "utf-8");
       raw = parse(content) as Record<string, unknown>;
+      loadedConfigPath = p;
       break;
     }
   }
 
   if (!raw) {
     raw = buildConfigFromEnv();
+    loadedConfigPath = configPath ?? "./gateway.yml";
   }
 
   const interpolated = deepInterpolate(raw) as Record<string, unknown>;
@@ -58,32 +62,11 @@ export function loadConfig(configPath?: string): GatewayConfig {
 }
 
 function buildConfigFromEnv(): Record<string, unknown> {
-  const backendUrl = process.env.BG_BACKEND_URL;
-  if (!backendUrl) {
-    throw new Error(
-      "No configuration found. Provide a gateway.yml file or set BG_BACKEND_URL environment variable.\n" +
-        "Run `browser-gateway init` to create a config file interactively."
-    );
-  }
-
-  const config: Record<string, unknown> = {
+  return {
     version: 1,
     gateway: {
       port: parseInt(process.env.BG_PORT ?? "9500", 10),
     },
-    backends: {
-      default: {
-        url: backendUrl,
-        limits: {
-          maxConcurrent: parseInt(
-            process.env.BG_MAX_CONCURRENT ?? "10",
-            10
-          ),
-        },
-        priority: 1,
-      },
-    },
+    providers: {},
   };
-
-  return config;
 }

@@ -1,18 +1,18 @@
 # Load Balancing Strategies
 
-browser-gateway supports multiple strategies for choosing which backend handles each connection.
+browser-gateway supports multiple strategies for choosing which provider handles each connection.
 
 ## Available Strategies
 
 ### priority-chain (default)
 
-Backends are tried in order of their configured `priority` (lowest number first). The first available backend handles the connection.
+Providers are tried in order of their configured `priority` (lowest number first). The first available provider handles the connection.
 
 ```yaml
 gateway:
   defaultStrategy: priority-chain
 
-backends:
+providers:
   primary:
     url: ws://primary:3000
     priority: 1        # Always tried first
@@ -30,13 +30,13 @@ backends:
 
 ### round-robin
 
-Connections are distributed evenly across all available backends, rotating through them.
+Connections are distributed evenly across all available providers, rotating through them.
 
 ```yaml
 gateway:
   defaultStrategy: round-robin
 
-backends:
+providers:
   server-1:
     url: ws://server-1:3000
     priority: 1
@@ -50,33 +50,33 @@ backends:
     priority: 1
 ```
 
-**Best for**: Spreading load evenly when all backends have similar capacity.
+**Best for**: Spreading load evenly when all providers have similar capacity.
 
 ### least-connections
 
-Each connection goes to the backend with the fewest active connections at that moment.
+Each connection goes to the provider with the fewest active connections at that moment.
 
 ```yaml
 gateway:
   defaultStrategy: least-connections
 ```
 
-**Best for**: Backends with different capacities where you want to keep them balanced by actual load.
+**Best for**: Providers with different capacities where you want to keep them balanced by actual load.
 
 ## How Strategy Interacts with Failover
 
-The strategy only determines the **order** backends are tried. Failover still applies:
+The strategy only determines the **order** providers are tried. Failover still applies:
 
 1. Strategy picks the order: [A, B, C]
 2. A is tried first - if it's in cooldown or at capacity, skip to B
 3. B is tried - if it fails to connect, skip to C
 4. C succeeds - connection established
 
-The strategy never overrides health checks or concurrency limits. An unhealthy backend is always skipped regardless of strategy.
+The strategy never overrides health checks or concurrency limits. An unhealthy provider is always skipped regardless of strategy.
 
-## Backends with Same Priority
+## Providers with Same Priority
 
-When multiple backends have the same priority:
+When multiple providers have the same priority:
 
 - **priority-chain**: Tries them in config file order
 - **round-robin**: Rotates through them
@@ -92,7 +92,7 @@ Use free tiers first, paid as overflow:
 gateway:
   defaultStrategy: priority-chain
 
-backends:
+providers:
   free-tier:
     url: wss://provider.example.com?token=${FREE_TOKEN}
     limits:
@@ -120,7 +120,7 @@ Distribute evenly across identical servers:
 gateway:
   defaultStrategy: least-connections
 
-backends:
+providers:
   server-a:
     url: ws://10.0.1.1:3000
     limits:

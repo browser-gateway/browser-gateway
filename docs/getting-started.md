@@ -5,7 +5,7 @@ Get browser-gateway running in under 5 minutes.
 ## Prerequisites
 
 - Node.js 20 or later
-- At least one remote browser backend (Playwright server, cloud browser provider, Chrome CDP, etc.)
+- At least one remote browser provider (Playwright server, cloud browser provider, Chrome CDP, etc.)
 
 ## Install
 
@@ -13,24 +13,14 @@ Get browser-gateway running in under 5 minutes.
 npm install -g browser-gateway
 ```
 
-## Option 1: Zero Config (Single Backend)
+## Configure
 
-If you have one backend, you don't need a config file:
-
-```bash
-BG_BACKEND_URL=ws://your-backend:3000 browser-gateway serve
-```
-
-That's it. Your gateway is running at `ws://localhost:9500/v1/connect`.
-
-## Option 2: Config File (Multiple Backends)
-
-Create `gateway.yml` in your working directory:
+Create a `gateway.yml` file in your working directory:
 
 ```yaml
 version: 1
 
-backends:
+providers:
   primary:
     url: wss://provider.example.com?token=${PROVIDER_TOKEN}
     limits:
@@ -57,10 +47,10 @@ browser-gateway serve
 ```typescript
 import { chromium } from 'playwright-core';
 
-// For Playwright run-server backends
+// For Playwright run-server providers
 const browser = await chromium.connect('ws://localhost:9500/v1/connect');
 
-// For Chrome CDP backends
+// For Chrome CDP providers
 const browser = await chromium.connectOverCDP('ws://localhost:9500/v1/connect');
 ```
 
@@ -84,15 +74,25 @@ The gateway proxies raw WebSocket bytes. Any client that connects via WebSocket 
 # Check health
 curl http://localhost:9500/health
 
-# Check backend status
+# Check provider status
 curl http://localhost:9500/v1/status
 
 # Check active sessions
 curl http://localhost:9500/v1/sessions
 
-# Test backend connectivity
+# Test provider connectivity
 browser-gateway check
 ```
+
+## Web Dashboard
+
+The gateway includes a built-in web dashboard at `/web`:
+
+```
+http://localhost:9500/web
+```
+
+It shows provider health, active sessions, and metrics in real-time.
 
 ## Add Authentication
 
@@ -102,11 +102,18 @@ Set the `BG_TOKEN` environment variable to require a token for all connections:
 BG_TOKEN=my-secret-token browser-gateway serve
 ```
 
-Clients include the token:
+You can also put it in a `.env` file (auto-loaded on startup):
 
-```typescript
-const browser = await chromium.connect('ws://localhost:9500/v1/connect?token=my-secret-token');
+```bash
+# .env
+BG_TOKEN=my-secret-token
 ```
+
+When auth is enabled:
+- The web dashboard shows a login form - enter the token once and it sets a secure session cookie
+- WebSocket clients pass the token as a query param: `?token=my-secret-token`
+- API clients use `Authorization: Bearer my-secret-token` header
+- `/health` is always public (no auth required)
 
 ## Next Steps
 

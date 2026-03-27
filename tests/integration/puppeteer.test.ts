@@ -7,11 +7,11 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const GATEWAY_PORT = 14000;
-const BACKEND_PORT = 14001;
+const PROVIDER_PORT = 14001;
 const CONFIG_PATH = "/tmp/bg-puppeteer-test.yml";
 
-let backendServer: Server;
-let backendWss: WebSocketServer;
+let echoServer: Server;
+let providerWss: WebSocketServer;
 let gatewayProcess: ChildProcess;
 
 beforeAll(async () => {
@@ -52,9 +52,9 @@ beforeAll(async () => {
     });
   });
 
-  backendServer = server;
-  backendWss = wss;
-  server.listen(BACKEND_PORT);
+  echoServer = server;
+  providerWss = wss;
+  server.listen(PROVIDER_PORT);
 
   writeFileSync(
     CONFIG_PATH,
@@ -63,9 +63,9 @@ version: 1
 gateway:
   port: ${GATEWAY_PORT}
   connectionTimeout: 5000
-backends:
+providers:
   cdp-mock:
-    url: ws://localhost:${BACKEND_PORT}
+    url: ws://localhost:${PROVIDER_PORT}
     limits:
       maxConcurrent: 5
     priority: 1
@@ -77,7 +77,7 @@ logging:
   gatewayProcess = spawn(
     "npx",
     ["tsx", "src/server/index.ts", "serve", "--config", CONFIG_PATH],
-    { cwd: process.cwd(), stdio: "pipe" }
+    { cwd: process.cwd(), stdio: "pipe", env: { ...process.env, BG_TOKEN: "" } }
   );
 
   await sleep(3000);
@@ -85,7 +85,7 @@ logging:
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
-  backendServer?.close();
+  echoServer?.close();
   try { unlinkSync(CONFIG_PATH); } catch {}
   await sleep(500);
 });
@@ -123,7 +123,7 @@ describe("Puppeteer through Gateway", () => {
     const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/sessions`);
     const data = (await res.json()) as any;
     expect(data.count).toBeGreaterThanOrEqual(1);
-    expect(data.sessions[0].backendId).toBe("cdp-mock");
+    expect(data.sessions[0].providerId).toBe("cdp-mock");
     expect(data.sessions[0].messageCount).toBeGreaterThan(0);
 
     await browser.disconnect();

@@ -1,4 +1,4 @@
-import type { BackendState } from "../types.js";
+import type { ProviderState } from "../types.js";
 
 interface CooldownConfig {
   defaultMs: number;
@@ -17,17 +17,17 @@ export class CooldownTracker {
     this.config = config;
   }
 
-  recordFailure(backend: BackendState): void {
+  recordFailure(provider: ProviderState): void {
     const now = Date.now();
-    const fails = this.getWindow(this.failures, backend.id, now);
+    const fails = this.getWindow(this.failures, provider.id, now);
     fails.push(now);
 
-    backend.failureCount++;
-    backend.lastFailure = now;
+    provider.failureCount++;
+    provider.lastFailure = now;
 
     const successCount = this.getWindow(
       this.successes,
-      backend.id,
+      provider.id,
       now
     ).length;
     const totalCount = fails.length + successCount;
@@ -38,30 +38,30 @@ export class CooldownTracker {
     const threshold = this.config.failureThreshold;
 
     if (failureRate >= threshold) {
-      backend.cooldownUntil = now + this.config.defaultMs;
-      backend.healthy = false;
+      provider.cooldownUntil = now + this.config.defaultMs;
+      provider.healthy = false;
     }
   }
 
-  recordSuccess(backend: BackendState): void {
+  recordSuccess(provider: ProviderState): void {
     const now = Date.now();
-    const wins = this.getWindow(this.successes, backend.id, now);
+    const wins = this.getWindow(this.successes, provider.id, now);
     wins.push(now);
 
-    backend.successCount++;
+    provider.successCount++;
 
-    if (backend.cooldownUntil && now >= backend.cooldownUntil) {
-      backend.cooldownUntil = null;
-      backend.healthy = true;
+    if (provider.cooldownUntil && now >= provider.cooldownUntil) {
+      provider.cooldownUntil = null;
+      provider.healthy = true;
     }
   }
 
-  isInCooldown(backend: BackendState): boolean {
-    if (!backend.cooldownUntil) return false;
+  isInCooldown(provider: ProviderState): boolean {
+    if (!provider.cooldownUntil) return false;
 
-    if (Date.now() >= backend.cooldownUntil) {
-      backend.cooldownUntil = null;
-      backend.healthy = true;
+    if (Date.now() >= provider.cooldownUntil) {
+      provider.cooldownUntil = null;
+      provider.healthy = true;
       return false;
     }
 
@@ -70,18 +70,18 @@ export class CooldownTracker {
 
   private getWindow(
     store: Map<string, number[]>,
-    backendId: string,
+    providerId: string,
     now: number
   ): number[] {
-    let entries = store.get(backendId);
+    let entries = store.get(providerId);
     if (!entries) {
       entries = [];
-      store.set(backendId, entries);
+      store.set(providerId, entries);
     }
 
     const cutoff = now - this.windowMs;
     const filtered = entries.filter((t) => t > cutoff);
-    store.set(backendId, filtered);
+    store.set(providerId, filtered);
     return filtered;
   }
 }

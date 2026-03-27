@@ -1,46 +1,46 @@
-import type { BackendState } from "../types.js";
+import type { ProviderState } from "../types.js";
 
 export class ConcurrencyTracker {
-  private sessions: Map<string, { backendId: string; timestamp: number }> =
+  private sessions: Map<string, { providerId: string; timestamp: number }> =
     new Map();
 
-  acquire(backendId: string, sessionId: string, backend: BackendState): boolean {
-    const maxConcurrent = backend.config.limits?.maxConcurrent;
-    if (maxConcurrent && backend.active >= maxConcurrent) {
+  acquire(providerId: string, sessionId: string, provider: ProviderState): boolean {
+    const maxConcurrent = provider.config.limits?.maxConcurrent;
+    if (maxConcurrent && provider.active >= maxConcurrent) {
       return false;
     }
 
-    this.sessions.set(sessionId, { backendId, timestamp: Date.now() });
-    backend.active++;
-    backend.totalConnections++;
+    this.sessions.set(sessionId, { providerId, timestamp: Date.now() });
+    provider.active++;
+    provider.totalConnections++;
     return true;
   }
 
-  release(sessionId: string, backend: BackendState): void {
+  release(sessionId: string, provider: ProviderState): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
     this.sessions.delete(sessionId);
-    backend.active = Math.max(0, backend.active - 1);
+    provider.active = Math.max(0, provider.active - 1);
   }
 
-  getActive(backendId: string): number {
+  getActive(providerId: string): number {
     let count = 0;
     for (const session of this.sessions.values()) {
-      if (session.backendId === backendId) count++;
+      if (session.providerId === providerId) count++;
     }
     return count;
   }
 
-  reconcile(backends: Map<string, BackendState>, maxAgeMs: number): number {
+  reconcile(providers: Map<string, ProviderState>, maxAgeMs: number): number {
     const now = Date.now();
     let cleaned = 0;
 
     for (const [sessionId, session] of this.sessions) {
       if (now - session.timestamp > maxAgeMs) {
-        const backend = backends.get(session.backendId);
-        if (backend) {
-          backend.active = Math.max(0, backend.active - 1);
+        const provider = providers.get(session.providerId);
+        if (provider) {
+          provider.active = Math.max(0, provider.active - 1);
         }
         this.sessions.delete(sessionId);
         cleaned++;

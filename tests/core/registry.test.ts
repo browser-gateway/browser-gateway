@@ -1,22 +1,22 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { BackendRegistry } from "../../src/core/backends/registry.js";
+import { ProviderRegistry } from "../../src/core/providers/registry.js";
 
-describe("BackendRegistry", () => {
-  let registry: BackendRegistry;
+describe("ProviderRegistry", () => {
+  let registry: ProviderRegistry;
 
   beforeEach(() => {
-    registry = new BackendRegistry();
+    registry = new ProviderRegistry();
   });
 
-  it("should register and retrieve a backend", () => {
+  it("should register and retrieve a provider", () => {
     registry.register("test", { url: "ws://test:3000", priority: 1 });
-    const backend = registry.get("test");
-    expect(backend).toBeDefined();
-    expect(backend!.id).toBe("test");
-    expect(backend!.config.url).toBe("ws://test:3000");
+    const provider = registry.get("test");
+    expect(provider).toBeDefined();
+    expect(provider!.id).toBe("test");
+    expect(provider!.config.url).toBe("ws://test:3000");
   });
 
-  it("should return undefined for unknown backend", () => {
+  it("should return undefined for unknown provider", () => {
     expect(registry.get("nonexistent")).toBeUndefined();
   });
 
@@ -28,7 +28,7 @@ describe("BackendRegistry", () => {
     expect(registry.size()).toBe(2);
   });
 
-  it("should return all backends", () => {
+  it("should return all providers", () => {
     registry.register("a", { url: "ws://a:3000", priority: 1 });
     registry.register("b", { url: "ws://b:3000", priority: 2 });
     const all = registry.getAll();
@@ -45,15 +45,15 @@ describe("BackendRegistry", () => {
     expect(sorted.map((b) => b.id)).toEqual(["high", "mid", "low"]);
   });
 
-  it("should initialize backend state correctly", () => {
+  it("should initialize provider state correctly", () => {
     registry.register("test", { url: "ws://test:3000", priority: 1 });
-    const backend = registry.get("test")!;
-    expect(backend.active).toBe(0);
-    expect(backend.healthy).toBe(true);
-    expect(backend.cooldownUntil).toBeNull();
-    expect(backend.failureCount).toBe(0);
-    expect(backend.successCount).toBe(0);
-    expect(backend.avgLatencyMs).toBe(0);
-    expect(backend.totalConnections).toBe(0);
+    const provider = registry.get("test")!;
+    expect(provider.active).toBe(0);
+    expect(provider.healthy).toBe(true);
+    expect(provider.cooldownUntil).toBeNull();
+    expect(provider.failureCount).toBe(0);
+    expect(provider.successCount).toBe(0);
+    expect(provider.avgLatencyMs).toBe(0);
+    expect(provider.totalConnections).toBe(0);
   });
 });

@@ -6,17 +6,17 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const GATEWAY_PORT = 13000;
-const BACKEND_PORT_1 = 13001;
-const BACKEND_PORT_2 = 13002;
+const PROVIDER_PORT_1 = 13001;
+const PROVIDER_PORT_2 = 13002;
 const CONFIG_PATH = "/tmp/bg-integration-test.yml";
 
-let backendServer1: Server;
-let backendServer2: Server;
-let backendWss1: WebSocketServer;
-let backendWss2: WebSocketServer;
+let echoServer1: Server;
+let echoServer2: Server;
+let providerWss1: WebSocketServer;
+let providerWss2: WebSocketServer;
 let gatewayProcess: ChildProcess;
 
-function createEchoBackend(port: number): { server: Server; wss: WebSocketServer } {
+function createEchoProvider(port: number): { server: Server; wss: WebSocketServer } {
   const server = createServer();
   const wss = new WebSocketServer({ server });
 
@@ -31,13 +31,13 @@ function createEchoBackend(port: number): { server: Server; wss: WebSocketServer
 }
 
 beforeAll(async () => {
-  const b1 = createEchoBackend(BACKEND_PORT_1);
-  backendServer1 = b1.server;
-  backendWss1 = b1.wss;
+  const b1 = createEchoProvider(PROVIDER_PORT_1);
+  echoServer1 = b1.server;
+  providerWss1 = b1.wss;
 
-  const b2 = createEchoBackend(BACKEND_PORT_2);
-  backendServer2 = b2.server;
-  backendWss2 = b2.wss;
+  const b2 = createEchoProvider(PROVIDER_PORT_2);
+  echoServer2 = b2.server;
+  providerWss2 = b2.wss;
 
   writeFileSync(
     CONFIG_PATH,
@@ -52,14 +52,14 @@ gateway:
     minRequestVolume: 2
   sessions:
     idleTimeoutMs: 10000
-backends:
+providers:
   echo-1:
-    url: ws://localhost:${BACKEND_PORT_1}
+    url: ws://localhost:${PROVIDER_PORT_1}
     limits:
       maxConcurrent: 1
     priority: 1
   echo-2:
-    url: ws://localhost:${BACKEND_PORT_2}
+    url: ws://localhost:${PROVIDER_PORT_2}
     limits:
       maxConcurrent: 2
     priority: 2
@@ -71,7 +71,7 @@ logging:
   gatewayProcess = spawn(
     "npx",
     ["tsx", "src/server/index.ts", "serve", "--config", CONFIG_PATH],
-    { cwd: process.cwd(), stdio: "pipe" }
+    { cwd: process.cwd(), stdio: "pipe", env: { ...process.env, BG_TOKEN: "" } }
   );
 
   await sleep(3000);
@@ -79,8 +79,8 @@ logging:
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
-  backendServer1?.close();
-  backendServer2?.close();
+  echoServer1?.close();
+  echoServer2?.close();
   try { unlinkSync(CONFIG_PATH); } catch {}
   await sleep(500);
 });
@@ -159,11 +159,11 @@ describe("Proxy - Health and Status", () => {
     expect(data.status).toBe("ok");
   });
 
-  it("should show backends in status", async () => {
+  it("should show providers in status", async () => {
     const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`);
     const data = await res.json() as any;
-    expect(data.backends).toHaveLength(2);
-    expect(data.backends.map((b: any) => b.id).sort()).toEqual(["echo-1", "echo-2"]);
+    expect(data.providers).toHaveLength(2);
+    expect(data.providers.map((b: any) => b.id).sort()).toEqual(["echo-1", "echo-2"]);
   });
 
   it("should track active sessions", async () => {
@@ -184,14 +184,14 @@ describe("Proxy - Health and Status", () => {
 });
 
 describe("Proxy - Concurrency Limits", () => {
-  it("should enforce maxConcurrent per backend", async () => {
+  it("should enforce maxConcurrent per provider", async () => {
     // echo-1 has maxConcurrent: 1, echo-2 has maxConcurrent: 2
     const ws1 = await connectToGateway();
     await sleep(200);
 
     // ws1 should be on echo-1 (priority 1)
     const status1 = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`).then(r => r.json()) as any;
-    const echo1 = status1.backends.find((b: any) => b.id === "echo-1");
+    const echo1 = status1.providers.find((b: any) => b.id === "echo-1");
     expect(echo1.active).toBe(1);
 
     // ws2 should go to echo-2 (echo-1 is full)
@@ -199,7 +199,7 @@ describe("Proxy - Concurrency Limits", () => {
     await sleep(200);
 
     const status2 = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`).then(r => r.json()) as any;
-    const echo2 = status2.backends.find((b: any) => b.id === "echo-2");
+    const echo2 = status2.providers.find((b: any) => b.id === "echo-2");
     expect(echo2.active).toBe(1);
 
     // Both should still work
@@ -213,7 +213,7 @@ describe("Proxy - Concurrency Limits", () => {
     await sleep(500);
   });
 
-  it("should return 503 when all backends at capacity", async () => {
+  it("should return 503 when all providers at capacity", async () => {
     // Fill all: echo-1 (max 1) + echo-2 (max 2) = 3 total
     const ws1 = await connectToGateway();
     const ws2 = await connectToGateway();
@@ -237,10 +237,10 @@ describe("Proxy - Concurrency Limits", () => {
 });
 
 describe("Proxy - Failover", () => {
-  it("should failover when primary backend goes down", async () => {
+  it("should failover when primary provider goes down", async () => {
     // Close echo-1 to simulate failure
-    backendServer1.close();
-    backendWss1.close();
+    echoServer1.close();
+    providerWss1.close();
     await sleep(500);
 
     // Should still connect via echo-2
@@ -249,15 +249,15 @@ describe("Proxy - Failover", () => {
     expect(echo).toBe("failover test");
 
     const status = await fetch(`http://localhost:${GATEWAY_PORT}/v1/sessions`).then(r => r.json()) as any;
-    expect(status.sessions[0].backendId).toBe("echo-2");
+    expect(status.sessions[0].providerId).toBe("echo-2");
 
     ws.close();
     await sleep(300);
 
     // Restart echo-1 for subsequent tests
-    const b1 = createEchoBackend(BACKEND_PORT_1);
-    backendServer1 = b1.server;
-    backendWss1 = b1.wss;
+    const b1 = createEchoProvider(PROVIDER_PORT_1);
+    echoServer1 = b1.server;
+    providerWss1 = b1.wss;
     await sleep(500);
   });
 });
@@ -268,20 +268,20 @@ describe("Proxy - Clean Disconnect", () => {
     await sleep(200);
 
     const before = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`).then(r => r.json()) as any;
-    const totalBefore = before.backends.reduce((sum: number, b: any) => sum + b.active, 0);
+    const totalBefore = before.providers.reduce((sum: number, b: any) => sum + b.active, 0);
     expect(totalBefore).toBeGreaterThanOrEqual(1);
 
     ws.close();
     await sleep(500);
 
     const after = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`).then(r => r.json()) as any;
-    const totalAfter = after.backends.reduce((sum: number, b: any) => sum + b.active, 0);
+    const totalAfter = after.providers.reduce((sum: number, b: any) => sum + b.active, 0);
     expect(totalAfter).toBe(0);
   });
 
   it("should increment totalConnections after session ends", async () => {
     const statusBefore = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`).then(r => r.json()) as any;
-    const totalBefore = statusBefore.backends.reduce((sum: number, b: any) => sum + b.totalConnections, 0);
+    const totalBefore = statusBefore.providers.reduce((sum: number, b: any) => sum + b.totalConnections, 0);
 
     const ws = await connectToGateway();
     await sendAndReceive(ws, "test");
@@ -289,7 +289,7 @@ describe("Proxy - Clean Disconnect", () => {
     await sleep(500);
 
     const statusAfter = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`).then(r => r.json()) as any;
-    const totalAfter = statusAfter.backends.reduce((sum: number, b: any) => sum + b.totalConnections, 0);
+    const totalAfter = statusAfter.providers.reduce((sum: number, b: any) => sum + b.totalConnections, 0);
     expect(totalAfter).toBeGreaterThan(totalBefore);
   });
 });

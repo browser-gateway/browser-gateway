@@ -8,3 +8,6 @@ dist/
 !.env.example
 .DS_Store
 coverage/
+gateway.dev.yml
+gateway.yml
+gateway.yml.backup

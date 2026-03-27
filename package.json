@@ -1,6 +1,6 @@
 {
   "name": "browser-gateway",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "The Unified Interface for Headless Browsers. Route, balance, and failover across any CDP endpoint.",
   "keywords": [
     "browser",
@@ -34,18 +34,24 @@
   },
   "files": [
     "dist",
+    "web/dist",
     "LICENSE",
     "README.md"
   ],
   "scripts": {
-    "dev": "tsx watch src/server/index.ts",
+    "dev": "tsx watch src/server/index.ts -- serve --config gateway.dev.yml & cd web && npm run dev",
+    "dev:server": "tsx watch src/server/index.ts -- serve --config gateway.dev.yml",
+    "dev:web": "cd web && npm run dev",
     "build": "tsc",
+    "build:web": "cd web && npm run build",
+    "build:all": "npm run build && npm run build:web",
     "start": "node dist/server/index.js",
+    "live": "npm run build:all && node dist/server/index.js",
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "tsc --noEmit",
-    "prepublishOnly": "npm run build",
-    "publish": "npm run build && npm publish --access public"
+    "prepublishOnly": "npm run build:all",
+    "publish": "npm run build:all && npm publish --access public"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.11",

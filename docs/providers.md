@@ -1,28 +1,28 @@
-# Supported Backends
+# Supported Providers
 
 browser-gateway works with any WebSocket endpoint. If your browser provider exposes a WebSocket URL, it works with the gateway.
 
-## How Backends Work
+## How Providers Work
 
-Each backend is just a WebSocket URL. The gateway doesn't care what's behind it - it forwards bytes transparently. You configure the URL (with any auth params baked in), set connection limits, and assign a priority.
+Each provider is just a WebSocket URL. The gateway doesn't care what's behind it - it forwards bytes transparently. You configure the URL (with any auth params baked in), set connection limits, and assign a priority.
 
 ```yaml
-backends:
-  my-backend:
+providers:
+  my-provider:
     url: <websocket-url-with-auth>
     limits:
       maxConcurrent: <number>
     priority: <number>
 ```
 
-## Backend Types
+## Provider Types
 
 ### Remote browser services (cloud)
 
 Cloud providers typically give you a WebSocket URL with an API key:
 
 ```yaml
-backends:
+providers:
   cloud-provider:
     url: wss://provider.example.com?token=${API_TOKEN}
     limits:
@@ -47,7 +47,7 @@ docker run -d -p 4000:3000 --shm-size=1gb \
 
 Config:
 ```yaml
-backends:
+providers:
   my-playwright:
     url: ws://playwright-host:4000
     limits:
@@ -73,7 +73,7 @@ curl http://localhost:9222/json/version
 
 Config:
 ```yaml
-backends:
+providers:
   my-chrome:
     url: ws://chrome-host:9222/devtools/browser/UUID
     limits:
@@ -83,20 +83,20 @@ backends:
 
 ## Connection Modes
 
-The gateway is protocol-agnostic - it forwards raw bytes without parsing. However, your client needs to use the correct connection method for the backend type:
+The gateway is protocol-agnostic - it forwards raw bytes without parsing. However, your client needs to use the correct connection method for the provider type:
 
-| Backend Type | Client Method |
+| Provider Type | Client Method |
 |-------------|--------------|
 | Playwright run-server | `chromium.connect(wsEndpoint)` |
 | Chrome CDP endpoints | `chromium.connectOverCDP(wsEndpoint)` |
 | Puppeteer (any) | `puppeteer.connect({ browserWSEndpoint })` |
 
-## Multiple Backends
+## Multiple Providers
 
-Mix any number of backends with different priorities:
+Mix any number of providers with different priorities:
 
 ```yaml
-backends:
+providers:
   primary:
     url: wss://provider-a.example.com?key=${KEY_A}
     limits:
@@ -116,7 +116,7 @@ backends:
     priority: 3
 ```
 
-The gateway tries them in priority order. If the primary is full or down, traffic routes to the next available backend automatically.
+The gateway tries them in priority order. If the primary is full or down, traffic routes to the next available provider automatically.
 
 ## Tips
 

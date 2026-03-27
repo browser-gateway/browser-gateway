@@ -27,16 +27,13 @@ browser-gateway serve
 # Custom config and port
 browser-gateway serve --config /etc/browser-gateway/gateway.yml --port 8080
 
-# Zero-config with env vars
-BG_BACKEND_URL=ws://localhost:4000 browser-gateway serve
-
 # With auth
 BG_TOKEN=secret browser-gateway serve
 ```
 
 ### check
 
-Test connectivity to all configured backends. Useful for verifying your config.
+Test connectivity to all configured providers. Useful for verifying your config.
 
 ```bash
 browser-gateway check [--config <path>]
@@ -45,18 +42,18 @@ browser-gateway check [--config <path>]
 Output:
 
 ```
-Backend Connectivity Check
+Provider Connectivity Check
 
   primary                 OK    340ms
   fallback-playwright     OK    12ms
   backup-chrome           FAIL  connection refused
 
-3 backend(s) checked
+3 provider(s) checked
 ```
 
 Exit codes:
-- `0` - All backends reachable
-- `1` - One or more backends unreachable
+- `0` - All providers reachable
+- `1` - One or more providers unreachable
 
 ### version
 
@@ -89,9 +86,7 @@ npx browser-gateway serve --config ./gateway.yml
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `BG_TOKEN` | Auth token for all connections | None (no auth) |
-| `BG_BACKEND_URL` | Single backend URL (no config file needed) | None |
 | `BG_PORT` | Server port | 9500 |
-| `BG_MAX_CONCURRENT` | Max connections for default backend | 10 |
 | `BG_CONFIG_PATH` | Path to config file | `./gateway.yml` |
 
 ## Process Signals

@@ -1,21 +1,22 @@
 import type { Logger } from "pino";
-import type { GatewayConfig, BackendState, Session } from "./types.js";
-import { BackendRegistry } from "./backends/registry.js";
-import { BackendSelector, type Strategy } from "./router/selector.js";
+import type { GatewayConfig, ProviderState, Session } from "./types.js";
+import { ProviderRegistry } from "./providers/registry.js";
+import { HealthChecker } from "./providers/health.js";
+import { ProviderSelector, type Strategy } from "./router/selector.js";
 import { ConcurrencyTracker } from "./tracking/concurrency.js";
 import { CooldownTracker } from "./tracking/cooldown.js";
 import { SessionTracker } from "./proxy/session.js";
 
 export class Gateway {
   readonly config: GatewayConfig;
-  readonly registry: BackendRegistry;
-  readonly selector: BackendSelector;
+  readonly registry: ProviderRegistry;
+  readonly selector: ProviderSelector;
   readonly concurrency: ConcurrencyTracker;
   readonly cooldown: CooldownTracker;
   readonly sessions: SessionTracker;
+  readonly healthChecker: HealthChecker;
   readonly logger: Logger;
 
-  private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private idleCheckTimer: ReturnType<typeof setInterval> | null = null;
   private onIdleSession?: (sessionId: string) => void;
@@ -24,82 +25,88 @@ export class Gateway {
     this.config = config;
     this.logger = logger;
 
-    this.registry = new BackendRegistry();
+    this.registry = new ProviderRegistry();
     this.concurrency = new ConcurrencyTracker();
     this.cooldown = new CooldownTracker(config.gateway.cooldown);
     this.sessions = new SessionTracker();
 
-    for (const [id, backendConfig] of Object.entries(config.backends)) {
-      this.registry.register(id, backendConfig);
-      this.logger.info({ backendId: id, url: this.maskUrl(backendConfig.url) }, "backend registered");
+    for (const [id, providerConfig] of Object.entries(config.providers)) {
+      this.registry.register(id, providerConfig);
+      this.logger.info({ providerId: id, url: this.maskUrl(providerConfig.url) }, "provider registered");
     }
 
-    this.selector = new BackendSelector(
+    this.selector = new ProviderSelector(
       this.registry,
       this.cooldown,
       config.gateway.defaultStrategy as Strategy
     );
 
+    this.healthChecker = new HealthChecker(
+      this.registry,
+      this.logger,
+      config.gateway.healthCheckInterval
+    );
+
     this.logger.info(
-      { backends: this.registry.size(), strategy: config.gateway.defaultStrategy },
+      { providers: this.registry.size(), strategy: config.gateway.defaultStrategy },
       "gateway initialized"
     );
   }
 
-  selectBackend(): BackendState | null {
+  selectProvider(): ProviderState | null {
     const candidates = this.selector.getCandidates();
     return candidates[0] ?? null;
   }
 
-  selectBackendWithFallbacks(): BackendState[] {
+  selectProviderWithFallbacks(): ProviderState[] {
     return this.selector.getCandidates();
   }
 
-  acquireSlot(backendId: string, sessionId: string): boolean {
-    const backend = this.registry.get(backendId);
-    if (!backend) return false;
-    return this.concurrency.acquire(backendId, sessionId, backend);
+  acquireSlot(providerId: string, sessionId: string): boolean {
+    const provider = this.registry.get(providerId);
+    if (!provider) return false;
+    return this.concurrency.acquire(providerId, sessionId, provider);
   }
 
-  releaseSlot(sessionId: string, backendId: string): void {
-    const backend = this.registry.get(backendId);
-    if (!backend) return;
-    this.concurrency.release(sessionId, backend);
+  releaseSlot(sessionId: string, providerId: string): void {
+    const provider = this.registry.get(providerId);
+    if (!provider) return;
+    this.concurrency.release(sessionId, provider);
   }
 
-  recordSuccess(backendId: string, latencyMs: number): void {
-    const backend = this.registry.get(backendId);
-    if (!backend) return;
-    this.cooldown.recordSuccess(backend);
+  recordSuccess(providerId: string, latencyMs: number): void {
+    const provider = this.registry.get(providerId);
+    if (!provider) return;
+    this.cooldown.recordSuccess(provider);
 
     const alpha = 0.3;
-    backend.avgLatencyMs = backend.avgLatencyMs === 0
+    provider.avgLatencyMs = provider.avgLatencyMs === 0
       ? latencyMs
-      : alpha * latencyMs + (1 - alpha) * backend.avgLatencyMs;
+      : alpha * latencyMs + (1 - alpha) * provider.avgLatencyMs;
   }
 
-  recordFailure(backendId: string): void {
-    const backend = this.registry.get(backendId);
-    if (!backend) return;
-    this.cooldown.recordFailure(backend);
+  recordFailure(providerId: string): void {
+    const provider = this.registry.get(providerId);
+    if (!provider) return;
+    this.cooldown.recordFailure(provider);
 
     this.logger.warn(
       {
-        backendId,
-        failureCount: backend.failureCount,
-        cooldownUntil: backend.cooldownUntil,
+        providerId,
+        failureCount: provider.failureCount,
+        cooldownUntil: provider.cooldownUntil,
       },
-      backend.cooldownUntil ? "backend entered cooldown" : "backend failure recorded"
+      provider.cooldownUntil ? "provider entered cooldown" : "provider failure recorded"
     );
   }
 
   getStatus(): {
-    backends: BackendState[];
+    providers: ProviderState[];
     activeSessions: number;
     strategy: string;
   } {
     return {
-      backends: this.registry.getAll(),
+      providers: this.registry.getAll(),
       activeSessions: this.sessions.count(),
       strategy: this.config.gateway.defaultStrategy,
     };
@@ -111,11 +118,11 @@ export class Gateway {
 
   start(): void {
     this.reconcileTimer = setInterval(() => {
-      const backends = new Map(
+      const providers = new Map(
         this.registry.getAll().map((b) => [b.id, b])
       );
       const cleaned = this.concurrency.reconcile(
-        backends,
+        providers,
         this.config.gateway.sessions.idleTimeoutMs * 2
       );
       if (cleaned > 0) {
@@ -128,18 +135,19 @@ export class Gateway {
       const idleSessions = this.sessions.getIdleSessions(idleTimeoutMs);
       for (const session of idleSessions) {
         this.logger.warn(
-          { sessionId: session.id, backendId: session.backendId, idleMs: Date.now() - session.lastActivity },
+          { sessionId: session.id, providerId: session.providerId, idleMs: Date.now() - session.lastActivity },
           "terminating idle session"
         );
         this.onIdleSession?.(session.id);
       }
     }, Math.min(idleTimeoutMs, 30_000));
 
+    this.healthChecker.start();
     this.logger.info("gateway started");
   }
 
   stop(): void {
-    if (this.healthCheckTimer) clearInterval(this.healthCheckTimer);
+    this.healthChecker.stop();
     if (this.reconcileTimer) clearInterval(this.reconcileTimer);
     if (this.idleCheckTimer) clearInterval(this.idleCheckTimer);
     this.logger.info("gateway stopped");
