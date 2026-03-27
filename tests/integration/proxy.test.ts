@@ -52,6 +52,9 @@ gateway:
     minRequestVolume: 2
   sessions:
     idleTimeoutMs: 10000
+  queue:
+    maxSize: 0
+    timeoutMs: 1000
 providers:
   echo-1:
     url: ws://localhost:${PROVIDER_PORT_1}

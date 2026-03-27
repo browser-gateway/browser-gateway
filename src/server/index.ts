@@ -30,6 +30,7 @@ function loadEnvFile(): void {
   }
 }
 import { Gateway } from "../core/index.js";
+import { WebhookNotifier } from "../core/notifications/webhooks.js";
 import { loadConfig } from "./config/loader.js";
 import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
@@ -117,6 +118,11 @@ async function startServer() {
   const gateway = new Gateway(config, logger);
   const token = process.env.BG_TOKEN;
 
+  if (config.webhooks.length > 0) {
+    WebhookNotifier.fromGateway(gateway, config.webhooks, logger);
+    logger.info({ count: config.webhooks.length }, "webhooks configured");
+  }
+
   const webDir = findWebDir();
   const app = createApp(gateway, token, webDir);
 
@@ -191,14 +197,15 @@ async function startServer() {
     }
   });
 
-  const shutdown = () => {
-    logger.info("shutting down...");
-    gateway.stop();
-    server.close(() => {
-      logger.info("server stopped");
-      process.exit(0);
-    });
-    setTimeout(() => process.exit(1), 5000);
+  const shutdown = async () => {
+    logger.info("shutdown signal received");
+
+    server.close();
+
+    await gateway.gracefulShutdown();
+
+    logger.info("server stopped");
+    process.exit(0);
   };
 
   process.on("SIGINT", shutdown);

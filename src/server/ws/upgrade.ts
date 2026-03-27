@@ -41,37 +41,50 @@ export function createWebSocketHandler(gateway: Gateway, logger: Logger, token?:
       }
     }
 
-    const sessionId = randomUUID();
-    const candidates = gateway.selectProviderWithFallbacks();
-
-    if (candidates.length === 0) {
-      logger.warn({ sessionId }, "no providers available");
-      socket.write(
-        "HTTP/1.1 503 Service Unavailable\r\n" +
-          "Content-Type: application/json\r\n\r\n" +
-          JSON.stringify({ error: "No providers available" })
-      );
+    if (gateway.shuttingDown) {
+      socket.write("HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json\r\n\r\n" +
+        JSON.stringify({ error: "Gateway is shutting down" }));
       socket.destroy();
       return;
     }
 
-    for (const provider of candidates) {
-      if (!gateway.acquireSlot(provider.id, sessionId)) {
-        logger.debug({ sessionId, providerId: provider.id }, "provider at capacity, trying next");
-        continue;
+    const sessionId = randomUUID();
+
+    const tryConnect = async (): Promise<boolean> => {
+      const candidates = gateway.selectProviderWithFallbacks();
+
+      if (candidates.length === 0 && gateway.registry.size() === 0) {
+        return false;
       }
 
-      const connected = await pipeToProvider(
-        gateway, logger, socket, head, req, sessionId, provider
-      );
+      for (const provider of candidates) {
+        if (!gateway.acquireSlot(provider.id, sessionId)) {
+          logger.debug({ sessionId, providerId: provider.id }, "provider at capacity, trying next");
+          continue;
+        }
 
-      if (connected) return;
+        const connected = await pipeToProvider(
+          gateway, logger, socket, head, req, sessionId, provider
+        );
 
-      gateway.releaseSlot(sessionId, provider.id);
-      gateway.recordFailure(provider.id);
-    }
+        if (connected) return true;
 
-    logger.error({ sessionId }, "all providers exhausted");
+        gateway.releaseSlot(sessionId, provider.id);
+        gateway.recordFailure(provider.id);
+      }
+
+      return false;
+    };
+
+    // Try immediate connection
+    if (await tryConnect()) return;
+
+    // Queue if all providers at capacity
+    const slotAvailable = await gateway.waitForSlot();
+    if (slotAvailable && await tryConnect()) return;
+
+    // All attempts failed
+    logger.warn({ sessionId, queueSize: gateway.queueSize }, "connection failed, all providers exhausted");
     socket.write(
       "HTTP/1.1 503 Service Unavailable\r\n" +
         "Content-Type: application/json\r\n\r\n" +
@@ -124,7 +137,6 @@ function pipeToProvider(
 
     let gotUpgradeResponse = false;
     let cleanedUp = false;
-    let messageCount = 0;
     const startTime = Date.now();
 
     let responseBuffer = Buffer.alloc(0);
@@ -139,12 +151,12 @@ function pipeToProvider(
       providerSocket.removeListener("data", onData);
 
       const headerStr = responseBuffer.subarray(0, headerEnd).toString();
-      const remainder = responseBuffer.subarray(headerEnd + 4);
 
       if (headerStr.startsWith("HTTP/1.1 101")) {
         gotUpgradeResponse = true;
 
         gateway.sessions.create(sessionId, provider.id);
+        gateway.emit("session.created", { sessionId, providerId: provider.id });
         logger.info({ sessionId, providerId: provider.id }, "session established");
 
         clientSocket.write(responseBuffer);
@@ -175,6 +187,8 @@ function pipeToProvider(
 
       const durationMs = Date.now() - startTime;
       gateway.recordSuccess(provider.id, durationMs);
+
+      gateway.emit("session.ended", { sessionId, providerId: provider.id, durationMs });
 
       logger.info(
         {

@@ -8,6 +8,7 @@ export const ProviderConfigSchema = z.object({
     })
     .optional(),
   priority: z.number().int().positive().default(1),
+  weight: z.number().int().positive().default(1),
 });
 
 const CooldownSchema = z.object({
@@ -20,15 +21,22 @@ const SessionsSchema = z.object({
   idleTimeoutMs: z.number().int().default(300000),
 });
 
+const QueueSchema = z.object({
+  maxSize: z.number().int().default(50),
+  timeoutMs: z.number().int().default(30000),
+});
+
 const GatewaySettingsSchema = z.object({
   port: z.number().int().default(9500),
   defaultStrategy: z
-    .enum(["priority-chain", "round-robin", "least-connections", "latency-optimized"])
+    .enum(["priority-chain", "round-robin", "least-connections", "latency-optimized", "weighted"])
     .default("priority-chain"),
   healthCheckInterval: z.number().int().default(30000),
   connectionTimeout: z.number().int().default(10000),
+  shutdownDrainMs: z.number().int().default(30000),
   cooldown: CooldownSchema.default(() => CooldownSchema.parse({})),
   sessions: SessionsSchema.default(() => SessionsSchema.parse({})),
+  queue: QueueSchema.default(() => QueueSchema.parse({})),
 });
 
 const DashboardSchema = z.object({
@@ -39,10 +47,16 @@ const LoggingSchema = z.object({
   level: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
+const WebhookSchema = z.object({
+  url: z.string().url(),
+  events: z.array(z.string()).optional(),
+});
+
 export const GatewayConfigSchema = z.object({
   version: z.number().default(1),
   gateway: GatewaySettingsSchema.default(() => GatewaySettingsSchema.parse({})),
   providers: z.record(z.string(), ProviderConfigSchema),
+  webhooks: z.array(WebhookSchema).default([]),
   dashboard: DashboardSchema.default(() => DashboardSchema.parse({})),
   logging: LoggingSchema.default(() => LoggingSchema.parse({})),
 });

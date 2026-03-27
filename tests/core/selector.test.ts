@@ -113,4 +113,23 @@ describe("ProviderSelector", () => {
 
     expect(candidates[0].id).toBe("measured");
   });
+
+  it("should apply weighted strategy with smooth distribution", () => {
+    registry.register("heavy", { url: "ws://heavy:3000", priority: 1, limits: {}, weight: 3 });
+    registry.register("light", { url: "ws://light:3000", priority: 1, limits: {}, weight: 1 });
+
+    const selector = new ProviderSelector(registry, cooldown, "weighted");
+
+    const picks: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      picks.push(selector.getCandidates()[0].id);
+    }
+
+    const heavyCount = picks.filter((p) => p === "heavy").length;
+    const lightCount = picks.filter((p) => p === "light").length;
+
+    // With weights 3:1 over 8 picks, heavy should get ~6, light ~2
+    expect(heavyCount).toBeGreaterThanOrEqual(5);
+    expect(lightCount).toBeGreaterThanOrEqual(1);
+  });
 });

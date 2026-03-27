@@ -107,8 +107,9 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string) {
     }));
 
     return c.json({
-      status: "ok",
+      status: status.shuttingDown ? "shutting_down" : "ok",
       activeSessions: status.activeSessions,
+      queueSize: status.queueSize,
       strategy: status.strategy,
       providers,
     });

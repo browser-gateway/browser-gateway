@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import type { Logger } from "pino";
 import type { GatewayConfig, ProviderState, Session } from "./types.js";
 import { ProviderRegistry } from "./providers/registry.js";
@@ -7,7 +8,26 @@ import { ConcurrencyTracker } from "./tracking/concurrency.js";
 import { CooldownTracker } from "./tracking/cooldown.js";
 import { SessionTracker } from "./proxy/session.js";
 
-export class Gateway {
+export interface GatewayEvents {
+  "session.created": { sessionId: string; providerId: string };
+  "session.ended": { sessionId: string; providerId: string; durationMs: number };
+  "provider.down": { providerId: string; reason: string };
+  "provider.up": { providerId: string };
+  "provider.cooldown": { providerId: string; cooldownMs: number };
+  "queue.added": { position: number; total: number };
+  "queue.timeout": { waitMs: number };
+  "shutdown.start": {};
+  "shutdown.draining": { activeSessions: number };
+  "shutdown.complete": {};
+}
+
+interface QueueEntry {
+  resolve: (value: boolean) => void;
+  enqueuedAt: number;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+export class Gateway extends EventEmitter {
   readonly config: GatewayConfig;
   readonly registry: ProviderRegistry;
   readonly selector: ProviderSelector;
@@ -20,8 +40,19 @@ export class Gateway {
   private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private idleCheckTimer: ReturnType<typeof setInterval> | null = null;
   private onIdleSession?: (sessionId: string) => void;
+  private queue: QueueEntry[] = [];
+  private _shuttingDown = false;
+
+  get shuttingDown(): boolean {
+    return this._shuttingDown;
+  }
+
+  get queueSize(): number {
+    return this.queue.length;
+  }
 
   constructor(config: GatewayConfig, logger: Logger) {
+    super();
     this.config = config;
     this.logger = logger;
 
@@ -72,6 +103,8 @@ export class Gateway {
     const provider = this.registry.get(providerId);
     if (!provider) return;
     this.concurrency.release(sessionId, provider);
+
+    this.dequeueNext();
   }
 
   recordSuccess(providerId: string, latencyMs: number): void {
@@ -88,7 +121,16 @@ export class Gateway {
   recordFailure(providerId: string): void {
     const provider = this.registry.get(providerId);
     if (!provider) return;
+
+    const wasCooledDown = !!provider.cooldownUntil;
     this.cooldown.recordFailure(provider);
+
+    if (provider.cooldownUntil && !wasCooledDown) {
+      this.emit("provider.cooldown", {
+        providerId,
+        cooldownMs: provider.cooldownUntil - Date.now(),
+      });
+    }
 
     this.logger.warn(
       {
@@ -100,15 +142,122 @@ export class Gateway {
     );
   }
 
+  // --- Queue ---
+
+  async waitForSlot(timeoutMs?: number): Promise<boolean> {
+    if (this._shuttingDown) return false;
+
+    const candidates = this.selector.getCandidates();
+    if (candidates.length > 0) return true;
+
+    const maxQueue = this.config.gateway.queue?.maxSize ?? 50;
+    const queueTimeout = timeoutMs ?? this.config.gateway.queue?.timeoutMs ?? 30000;
+
+    if (this.queue.length >= maxQueue) {
+      this.logger.warn({ queueSize: this.queue.length, maxQueue }, "queue full, rejecting");
+      return false;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => {
+        const idx = this.queue.findIndex((e) => e.resolve === resolve);
+        if (idx !== -1) this.queue.splice(idx, 1);
+        this.logger.debug({ waitMs: queueTimeout }, "queue timeout");
+        this.emit("queue.timeout", { waitMs: queueTimeout });
+        resolve(false);
+      }, queueTimeout);
+
+      this.queue.push({ resolve, enqueuedAt: Date.now(), timer });
+
+      this.logger.info(
+        { position: this.queue.length, total: this.queue.length },
+        "request queued"
+      );
+      this.emit("queue.added", { position: this.queue.length, total: this.queue.length });
+    });
+  }
+
+  private dequeueNext(): void {
+    if (this.queue.length === 0) return;
+
+    const candidates = this.selector.getCandidates();
+    if (candidates.length === 0) return;
+
+    const entry = this.queue.shift();
+    if (!entry) return;
+
+    clearTimeout(entry.timer);
+    const waitMs = Date.now() - entry.enqueuedAt;
+    this.logger.info({ waitMs, remaining: this.queue.length }, "request dequeued");
+    entry.resolve(true);
+  }
+
+  private drainQueue(): void {
+    for (const entry of this.queue) {
+      clearTimeout(entry.timer);
+      entry.resolve(false);
+    }
+    this.queue = [];
+  }
+
+  // --- Shutdown ---
+
+  async gracefulShutdown(drainTimeoutMs?: number): Promise<void> {
+    if (this._shuttingDown) return;
+    this._shuttingDown = true;
+
+    const timeout = drainTimeoutMs ?? this.config.gateway.shutdownDrainMs ?? 30000;
+
+    this.logger.info("graceful shutdown initiated");
+    this.emit("shutdown.start", {});
+
+    this.drainQueue();
+
+    const activeSessions = this.sessions.count();
+    if (activeSessions > 0) {
+      this.logger.info({ activeSessions, drainTimeoutMs: timeout }, "draining active sessions");
+      this.emit("shutdown.draining", { activeSessions });
+
+      await new Promise<void>((resolve) => {
+        const checkInterval = setInterval(() => {
+          if (this.sessions.count() === 0) {
+            clearInterval(checkInterval);
+            clearTimeout(forceTimer);
+            resolve();
+          }
+        }, 500);
+
+        const forceTimer = setTimeout(() => {
+          clearInterval(checkInterval);
+          const remaining = this.sessions.count();
+          if (remaining > 0) {
+            this.logger.warn({ remaining }, "drain timeout, force closing remaining sessions");
+          }
+          resolve();
+        }, timeout);
+      });
+    }
+
+    this.stop();
+    this.logger.info("graceful shutdown complete");
+    this.emit("shutdown.complete", {});
+  }
+
+  // --- Status ---
+
   getStatus(): {
     providers: ProviderState[];
     activeSessions: number;
     strategy: string;
+    queueSize: number;
+    shuttingDown: boolean;
   } {
     return {
       providers: this.registry.getAll(),
       activeSessions: this.sessions.count(),
       strategy: this.config.gateway.defaultStrategy,
+      queueSize: this.queue.length,
+      shuttingDown: this._shuttingDown,
     };
   }
 
