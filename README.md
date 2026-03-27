@@ -44,10 +44,13 @@ const browser = await chromium.connect('ws://localhost:9500/v1/connect');
 - **Connection Routing** - Route WebSocket/CDP connections to the right provider
 - **Automatic Failover** - Provider down? Next one instantly, zero client changes
 - **Per-Provider Limits** - Set `maxConcurrent` per provider, gateway enforces it
-- **Load Balancing** - Priority chain, round-robin, or least-connections
+- **Load Balancing** - Priority chain, round-robin, least-connections, latency-optimized
 - **Cooldown System** - Automatically skip failing providers, recover after TTL
-- **Status API** - Real-time provider health, active sessions, and metrics
-- **Auth** - Optional token-based auth for all endpoints
+- **Health Checks** - Periodic connectivity probes detect unhealthy providers
+- **Web Dashboard** - Built-in UI to manage providers, view sessions, edit config
+- **Provider Management** - Add, edit, delete, and test providers from the dashboard
+- **Config Editor** - Edit gateway.yml with syntax highlighting and validation
+- **Auth** - Token-based auth with secure HttpOnly cookie for the dashboard
 - **CLI** - `serve`, `check`, `version`, `help`
 - **Protocol Agnostic** - Works with Playwright, Puppeteer, any WebSocket protocol
 - **ws:// and wss://** - Supports both plain and TLS providers
@@ -89,7 +92,7 @@ providers:
 browser-gateway serve
 ```
 
-### Connect
+Open `http://localhost:9500/web` to see the dashboard. Or connect directly:
 
 ```typescript
 import { chromium } from 'playwright-core';
@@ -99,16 +102,23 @@ const browser = await chromium.connect('ws://localhost:9500/v1/connect');
 
 // For Chrome/CDP providers
 const browser = await chromium.connectOverCDP('ws://localhost:9500/v1/connect');
-
-const page = await browser.newPage();
-await page.goto('https://example.com');
-console.log(await page.title());
-await browser.close();
 ```
 
-That's it. If your primary provider goes down, traffic automatically routes to the fallback.
+If your primary provider goes down, traffic automatically routes to the fallback.
 
 ---
+
+## Dashboard
+
+Built-in web dashboard at `http://localhost:9500/web`:
+
+- **Overview** - Active sessions, provider health, routing strategy
+- **Providers** - Add, edit, delete, and test browser providers. Changes save to gateway.yml automatically
+- **Sessions** - Live view of active browser connections with duration and message counts
+- **Config** - Edit gateway.yml directly with syntax highlighting and validation
+- **Logs** - Coming soon (check terminal output for now)
+
+Dark theme by default with light theme toggle. Secured with HttpOnly cookie auth when `BG_TOKEN` is set.
 
 ---
 
@@ -125,28 +135,12 @@ BG_TOKEN=my-secret-token browser-gateway serve
 - **Dashboard** shows a login form, sets a secure HttpOnly cookie
 - **Health endpoint** (`/health`) is always public
 
-```typescript
-const browser = await chromium.connect('ws://localhost:9500/v1/connect?token=my-secret-token');
-```
-
----
-
-## Dashboard
-
-Built-in web dashboard at `/web`:
-
-```
-http://localhost:9500/web
-```
-
-Shows real-time provider health, active sessions, connection metrics, and cooldown status. Dark theme by default with light theme toggle.
-
 ---
 
 ## CLI
 
 ```bash
-browser-gateway serve                    # Start the gateway
+browser-gateway serve                    # Start the gateway + dashboard
 browser-gateway serve --port 8080        # Custom port
 browser-gateway serve --config path.yml  # Custom config
 browser-gateway check                    # Test provider connectivity
@@ -163,39 +157,15 @@ browser-gateway help                     # Show help
 | `/v1/connect` | WebSocket | Connect to a browser (the core feature) |
 | `/v1/status` | GET | Gateway health + provider status |
 | `/v1/sessions` | GET | Active sessions |
+| `/v1/providers` | GET | List configured providers |
+| `/v1/providers` | POST | Add a new provider |
+| `/v1/providers/:id` | PUT | Update a provider |
+| `/v1/providers/:id` | DELETE | Remove a provider |
+| `/v1/providers/:id/test` | POST | Test provider connectivity |
+| `/v1/config` | GET | Read current config as YAML |
+| `/v1/config` | PUT | Save config (with validation) |
+| `/v1/config/validate` | POST | Validate YAML without saving |
 | `/health` | GET | Simple health check |
-
-### GET /v1/status
-
-```json
-{
-  "status": "ok",
-  "activeSessions": 7,
-  "strategy": "priority-chain",
-  "providers": [
-    {
-      "id": "primary",
-      "healthy": true,
-      "active": 4,
-      "maxConcurrent": 5,
-      "cooldownUntil": null,
-      "avgLatencyMs": 340,
-      "totalConnections": 1247,
-      "priority": 1
-    },
-    {
-      "id": "fallback",
-      "healthy": true,
-      "active": 3,
-      "maxConcurrent": 10,
-      "cooldownUntil": null,
-      "avgLatencyMs": 12,
-      "totalConnections": 893,
-      "priority": 2
-    }
-  ]
-}
-```
 
 ---
 
@@ -241,20 +211,21 @@ The gateway never parses or modifies WebSocket messages. It's a transparent pipe
 
 ## Roadmap
 
-### Shipped (v0.1.x)
+### Shipped (v0.1.2)
 - [x] WebSocket proxy with automatic failover
 - [x] Per-provider concurrency limits
 - [x] TTL-based cooldown system
 - [x] Load balancing (priority-chain, round-robin, least-connections, latency-optimized)
 - [x] ws:// and wss:// (TLS) provider support
 - [x] Token-based auth (WebSocket + HTTP API + dashboard cookie)
-- [x] Web dashboard with login, real-time status, sessions
+- [x] Web dashboard (overview, providers, sessions, config editor, logs)
+- [x] Provider management (add, edit, delete, test from UI)
+- [x] Config editor (YAML with syntax highlighting + validation)
 - [x] Health check probes (periodic provider connectivity)
-- [x] Status and sessions API
+- [x] Status, sessions, and provider APIs
 - [x] Idle session timeout
 - [x] .env auto-loading
 - [x] CLI (serve, check, version)
-- [x] Zero-config mode (starts with no providers, shows setup guide)
 
 ### Next
 - [ ] `browser-gateway init` (interactive config generator)
