@@ -1,0 +1,17 @@
+node_modules
+web/node_modules
+web/.next
+web/dist
+dist
+.git
+.env
+.env.*
+!.env.example
+gateway.dev.yml
+gateway.yml
+gateway.yml.backup
+*.tgz
+coverage
+.DS_Store
+planning
+tests

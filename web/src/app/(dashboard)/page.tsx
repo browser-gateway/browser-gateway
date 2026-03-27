@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Server } from "lucide-react";
+import { Server, Copy, Check } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import type { GatewayStatus } from "@/lib/api";
 import { fetchStatus } from "@/lib/api";
 
@@ -92,6 +93,8 @@ export default function OverviewPage() {
           Gateway status, active browser sessions, and provider health.
         </p>
       </div>
+
+      <ConnectionEndpoint />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="glass">
@@ -193,5 +196,78 @@ export default function OverviewPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ConnectionEndpoint() {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  let wsUrl = "ws://localhost:9500/v1/connect";
+  if (typeof window !== "undefined") {
+    const isSecure = window.location.protocol === "https:";
+    const protocol = isSecure ? "wss" : "ws";
+    const host = window.location.hostname;
+    const port = window.location.port;
+    const portSuffix = (isSecure && port === "443") || (!isSecure && port === "80") || !port ? "" : `:${port}`;
+    wsUrl = `${protocol}://${host}${portSuffix}/v1/connect`;
+  }
+
+  const copy = async (text: string, id: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(id);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  return (
+    <Card className="glass">
+      <CardContent className="px-5 py-4 space-y-3">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">Connection Endpoint</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Use this URL in your Playwright, Puppeteer, or any WebSocket client to connect through the gateway.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <code className="flex-1 text-sm font-mono bg-muted/50 rounded-md px-3 py-2 truncate">
+            {wsUrl}
+          </code>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-8 text-xs gap-1.5 shrink-0"
+            onClick={() => copy(wsUrl, "ws")}
+          >
+            {copied === "ws" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied === "ws" ? "Copied" : "Copy"}
+          </Button>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 text-xs text-muted-foreground">
+          <div className="space-y-1.5">
+            <p className="font-medium text-foreground/80">Playwright</p>
+            <div className="flex items-center gap-1.5">
+              <code className="flex-1 bg-muted/30 rounded px-2 py-1 font-mono truncate text-[11px]">
+                chromium.connect('{wsUrl}')
+              </code>
+              <button onClick={() => copy(`const browser = await chromium.connect('${wsUrl}');`, "pw")} className="shrink-0 text-muted-foreground hover:text-foreground">
+                {copied === "pw" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <p className="font-medium text-foreground/80">Puppeteer</p>
+            <div className="flex items-center gap-1.5">
+              <code className="flex-1 bg-muted/30 rounded px-2 py-1 font-mono truncate text-[11px]">
+                puppeteer.connect({'{'} browserWSEndpoint: '{wsUrl}' {'}'})
+              </code>
+              <button onClick={() => copy(`const browser = await puppeteer.connect({ browserWSEndpoint: '${wsUrl}' });`, "pp")} className="shrink-0 text-muted-foreground hover:text-foreground">
+                {copied === "pp" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              </button>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
