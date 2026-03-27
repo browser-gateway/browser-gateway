@@ -209,39 +209,6 @@ The gateway never parses or modifies WebSocket messages. It's a transparent pipe
 
 ---
 
-## Roadmap
-
-### Shipped (v0.1.2)
-- [x] WebSocket proxy with automatic failover
-- [x] Per-provider concurrency limits
-- [x] TTL-based cooldown system
-- [x] Load balancing (priority-chain, round-robin, least-connections, latency-optimized)
-- [x] ws:// and wss:// (TLS) provider support
-- [x] Token-based auth (WebSocket + HTTP API + dashboard cookie)
-- [x] Web dashboard (overview, providers, sessions, config editor, logs)
-- [x] Provider management (add, edit, delete, test from UI)
-- [x] Config editor (YAML with syntax highlighting + validation)
-- [x] Health check probes (periodic provider connectivity)
-- [x] Status, sessions, and provider APIs
-- [x] Idle session timeout
-- [x] .env auto-loading
-- [x] CLI (serve, check, version)
-
-### Next
-- [ ] `browser-gateway init` (interactive config generator)
-- [ ] Docker image on GHCR
-
-### Planned
-- [ ] Quota tracking (monthly usage limits per provider)
-- [ ] Webhook notifications (provider down, quota warnings)
-- [ ] Pre-connect hooks (for providers needing session creation)
-- [ ] Config hot-reload (apply changes without restart)
-- [ ] REST convenience endpoints (screenshot, content, PDF)
-- [ ] Multi-instance support (Redis shared state)
-- [ ] OpenTelemetry integration
-
----
-
 ## Contributing
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
