@@ -44,8 +44,11 @@ const browser = await chromium.connect('ws://localhost:9500/v1/connect');
 - **Connection Routing** - Route WebSocket/CDP connections to the right provider
 - **Automatic Failover** - Provider down? Next one instantly, zero client changes
 - **Per-Provider Limits** - Set `maxConcurrent` per provider, gateway enforces it
-- **Load Balancing** - Priority chain, round-robin, least-connections, latency-optimized
+- **5 Load Balancing Strategies** - Priority chain, round-robin, least-connections, latency-optimized, weighted
 - **Cooldown System** - Automatically skip failing providers, recover after TTL
+- **Request Queue** - All providers busy? Connections wait in a queue instead of failing
+- **Graceful Shutdown** - Active sessions drain cleanly on SIGTERM/SIGINT (configurable timeout)
+- **Webhooks** - Get notified (Slack, Discord, custom) when providers go down, recover, or queue overflows
 - **Health Checks** - Periodic connectivity probes detect unhealthy providers
 - **Web Dashboard** - Built-in UI to manage providers, view sessions, edit config
 - **Provider Management** - Add, edit, delete, and test providers from the dashboard
@@ -110,15 +113,19 @@ If your primary provider goes down, traffic automatically routes to the fallback
 
 ## Dashboard
 
-Built-in web dashboard at `http://localhost:9500/web`:
+Built-in web dashboard at `http://localhost:9500/web`. No extra setup — it's served from the same port as the gateway.
 
-- **Overview** - Active sessions, provider health, routing strategy
-- **Providers** - Add, edit, delete, and test browser providers. Changes save to gateway.yml automatically
-- **Sessions** - Live view of active browser connections with duration and message counts
-- **Config** - Edit gateway.yml directly with syntax highlighting and validation
-- **Logs** - Coming soon (check terminal output for now)
+| Page | What You Can Do |
+|------|----------------|
+| **Overview** | See gateway health at a glance — active sessions, provider status, connection URL with copy-paste snippets |
+| **Providers** | Add, edit, delete, and test browser providers. Test connectivity before saving. Changes write to gateway.yml automatically |
+| **Sessions** | Live table of every active browser connection — which provider it's on, how long it's been open, message count |
+| **Config** | Edit gateway.yml directly in the browser with syntax highlighting, validation, and automatic backups |
+| **Logs** | Coming soon (check terminal output for now) |
 
-Dark theme by default with light theme toggle. Secured with HttpOnly cookie auth when `BG_TOKEN` is set.
+Dark theme by default with light theme toggle. If `BG_TOKEN` is set, the dashboard shows a login form and uses a secure HttpOnly cookie — no token in the URL.
+
+See [Dashboard Guide](./docs/dashboard.md) for a detailed walkthrough of every page.
 
 ---
 
@@ -184,13 +191,14 @@ docker run -d \
 ## How It Works
 
 1. Client connects to `ws://gateway:9500/v1/connect`
-2. Gateway selects a provider (priority, health, capacity)
+2. Gateway selects a provider using your [routing strategy](./docs/load-balancing.md) (checks health, capacity, cooldowns)
 3. Gateway opens a raw TCP connection to the provider
 4. HTTP upgrade request is forwarded to the provider
 5. Provider responds with `101 Switching Protocols`
 6. Bidirectional TCP pipe established: `client <-> gateway <-> provider`
 7. All WebSocket messages forwarded transparently
-8. On disconnect: session cleaned up, metrics updated
+8. On disconnect: session cleaned up, concurrency slot released, metrics updated
+9. If all providers were full at step 2, the connection [waits in a queue](./docs/request-queue.md) until a slot opens
 
 The gateway never parses or modifies WebSocket messages. It's a transparent pipe with smart routing.
 
@@ -201,10 +209,13 @@ The gateway never parses or modifies WebSocket messages. It's a transparent pipe
 - [Getting Started](./docs/getting-started.md)
 - [Configuration Reference](./docs/configuration.md)
 - [How Failover Works](./docs/failover.md)
-- [Load Balancing Strategies](./docs/load-balancing.md)
+- [Load Balancing Strategies](./docs/load-balancing.md) - Priority chain, round-robin, least-connections, latency-optimized, weighted
+- [Request Queue](./docs/request-queue.md) - What happens when all providers are busy
+- [Webhooks](./docs/webhooks.md) - Get notified when providers go down or recover
+- [Web Dashboard](./docs/dashboard.md) - Every page explained with what you can do
 - [Supported Providers](./docs/providers.md)
 - [Session Lifecycle](./docs/session-lifecycle.md)
-- [CLI Reference](./docs/cli.md)
+- [CLI Reference](./docs/cli.md) - Commands and graceful shutdown
 - [Docker Deployment](./docs/docker.md)
 
 ---

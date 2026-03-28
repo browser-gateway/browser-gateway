@@ -138,6 +138,7 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string) {
       url: p.url.replace(/([?&])(token|apiKey|key|secret|password)=[^&]*/gi, "$1$2=***"),
       maxConcurrent: p.limits?.maxConcurrent ?? null,
       priority: p.priority,
+      weight: p.weight ?? 1,
     }));
     return c.json({ providers });
   });
@@ -148,6 +149,7 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string) {
     const url = body.url as string | undefined;
     const maxConcurrent = body.maxConcurrent as number | undefined;
     const priority = body.priority as number | undefined;
+    const weight = body.weight as number | undefined;
 
     if (!id || !url) {
       return c.json({ error: "Missing required fields: id, url" }, 400);
@@ -165,6 +167,7 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string) {
       url,
       limits: maxConcurrent ? { maxConcurrent } : undefined,
       priority: priority ?? 1,
+      weight: weight ?? 1,
     });
 
     if (!providerConfig.success) {
@@ -194,12 +197,14 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string) {
     const url = body.url as string | undefined;
     const maxConcurrent = body.maxConcurrent as number | undefined;
     const priority = body.priority as number | undefined;
+    const weight = body.weight as number | undefined;
 
     const existing = gateway.config.providers[id];
     const providerConfig = ProviderConfigSchema.safeParse({
       url: url ?? existing.url,
       limits: maxConcurrent !== undefined ? { maxConcurrent } : existing.limits,
       priority: priority ?? existing.priority,
+      weight: weight ?? existing.weight ?? 1,
     });
 
     if (!providerConfig.success) {

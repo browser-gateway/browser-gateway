@@ -20,11 +20,15 @@ version: 1
 
 gateway:
   port: 9500                          # Server port (default: 9500)
-  defaultStrategy: priority-chain      # Routing strategy (see Load Balancing docs)
-  connectionTimeout: 10000             # Max ms to wait for provider connection (default: 10000)
+  defaultStrategy: priority-chain      # How the gateway chooses which provider to use
+                                       # Options: priority-chain, round-robin, least-connections,
+                                       #          latency-optimized, weighted
+  connectionTimeout: 10000             # Max ms to wait when connecting to a provider (default: 10000)
                                        # Tip: increase to 20000-30000 for cloud providers that
                                        # launch browsers on-demand (cold start can take 10-15s)
-  healthCheckInterval: 30000           # ms between health checks (default: 30000)
+  healthCheckInterval: 30000           # How often to check if providers are alive (default: 30000)
+  shutdownDrainMs: 30000               # When stopping the gateway, how long to wait for active
+                                       # sessions to finish before force-closing (default: 30000)
 
   cooldown:
     defaultMs: 30000                   # How long to skip a failing provider (default: 30000)
@@ -32,17 +36,27 @@ gateway:
     minRequestVolume: 3                # Min connection attempts before evaluating (default: 3)
 
   sessions:
-    idleTimeoutMs: 300000              # Close idle sessions after this (default: 300000 = 5 min)
+    idleTimeoutMs: 300000              # Close sessions with no activity after this (default: 300000 = 5 min)
+
+  queue:
+    maxSize: 50                        # Max requests waiting when all providers are busy (default: 50)
+    timeoutMs: 30000                   # How long a request waits in queue before giving up (default: 30000)
 
 providers:
   provider-name:                        # Your name for this provider (any string)
     url: wss://provider.com?token=xxx  # WebSocket URL including any auth params
     limits:
-      maxConcurrent: 10                # Max simultaneous connections (optional)
+      maxConcurrent: 10                # Max simultaneous connections (optional, no limit if omitted)
     priority: 1                        # Lower number = tried first (default: 1)
+    weight: 1                          # For weighted strategy: higher = more traffic (default: 1)
+
+# Optional: get notified when things happen
+webhooks:
+  - url: https://hooks.slack.com/services/xxx    # Where to send notifications
+    events: [provider.cooldown, provider.down]    # Which events (omit for all events)
 
 dashboard:
-  enabled: true                        # Enable web dashboard (default: true)
+  enabled: true                        # Enable web dashboard at /web (default: true)
 
 logging:
   level: info                          # debug | info | warn | error (default: info)
@@ -89,6 +103,25 @@ priority: 1    # Lower = higher priority. Tried first in priority-chain strategy
 ```
 
 Providers with the same priority are tried in config order.
+
+### Weight
+
+```yaml
+weight: 3    # For weighted strategy only. Higher = more traffic. Default: 1.
+```
+
+Weights only matter when using the `weighted` strategy. A provider with `weight: 3` gets 3x more traffic than one with `weight: 1`. See [Load Balancing](./load-balancing.md#weighted) for detailed examples.
+
+## Deep Dives
+
+Each major feature has its own guide with real-world examples:
+
+- **[Load Balancing](./load-balancing.md)** - All 5 strategies explained with when to use each
+- **[Failover](./failover.md)** - How automatic failover works, cooldown system
+- **[Request Queue](./request-queue.md)** - What happens when all providers are busy
+- **[Webhooks](./webhooks.md)** - Get notifications when providers go down or recover
+- **[Session Lifecycle](./session-lifecycle.md)** - What happens during connect and disconnect
+- **[Graceful Shutdown](./cli.md#graceful-shutdown)** - How the gateway shuts down cleanly
 
 ## Environment Variable Interpolation
 

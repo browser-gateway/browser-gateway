@@ -51,6 +51,7 @@ export async function addProvider(data: {
   url: string;
   maxConcurrent?: number;
   priority?: number;
+  weight?: number;
 }): Promise<{ ok: boolean; error?: string; details?: string[] }> {
   const res = await fetch(`${API_BASE}/v1/providers`, {
     method: "POST",
@@ -63,7 +64,7 @@ export async function addProvider(data: {
 
 export async function updateProvider(
   id: string,
-  data: { url?: string; maxConcurrent?: number; priority?: number }
+  data: { url?: string; maxConcurrent?: number; priority?: number; weight?: number }
 ): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`${API_BASE}/v1/providers/${id}`, {
     method: "PUT",
@@ -150,6 +151,7 @@ export interface ProviderConfigItem {
   url: string;
   maxConcurrent: number | null;
   priority: number;
+  weight: number;
 }
 
 export interface ProviderListResponse {
@@ -168,6 +170,7 @@ export interface SessionInfo {
 export interface GatewayStatus {
   status: string;
   activeSessions: number;
+  queueSize: number;
   strategy: string;
   providers: ProviderStatus[];
 }

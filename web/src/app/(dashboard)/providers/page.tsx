@@ -182,10 +182,15 @@ export default function ProvidersPage() {
 
                     <p className="text-xs text-muted-foreground font-mono truncate">{provider.url}</p>
 
-                    <div className="flex items-center gap-5 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-5 text-xs text-muted-foreground flex-wrap">
                       <span>
                         Max connections: <span className="text-foreground font-mono">{provider.maxConcurrent ?? "unlimited"}</span>
                       </span>
+                      {provider.weight > 1 && (
+                        <span>
+                          Weight: <span className="text-foreground font-mono">{provider.weight}</span>
+                        </span>
+                      )}
                       {live && (
                         <>
                           <span>
@@ -246,7 +251,7 @@ export default function ProvidersPage() {
                 if (result.ok) { setModalOpen(false); await refresh(); }
                 else setError(result.error ?? "Failed to update");
               } else {
-                const result = await addProvider(data as { id: string; url: string; maxConcurrent?: number; priority?: number });
+                const result = await addProvider(data as { id: string; url: string; maxConcurrent?: number; priority?: number; weight?: number });
                 if (result.ok) { setModalOpen(false); await refresh(); }
                 else setError(result.error ?? "Failed to add");
               }
@@ -267,7 +272,7 @@ function ProviderForm({
   onTest,
 }: {
   initial?: ProviderConfigItem | null;
-  onSave: (data: { id?: string; url: string; maxConcurrent?: number; priority?: number }) => Promise<void>;
+  onSave: (data: { id?: string; url: string; maxConcurrent?: number; priority?: number; weight?: number }) => Promise<void>;
   onCancel: () => void;
   onTest: (url: string) => Promise<{ ok: boolean; latencyMs: number; error?: string }>;
 }) {
@@ -275,6 +280,7 @@ function ProviderForm({
   const [url, setUrl] = useState(initial?.url ?? "");
   const [maxConcurrent, setMaxConcurrent] = useState(initial?.maxConcurrent?.toString() ?? "");
   const [priority, setPriority] = useState(initial?.priority?.toString() ?? "1");
+  const [weight, setWeight] = useState(initial?.weight?.toString() ?? "1");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null);
@@ -290,6 +296,7 @@ function ProviderForm({
     else if (!url.startsWith("ws://") && !url.startsWith("wss://")) errs.url = "URL must start with ws:// (local) or wss:// (secure/cloud)";
     if (maxConcurrent && (isNaN(Number(maxConcurrent)) || Number(maxConcurrent) < 1)) errs.maxConcurrent = "Must be a positive number";
     if (priority && (isNaN(Number(priority)) || Number(priority) < 1)) errs.priority = "Must be a positive number";
+    if (weight && (isNaN(Number(weight)) || Number(weight) < 1)) errs.weight = "Must be a positive number";
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -303,6 +310,7 @@ function ProviderForm({
       url: url.trim(),
       maxConcurrent: maxConcurrent ? Number(maxConcurrent) : undefined,
       priority: priority ? Number(priority) : undefined,
+      weight: weight ? Number(weight) : undefined,
     });
     setSaving(false);
   };
@@ -363,7 +371,7 @@ function ProviderForm({
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3">
         <div>
           <label className="text-sm font-medium block mb-1.5">Max Connections</label>
           <input
@@ -376,7 +384,7 @@ function ProviderForm({
           />
           {errors.maxConcurrent && <p className="text-xs text-destructive mt-1">{errors.maxConcurrent}</p>}
           <p className="text-xs text-muted-foreground mt-1.5">
-            Maximum simultaneous browser sessions this provider can handle. Check your provider&apos;s plan limits. Leave empty for no limit.
+            Max simultaneous sessions. Leave empty for no limit.
           </p>
         </div>
 
@@ -392,7 +400,23 @@ function ProviderForm({
           />
           {errors.priority && <p className="text-xs text-destructive mt-1">{errors.priority}</p>}
           <p className="text-xs text-muted-foreground mt-1.5">
-            Lower number = tried first. Use 1 for your primary provider, 2 for fallback, 3 for last resort.
+            Lower = tried first. 1 for primary, 2 for fallback.
+          </p>
+        </div>
+
+        <div>
+          <label className="text-sm font-medium block mb-1.5">Weight</label>
+          <input
+            type="number"
+            value={weight}
+            onChange={(e) => { setWeight(e.target.value); setErrors((p) => ({ ...p, weight: "" })); }}
+            placeholder="1"
+            min="1"
+            className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          {errors.weight && <p className="text-xs text-destructive mt-1">{errors.weight}</p>}
+          <p className="text-xs text-muted-foreground mt-1.5">
+            For weighted strategy. Higher = more traffic. Default: 1.
           </p>
         </div>
       </div>

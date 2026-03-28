@@ -117,7 +117,11 @@ When auth is enabled:
 
 ## Next Steps
 
+- [Web Dashboard](./dashboard.md) - Every page explained with what you can do
 - [Configuration Reference](./configuration.md) - Every config option explained
 - [How Failover Works](./failover.md) - Understanding automatic failover
-- [Load Balancing](./load-balancing.md) - Routing strategies
+- [Load Balancing](./load-balancing.md) - 5 routing strategies explained with real examples
+- [Request Queue](./request-queue.md) - What happens when all providers are busy
+- [Webhooks](./webhooks.md) - Get notified when providers go down or recover
+- [Supported Providers](./providers.md) - Provider types and connection modes
 - [Docker Deployment](./docker.md) - Running in containers

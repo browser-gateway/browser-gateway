@@ -6,12 +6,13 @@ browser-gateway automatically routes connections to healthy providers. When a pr
 
 When a client connects to `/v1/connect`, the gateway:
 
-1. Gets the list of configured providers, sorted by priority
+1. Gets the list of configured providers, ordered by your [routing strategy](./load-balancing.md)
 2. Filters out providers that are in cooldown (recently failed too much)
 3. Filters out providers at their `maxConcurrent` limit
 4. Tries to connect to the first available provider
 5. If it fails, tries the next one
-6. If all fail, returns 503
+6. If all fail and the [request queue](./request-queue.md) is enabled, the connection waits for a slot to open
+7. If the queue is full or disabled, returns 503
 
 ```
 Client connects
@@ -109,3 +110,20 @@ curl http://localhost:9500/v1/status
 ```
 
 A provider with `healthy: false` and a `cooldownUntil` timestamp is in cooldown. It will automatically recover when the timestamp passes.
+
+## When ALL Providers Are Down
+
+If every provider is in cooldown, at capacity, or unreachable, the gateway can't route your connection immediately. What happens next depends on your queue configuration:
+
+**With queue enabled (default)**: The connection waits in the queue. As soon as any provider gets a free slot (either a cooldown expires or an existing session ends), the waiting connection is routed to it. See [Request Queue](./request-queue.md) for details.
+
+**With queue disabled**: The connection gets an immediate 503 error. Your client needs its own retry logic.
+
+**Tip**: If you only have one provider, the gateway is more lenient with cooldowns — it requires a 100% failure rate with at least 5 attempts before putting your only provider in cooldown. This prevents a few transient errors from disabling your only option.
+
+## Practical Tips
+
+- **Set `connectionTimeout` higher for cloud providers.** Some cloud services launch a fresh browser for each connection. This "cold start" can take 10-15 seconds. If your timeout is the default 10 seconds, the gateway will think the provider failed when it's just slow. Set `connectionTimeout: 20000` or higher.
+- **Don't rely on one provider.** The whole point of failover is redundancy. Even adding a single self-hosted Playwright server as a fallback gives you resilience when your primary cloud provider has issues.
+- **Check `/v1/status` regularly.** If you see providers frequently in cooldown, investigate. It might be an expired API key, a network issue, or a provider-side outage.
+- **Combine failover with webhooks.** Get notified when providers go down instead of discovering it from user complaints. See [Webhooks](./webhooks.md).

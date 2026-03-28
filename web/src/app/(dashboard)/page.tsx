@@ -94,9 +94,22 @@ export default function OverviewPage() {
         </p>
       </div>
 
+      {status.status === "shutting_down" && (
+        <Card className="border-destructive/50 bg-destructive/5">
+          <CardContent className="px-5 py-3">
+            <p className="text-sm font-medium text-destructive">
+              Gateway is shutting down
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Active sessions are draining. New connections are being rejected.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <ConnectionEndpoint />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="glass">
           <CardContent className="p-5">
             <p className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -104,6 +117,20 @@ export default function OverviewPage() {
             </p>
             <p className="text-3xl font-semibold font-mono mt-2 tabular-nums">
               {status.activeSessions}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="glass">
+          <CardContent className="p-5">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">
+              Queued
+            </p>
+            <p className="text-3xl font-semibold font-mono mt-2 tabular-nums">
+              {status.queueSize}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {status.queueSize > 0 ? "waiting for a free slot" : "no requests waiting"}
             </p>
           </CardContent>
         </Card>
