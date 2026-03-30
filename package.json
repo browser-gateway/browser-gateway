@@ -1,7 +1,7 @@
 {
   "name": "browser-gateway",
   "version": "0.1.5",
-  "description": "Reliable, scalable browser infrastructure for AI agents. Route, pool, and failover across any browser provider.",
+  "description": "Reliable, scalable browser infrastructure for AI agents.",
   "keywords": [
     "browser",
     "gateway",

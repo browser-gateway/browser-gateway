@@ -60,7 +60,7 @@ if (command === "version" || args.includes("--version") || args.includes("-v")) 
 
 if (command === "help" || args.includes("--help") || args.includes("-h")) {
   console.log(`
-browser-gateway - The Unified Interface for Headless Browsers
+browser-gateway - Reliable, scalable browser infrastructure for AI agents and automation
 
 Usage:
   browser-gateway serve [options]    Start the gateway server
