@@ -1,20 +1,47 @@
 # browser-gateway
 
-**The Unified Interface for Headless Browsers.**
+**Reliable, scalable browser infrastructure for AI agents.**
 
-Route connections across any browser provider with automatic failover, load balancing, and zero lock-in.
+Route, pool, and failover across any browser provider. Built-in MCP server for Claude Code, Cursor, and any MCP-compatible AI agent.
 
 ---
 
-## What is this?
+## MCP Server for AI Agents
 
-`browser-gateway` is an open-source proxy router for remote browser connections. You bring your own browser providers. We handle routing, failover, load balancing, health monitoring, and usage tracking.
+Give your AI agent browser access in one line:
+
+```json
+{
+  "mcpServers": {
+    "browser-gateway": {
+      "command": "npx",
+      "args": ["browser-gateway", "mcp"]
+    }
+  }
+}
+```
+
+The agent can now navigate websites, take screenshots, fill forms, and extract data. No Playwright or Puppeteer installation needed.
+
+- **Zero config** - auto-detects Chrome on your system
+- **Concurrent sessions** - multiple agents, no "browser already in use" errors
+- **8 browser tools** - navigate, snapshot, screenshot, interact, evaluate, and more
+- **Lightweight** - raw CDP, no heavy browser automation dependencies
+- **Works with** Claude Code, Cursor, and any MCP client
+
+See the [MCP documentation](docs/mcp.md) for all options.
+
+---
+
+## WebSocket Proxy for Applications
+
+`browser-gateway` is also a proxy router for remote browser connections. You bring your own browser providers. We handle routing, failover, load balancing, health monitoring, and usage tracking.
 
 ```
-Your cloud browser providers ---\
-Your Playwright servers ---------+--->  browser-gateway  <--- Your app / AI agent
-Your Chrome instances -----------+
-Any CDP-compatible endpoint ----/
+Your cloud providers (Browserless, Steel) ---\
+Your Playwright servers ---------------------+--->  browser-gateway  <--- Your app / AI agent
+Your Chrome instances -----------------------+
+Any CDP-compatible endpoint ----------------/
 ```
 
 ### The Problem
@@ -22,7 +49,6 @@ Any CDP-compatible endpoint ----/
 - **Vendor lock-in** - Coupled to one browser provider
 - **No failover** - Provider goes down, your app breaks
 - **Concurrency blindness** - No visibility into active sessions across providers
-- **Wasted free tiers** - Can't pool multiple providers into one endpoint
 - **Scaling cliff** - Outgrow one provider, re-architect everything
 
 ### The Solution
@@ -41,6 +67,7 @@ const browser = await chromium.connect('ws://localhost:9500/v1/connect');
 
 ## Features
 
+- **MCP Server** - Built-in MCP server for AI agents (Claude Code, Cursor). 8 browser tools, zero-config, concurrent sessions.
 - **Connection Routing** - Route WebSocket/CDP connections to the right provider
 - **Automatic Failover** - Provider down? Next one instantly, zero client changes
 - **Per-Provider Limits** - Set `maxConcurrent` per provider, gateway enforces it
@@ -150,6 +177,9 @@ BG_TOKEN=my-secret-token browser-gateway serve
 browser-gateway serve                    # Start the gateway + dashboard
 browser-gateway serve --port 8080        # Custom port
 browser-gateway serve --config path.yml  # Custom config
+browser-gateway mcp                      # Start MCP server for AI agents
+browser-gateway mcp --headless           # MCP server in headless mode
+browser-gateway mcp --config path.yml    # MCP with multi-provider config
 browser-gateway check                    # Test provider connectivity
 browser-gateway version                  # Print version
 browser-gateway help                     # Show help
@@ -206,6 +236,7 @@ The gateway never parses or modifies WebSocket messages. It's a transparent pipe
 
 ## Documentation
 
+- [MCP Server for AI Agents](./docs/mcp.md) - Setup, tools, options, using with Playwright MCP
 - [Getting Started](./docs/getting-started.md)
 - [Configuration Reference](./docs/configuration.md)
 - [How Failover Works](./docs/failover.md)

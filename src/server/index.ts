@@ -34,6 +34,9 @@ import { WebhookNotifier } from "../core/notifications/webhooks.js";
 import { loadConfig } from "./config/loader.js";
 import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
+import { createMcpServer, createSessionManager } from "./mcp/server.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 
 function findWebDir(): string | undefined {
   const candidates = [
@@ -61,16 +64,19 @@ browser-gateway - The Unified Interface for Headless Browsers
 
 Usage:
   browser-gateway serve [options]    Start the gateway server
+  browser-gateway mcp [options]      Start MCP server for AI agents (stdio)
   browser-gateway check              Test connectivity to providers
   browser-gateway version            Print version
   browser-gateway help               Show this help
 
 Options:
-  --config <path>    Path to gateway.yml (default: ./gateway.yml)
-  --port <number>    Override port (default: 9500)
-  --no-ui            Disable the web dashboard
-  -v, --version      Print version
-  -h, --help         Show help
+  --config <path>         Path to gateway.yml (default: ./gateway.yml)
+  --port <number>         Override port (default: 9500)
+  --cdp-endpoint <url>    CDP WebSocket URL to connect to (mcp command)
+  --headless              Run browser in headless mode (mcp command, headed by default)
+  --no-ui                 Disable the web dashboard
+  -v, --version           Print version
+  -h, --help              Show help
 
 Environment:
   BG_TOKEN           Auth token for gateway access (optional)
@@ -80,15 +86,18 @@ Environment:
 Examples:
   browser-gateway serve
   browser-gateway serve --config ./my-config.yml --port 8080
+  browser-gateway mcp
+  browser-gateway mcp --cdp-endpoint ws://localhost:9222/devtools/browser/xxx
+  browser-gateway mcp --config gateway.yml
 `);
   process.exit(0);
 }
 
-if (command === "serve" || !["check", "version", "help"].includes(command)) {
+if (command === "mcp") {
+  startMcpStdio();
+} else if (command === "serve" || !["check", "version", "help"].includes(command)) {
   startServer();
-}
-
-if (command === "check") {
+} else if (command === "check") {
   checkProviders();
 }
 
@@ -138,6 +147,9 @@ async function startServer() {
     logger.warn("run `browser-gateway init` to create a config file");
   }
 
+  const sessionManager = createSessionManager(gateway, logger);
+  logger.info("mcp server initialized (Streamable HTTP at /mcp)");
+
   const { handleUpgrade } = createWebSocketHandler(gateway, logger, token);
 
   const activeSockets = new Map<string, { client: Duplex; provider: Duplex }>();
@@ -151,7 +163,83 @@ async function startServer() {
     }
   });
 
+  const mcpTransports = new Map<string, StreamableHTTPServerTransport>();
+
   const server = createServer(async (req, res) => {
+    const reqUrl = new URL(req.url ?? "/", `http://localhost`);
+
+    if (reqUrl.pathname === "/mcp") {
+      if (token) {
+        const reqToken =
+          reqUrl.searchParams.get("token") ??
+          (req.headers.authorization?.startsWith("Bearer ")
+            ? req.headers.authorization.slice(7)
+            : undefined);
+        if (!reqToken || reqToken.length !== token.length || !timingSafeEqual(Buffer.from(reqToken), Buffer.from(token))) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Unauthorized" }));
+          return;
+        }
+      }
+
+      if (req.method === "POST") {
+        const sessionId = req.headers["mcp-session-id"] as string | undefined;
+
+        if (sessionId && mcpTransports.has(sessionId)) {
+          const transport = mcpTransports.get(sessionId)!;
+          await transport.handleRequest(req, res);
+          return;
+        }
+
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+        });
+
+        transport.onclose = () => {
+          if (transport.sessionId) {
+            mcpTransports.delete(transport.sessionId);
+          }
+        };
+
+        const { mcpServer: perSessionServer } = createMcpServer(gateway, logger, sessionManager);
+        await perSessionServer.connect(transport);
+        await transport.handleRequest(req, res);
+
+        if (transport.sessionId) {
+          mcpTransports.set(transport.sessionId, transport);
+        }
+        return;
+      }
+
+      if (req.method === "GET") {
+        const sessionId = req.headers["mcp-session-id"] as string | undefined;
+        if (sessionId && mcpTransports.has(sessionId)) {
+          await mcpTransports.get(sessionId)!.handleRequest(req, res);
+          return;
+        }
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Invalid or missing session ID" }));
+        return;
+      }
+
+      if (req.method === "DELETE") {
+        const sessionId = req.headers["mcp-session-id"] as string | undefined;
+        if (sessionId && mcpTransports.has(sessionId)) {
+          const transport = mcpTransports.get(sessionId)!;
+          await transport.handleRequest(req, res);
+          mcpTransports.delete(sessionId);
+          return;
+        }
+        res.writeHead(200);
+        res.end();
+        return;
+      }
+
+      res.writeHead(405);
+      res.end();
+      return;
+    }
+
     const url = `http://localhost${req.url}`;
     const headers = req.headers as Record<string, string>;
     const method = req.method ?? "GET";
@@ -201,6 +289,13 @@ async function startServer() {
   const shutdown = async () => {
     logger.info("shutdown signal received");
 
+    sessionManager.stopCleanupTimer();
+    sessionManager.releaseAll();
+    for (const [, transport] of mcpTransports) {
+      await transport.close();
+    }
+    mcpTransports.clear();
+
     server.close();
 
     await gateway.gracefulShutdown();
@@ -209,6 +304,121 @@ async function startServer() {
     process.exit(0);
   };
 
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}
+
+async function startMcpStdio() {
+  const { StdioServerTransport } = await import("@modelcontextprotocol/sdk/server/stdio.js");
+  const configPath = getArg("--config");
+  const cdpEndpoint = getArg("--cdp-endpoint");
+  const portOverride = getArg("--port");
+
+  const log = (msg: string) => process.stderr.write(msg + "\n");
+
+  let config;
+  let isZeroConfig = false;
+
+  if (configPath) {
+    try {
+      config = loadConfig(configPath);
+    } catch (err) {
+      log(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
+  } else if (cdpEndpoint) {
+    const port = parseInt(portOverride ?? process.env.BG_PORT ?? "9500", 10);
+    config = {
+      version: 1 as const,
+      gateway: {
+        port,
+        defaultStrategy: "priority-chain" as const,
+        healthCheckInterval: 30000,
+        connectionTimeout: 10000,
+        shutdownDrainMs: 30000,
+        cooldown: { defaultMs: 30000, failureThreshold: 0.5, minRequestVolume: 3 },
+        sessions: { idleTimeoutMs: 300000 },
+        queue: { maxSize: 20, timeoutMs: 30000 },
+      },
+      providers: {
+        "remote-cdp": {
+          url: cdpEndpoint,
+          limits: { maxConcurrent: 5 },
+          priority: 1,
+          weight: 1,
+        },
+      },
+      webhooks: [] as { url: string; events?: string[] }[],
+      dashboard: { enabled: false },
+      logging: { level: "info" as const },
+    };
+    log(`Using CDP endpoint: ${cdpEndpoint}`);
+  } else {
+    // Zero-config mode: defer Chrome launch until first tool call (same pattern as playwright-mcp)
+    const port = parseInt(portOverride ?? process.env.BG_PORT ?? "9500", 10);
+    config = {
+      version: 1 as const,
+      gateway: {
+        port,
+        defaultStrategy: "priority-chain" as const,
+        healthCheckInterval: 30000,
+        connectionTimeout: 10000,
+        shutdownDrainMs: 30000,
+        cooldown: { defaultMs: 30000, failureThreshold: 0.5, minRequestVolume: 3 },
+        sessions: { idleTimeoutMs: 300000 },
+        queue: { maxSize: 20, timeoutMs: 30000 },
+      },
+      providers: {} as Record<string, { url: string; limits: { maxConcurrent: number }; priority: number; weight: number }>,
+      webhooks: [] as { url: string; events?: string[] }[],
+      dashboard: { enabled: false },
+      logging: { level: "info" as const },
+    };
+    isZeroConfig = true;
+    log("Zero-config mode - Chrome will launch on first browser tool use");
+  }
+
+  if (portOverride) {
+    config.gateway.port = parseInt(portOverride, 10);
+  }
+
+  const logger = pino({ level: "silent" });
+  const gateway = new Gateway(config, logger);
+  const token = process.env.BG_TOKEN;
+
+  const { mcpServer, sessionManager } = createMcpServer(gateway, logger);
+
+  if (isZeroConfig) {
+    sessionManager.setLazyProviderSetup(async () => {
+      const { setupLocalChrome } = await import("./mcp/local-chrome.js");
+      const headless = args.includes("--headless");
+      const chromeConfig = await setupLocalChrome(log, { headless });
+
+      for (const [id, provider] of Object.entries(chromeConfig.providers)) {
+        gateway.registry.register(id, provider);
+      }
+    });
+  }
+
+  gateway.start();
+  log("MCP server ready on stdio");
+
+  const transport = new StdioServerTransport();
+  await mcpServer.connect(transport);
+
+  let isShuttingDown = false;
+  const shutdown = async () => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    setTimeout(() => process.exit(0), 15000);
+    sessionManager.stopCleanupTimer();
+    sessionManager.releaseAll();
+    const { killLocalChrome } = await import("./mcp/local-chrome.js");
+    await killLocalChrome();
+    await gateway.gracefulShutdown();
+    process.exit(0);
+  };
+
+  process.stdin.on("close", shutdown);
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }

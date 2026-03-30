@@ -1,7 +1,7 @@
 {
   "name": "browser-gateway",
-  "version": "0.1.4",
-  "description": "The Unified Interface for Headless Browsers. Route, balance, and failover across any CDP endpoint.",
+  "version": "0.1.5",
+  "description": "Reliable, scalable browser infrastructure for AI agents. Route, pool, and failover across any browser provider.",
   "keywords": [
     "browser",
     "gateway",
@@ -58,6 +58,8 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.11",
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "chrome-launcher": "^1.2.1",
     "hono": "^4.12.9",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",

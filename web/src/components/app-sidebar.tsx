@@ -77,7 +77,7 @@ export function AppSidebar() {
           </a>
           <ThemeToggle />
         </div>
-        <p className="text-[11px] text-muted-foreground/50 font-mono mt-1">v0.1.4</p>
+        <p className="text-[11px] text-muted-foreground/50 font-mono mt-1">v0.1.5</p>
       </SidebarFooter>
     </Sidebar>
   );
