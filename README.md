@@ -1,103 +1,78 @@
 # browser-gateway
 
-**Reliable, scalable browser infrastructure for AI agents.**
+**Reliable, scalable browser infrastructure for AI agents and automation.**
 
-Route, pool, and failover across any browser provider. Built-in MCP server for Claude Code, Cursor, and any MCP-compatible AI agent.
-
----
-
-## MCP Server for AI Agents
-
-Give your AI agent browser access in one line:
-
-```json
-{
-  "mcpServers": {
-    "browser-gateway": {
-      "command": "npx",
-      "args": ["browser-gateway", "mcp"]
-    }
-  }
-}
-```
-
-The agent can now navigate websites, take screenshots, fill forms, and extract data. No Playwright or Puppeteer installation needed.
-
-- **Zero config** - auto-detects Chrome on your system
-- **Concurrent sessions** - multiple agents, no "browser already in use" errors
-- **8 browser tools** - navigate, snapshot, screenshot, interact, evaluate, and more
-- **Lightweight** - raw CDP, no heavy browser automation dependencies
-- **Works with** Claude Code, Cursor, and any MCP client
-
-See the [MCP documentation](docs/mcp.md) for all options.
+Route, pool, and failover across any browser provider. Built-in MCP server for AI agents.
 
 ---
 
-## WebSocket Proxy for Applications
-
-`browser-gateway` is also a proxy router for remote browser connections. You bring your own browser providers. We handle routing, failover, load balancing, health monitoring, and usage tracking.
+## What It Does
 
 ```
-Your cloud providers (Browserless, Steel) ---\
-Your Playwright servers ---------------------+--->  browser-gateway  <--- Your app / AI agent
-Your Chrome instances -----------------------+
-Any CDP-compatible endpoint ----------------/
+                         ┌─────────────────────┐
+                         │   browser-gateway    │
+                         │                      │
+                         │  routing / failover  │
+                         │  load balancing      │
+                         │  health monitoring   │
+                         │  request queuing     │
+                         └──────────┬───────────┘
+                                    │
+                 ┌──────────────────┼──────────────────┐
+                 │                  │                   │
+          ┌──────┴──────┐   ┌──────┴──────┐   ┌───────┴──────┐
+          │ Provider A  │   │ Provider B  │   │ Provider C   │
+          │ Cloud CDP   │   │ Playwright  │   │ Local Chrome │
+          │ priority: 1 │   │ Docker :4000│   │ Docker :9222 │
+          └─────────────┘   └─────────────┘   └──────────────┘
 ```
 
-### The Problem
+One endpoint. Multiple providers. Automatic failover if one goes down.
 
-- **Vendor lock-in** - Coupled to one browser provider
-- **No failover** - Provider goes down, your app breaks
-- **Concurrency blindness** - No visibility into active sessions across providers
-- **Scaling cliff** - Outgrow one provider, re-architect everything
-
-### The Solution
-
-One endpoint. Configure your providers. We route intelligently.
-
-```typescript
-// Before: coupled to one provider
-const browser = await chromium.connect('wss://provider.example.com?token=xxx');
-
-// After: routed through browser-gateway with automatic failover
-const browser = await chromium.connect('ws://localhost:9500/v1/connect');
-```
+Your app connects to `ws://gateway:9500/v1/connect`. The gateway picks the best available provider based on health, capacity, and your routing strategy. Providers can be cloud CDP services, Docker containers, or local Chrome instances.
 
 ---
 
-## Features
+## Core Features
 
-- **MCP Server** - Built-in MCP server for AI agents (Claude Code, Cursor). 8 browser tools, zero-config, concurrent sessions.
-- **Connection Routing** - Route WebSocket/CDP connections to the right provider
-- **Automatic Failover** - Provider down? Next one instantly, zero client changes
-- **Per-Provider Limits** - Set `maxConcurrent` per provider, gateway enforces it
+### Routing & Reliability
+
+- **Automatic Failover** - Provider down? Next one picks up instantly. Zero client changes.
 - **5 Load Balancing Strategies** - Priority chain, round-robin, least-connections, latency-optimized, weighted
-- **Cooldown System** - Automatically skip failing providers, recover after TTL
-- **Request Queue** - All providers busy? Connections wait in a queue instead of failing
-- **Graceful Shutdown** - Active sessions drain cleanly on SIGTERM/SIGINT (configurable timeout)
-- **Webhooks** - Get notified (Slack, Discord, custom) when providers go down, recover, or queue overflows
+- **Per-Provider Concurrency Limits** - Set `maxConcurrent` per provider, gateway enforces it
+- **Request Queue** - All providers busy? Connections wait instead of failing
+- **Cooldown System** - Skip failing providers automatically, recover after TTL
 - **Health Checks** - Periodic connectivity probes detect unhealthy providers
-- **Web Dashboard** - Built-in UI to manage providers, view sessions, edit config
-- **Provider Management** - Add, edit, delete, and test providers from the dashboard
+- **Graceful Shutdown** - Active sessions drain cleanly on SIGTERM/SIGINT
+- **Webhooks** - Get notified when providers go down, recover, or queue overflows
+
+### MCP Server for AI Agents
+
+- **8 Browser Tools** - navigate, snapshot, screenshot, viewport, interact, evaluate, close, status
+- **Zero Config** - Auto-detects Chrome, launches on first tool use
+- **Concurrent Sessions** - Multiple agents get separate browsers, no conflicts
+- **Raw CDP** - Lightweight, no Playwright or Puppeteer dependency
+- **Works with** Claude Code, Cursor, and any MCP-compatible client
+
+### Management
+
+- **Web Dashboard** - Manage providers, view sessions, edit config from the browser
+- **Provider CRUD** - Add, edit, delete, and test providers from the dashboard or API
 - **Config Editor** - Edit gateway.yml with syntax highlighting and validation
-- **Auth** - Token-based auth with secure HttpOnly cookie for the dashboard
-- **CLI** - `serve`, `check`, `version`, `help`
+- **Auth** - Token-based with secure HttpOnly cookie for the dashboard
 - **Protocol Agnostic** - Works with Playwright, Puppeteer, any WebSocket protocol
-- **ws:// and wss://** - Supports both plain and TLS providers
 
 ---
 
 ## Quick Start
 
-### Install
+### As a WebSocket Proxy (for applications)
 
 ```bash
 npm install -g browser-gateway
 ```
 
-### Configure
-
-Create a `gateway.yml`:
+Create `gateway.yml`:
 
 ```yaml
 version: 1
@@ -116,43 +91,57 @@ providers:
     priority: 2
 ```
 
-### Run
-
 ```bash
 browser-gateway serve
 ```
 
-Open `http://localhost:9500/web` to see the dashboard. Or connect directly:
+Connect from your app:
 
 ```typescript
-import { chromium } from 'playwright-core';
+// For CDP providers
+const browser = await chromium.connectOverCDP('ws://localhost:9500/v1/connect');
 
 // For Playwright run-server providers
 const browser = await chromium.connect('ws://localhost:9500/v1/connect');
-
-// For Chrome/CDP providers
-const browser = await chromium.connectOverCDP('ws://localhost:9500/v1/connect');
 ```
 
-If your primary provider goes down, traffic automatically routes to the fallback.
+Dashboard at `http://localhost:9500/web`.
+
+### As an MCP Server (for AI agents)
+
+Add to your Claude Code or Cursor config:
+
+```json
+{
+  "mcpServers": {
+    "browser-gateway": {
+      "command": "npx",
+      "args": ["browser-gateway", "mcp"]
+    }
+  }
+}
+```
+
+No config files needed. The agent can now browse websites, take screenshots, fill forms, and extract data.
+
+See the [MCP documentation](docs/mcp.md) for all options.
 
 ---
 
 ## Dashboard
 
-Built-in web dashboard at `http://localhost:9500/web`. No extra setup — it's served from the same port as the gateway.
+Built-in web dashboard at `http://localhost:9500/web`. Served from the same port as the gateway.
 
 | Page | What You Can Do |
 |------|----------------|
-| **Overview** | See gateway health at a glance — active sessions, provider status, connection URL with copy-paste snippets |
-| **Providers** | Add, edit, delete, and test browser providers. Test connectivity before saving. Changes write to gateway.yml automatically |
-| **Sessions** | Live table of every active browser connection — which provider it's on, how long it's been open, message count |
-| **Config** | Edit gateway.yml directly in the browser with syntax highlighting, validation, and automatic backups |
-| **Logs** | Coming soon (check terminal output for now) |
+| **Overview** | Gateway health at a glance: active sessions, provider status, connection endpoint |
+| **Providers** | Add, edit, delete, and test browser providers. Changes write to gateway.yml |
+| **Sessions** | Live table of every active connection: provider, duration, message count |
+| **Config** | Edit gateway.yml in the browser with validation and automatic backups |
 
-Dark theme by default with light theme toggle. If `BG_TOKEN` is set, the dashboard shows a login form and uses a secure HttpOnly cookie — no token in the URL.
+If `BG_TOKEN` is set, the dashboard requires authentication via a secure HttpOnly cookie.
 
-See [Dashboard Guide](./docs/dashboard.md) for a detailed walkthrough of every page.
+See [Dashboard Guide](./docs/dashboard.md) for details.
 
 ---
 
@@ -174,12 +163,18 @@ BG_TOKEN=my-secret-token browser-gateway serve
 ## CLI
 
 ```bash
+# Proxy server
 browser-gateway serve                    # Start the gateway + dashboard
 browser-gateway serve --port 8080        # Custom port
 browser-gateway serve --config path.yml  # Custom config
-browser-gateway mcp                      # Start MCP server for AI agents
-browser-gateway mcp --headless           # MCP server in headless mode
-browser-gateway mcp --config path.yml    # MCP with multi-provider config
+
+# MCP server for AI agents
+browser-gateway mcp                      # Auto-detect Chrome, zero config
+browser-gateway mcp --headless           # Headless mode (for CI/Docker)
+browser-gateway mcp --cdp-endpoint ws:// # Connect to existing browser
+browser-gateway mcp --config gateway.yml # Multi-provider with failover
+
+# Utilities
 browser-gateway check                    # Test provider connectivity
 browser-gateway version                  # Print version
 browser-gateway help                     # Show help
@@ -194,15 +189,13 @@ browser-gateway help                     # Show help
 | `/v1/connect` | WebSocket | Connect to a browser (the core feature) |
 | `/v1/status` | GET | Gateway health + provider status |
 | `/v1/sessions` | GET | Active sessions |
-| `/v1/providers` | GET | List configured providers |
-| `/v1/providers` | POST | Add a new provider |
-| `/v1/providers/:id` | PUT | Update a provider |
-| `/v1/providers/:id` | DELETE | Remove a provider |
+| `/v1/providers` | GET/POST | List or add providers |
+| `/v1/providers/:id` | PUT/DELETE | Update or remove a provider |
 | `/v1/providers/:id/test` | POST | Test provider connectivity |
-| `/v1/config` | GET | Read current config as YAML |
-| `/v1/config` | PUT | Save config (with validation) |
+| `/v1/config` | GET/PUT | Read or save config |
 | `/v1/config/validate` | POST | Validate YAML without saving |
-| `/health` | GET | Simple health check |
+| `/mcp` | POST | MCP Streamable HTTP endpoint |
+| `/health` | GET | Health check |
 
 ---
 
@@ -221,46 +214,84 @@ docker run -d \
 ## How It Works
 
 1. Client connects to `ws://gateway:9500/v1/connect`
-2. Gateway selects a provider using your [routing strategy](./docs/load-balancing.md) (checks health, capacity, cooldowns)
+2. Gateway selects a provider using your [routing strategy](./docs/load-balancing.md)
 3. Gateway opens a raw TCP connection to the provider
-4. HTTP upgrade request is forwarded to the provider
-5. Provider responds with `101 Switching Protocols`
-6. Bidirectional TCP pipe established: `client <-> gateway <-> provider`
-7. All WebSocket messages forwarded transparently
-8. On disconnect: session cleaned up, concurrency slot released, metrics updated
-9. If all providers were full at step 2, the connection [waits in a queue](./docs/request-queue.md) until a slot opens
+4. HTTP upgrade forwarded, provider responds with `101 Switching Protocols`
+5. Bidirectional TCP pipe: `client <-> gateway <-> provider`
+6. All WebSocket messages forwarded transparently (never parsed or modified)
+7. On disconnect: session cleaned up, slot released, metrics updated
+8. If all providers full: connection [waits in a queue](./docs/request-queue.md) until a slot opens
 
-The gateway never parses or modifies WebSocket messages. It's a transparent pipe with smart routing.
+---
+
+## Works With
+
+browser-gateway is compatible with existing browser tools. Use it as the infrastructure layer underneath:
+
+**AI Agent Frameworks:**
+
+```python
+# browser-use (Python)
+BrowserSession(cdp_url="ws://localhost:9500/v1/connect")
+```
+
+```typescript
+// Stagehand (TypeScript)
+new Stagehand({ env: "LOCAL", localBrowserLaunchOptions: { cdpUrl: "ws://localhost:9500/v1/connect" } })
+```
+
+**Playwright MCP** (get all 70 Playwright tools with gateway routing):
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--cdp-endpoint", "ws://localhost:9500/v1/connect"]
+    }
+  }
+}
+```
+
+**Puppeteer / Playwright:**
+
+```typescript
+// Puppeteer
+const browser = await puppeteer.connect({ browserWSEndpoint: "ws://localhost:9500/v1/connect" });
+
+// Playwright
+const browser = await chromium.connectOverCDP("ws://localhost:9500/v1/connect");
+```
 
 ---
 
 ## Documentation
 
-- [MCP Server for AI Agents](./docs/mcp.md) - Setup, tools, options, using with Playwright MCP
+- [MCP Server for AI Agents](./docs/mcp.md) - Setup, tools, options, Playwright MCP integration
 - [Getting Started](./docs/getting-started.md)
 - [Configuration Reference](./docs/configuration.md)
 - [How Failover Works](./docs/failover.md)
-- [Load Balancing Strategies](./docs/load-balancing.md) - Priority chain, round-robin, least-connections, latency-optimized, weighted
-- [Request Queue](./docs/request-queue.md) - What happens when all providers are busy
-- [Webhooks](./docs/webhooks.md) - Get notified when providers go down or recover
-- [Web Dashboard](./docs/dashboard.md) - Every page explained with what you can do
+- [Load Balancing Strategies](./docs/load-balancing.md)
+- [Request Queue](./docs/request-queue.md)
+- [Webhooks](./docs/webhooks.md)
+- [Web Dashboard](./docs/dashboard.md)
 - [Supported Providers](./docs/providers.md)
 - [Session Lifecycle](./docs/session-lifecycle.md)
-- [CLI Reference](./docs/cli.md) - Commands and graceful shutdown
+- [CLI Reference](./docs/cli.md)
 - [Docker Deployment](./docs/docker.md)
 
 ---
 
 ## Contributing
 
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT - see [LICENSE](LICENSE) for details.
+MIT - see [LICENSE](LICENSE).
 
 ## Links
 
-- Website: [browsergateway.io](https://browsergateway.io)
-- GitHub: [github.com/browser-gateway/browser-gateway](https://github.com/browser-gateway/browser-gateway)
-- npm: [npmjs.com/package/browser-gateway](https://www.npmjs.com/package/browser-gateway)
+- [browsergateway.io](https://browsergateway.io)
+- [GitHub](https://github.com/browser-gateway/browser-gateway)
+- [npm](https://www.npmjs.com/package/browser-gateway)
