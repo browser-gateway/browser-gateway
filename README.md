@@ -195,6 +195,7 @@ browser-gateway help                     # Show help
 | `/v1/config` | GET/PUT | Read or save config |
 | `/v1/config/validate` | POST | Validate YAML without saving |
 | `/mcp` | POST | MCP Streamable HTTP endpoint |
+| `/json/version` | GET | CDP discovery (for browser-use, Playwright, Stagehand) |
 | `/health` | GET | Health check |
 
 ---
@@ -226,28 +227,28 @@ docker run -d \
 
 ## Works With
 
-browser-gateway is compatible with existing browser tools. Use it as the infrastructure layer underneath:
+browser-gateway is compatible with existing browser tools. Just pass the gateway URL — it auto-resolves via `/json/version`.
 
 **AI Agent Frameworks:**
 
 ```python
-# browser-use (Python)
-BrowserSession(cdp_url="ws://localhost:9500/v1/connect")
+# browser-use (Python) — HTTP URL auto-resolves
+BrowserSession(cdp_url="http://localhost:9500")
 ```
 
 ```typescript
 // Stagehand (TypeScript)
-new Stagehand({ env: "LOCAL", localBrowserLaunchOptions: { cdpUrl: "ws://localhost:9500/v1/connect" } })
+new Stagehand({ env: "LOCAL", localBrowserLaunchOptions: { cdpUrl: "http://localhost:9500" } })
 ```
 
-**Playwright MCP** (get all 70 Playwright tools with gateway routing):
+**Playwright MCP** (all 70 Playwright tools through gateway routing):
 
 ```json
 {
   "mcpServers": {
     "playwright": {
       "command": "npx",
-      "args": ["@playwright/mcp@latest", "--cdp-endpoint", "ws://localhost:9500/v1/connect"]
+      "args": ["@playwright/mcp@latest", "--cdp-endpoint", "http://localhost:9500"]
     }
   }
 }
@@ -256,18 +257,19 @@ new Stagehand({ env: "LOCAL", localBrowserLaunchOptions: { cdpUrl: "ws://localho
 **Puppeteer / Playwright:**
 
 ```typescript
-// Puppeteer
-const browser = await puppeteer.connect({ browserWSEndpoint: "ws://localhost:9500/v1/connect" });
+// Playwright — HTTP or WebSocket
+const browser = await chromium.connectOverCDP("http://localhost:9500");
 
-// Playwright
-const browser = await chromium.connectOverCDP("ws://localhost:9500/v1/connect");
+// Puppeteer — WebSocket
+const browser = await puppeteer.connect({ browserWSEndpoint: "ws://localhost:9500/v1/connect" });
 ```
 
 ---
 
 ## Documentation
 
-- [MCP Server for AI Agents](./docs/mcp.md) - Setup, tools, options, Playwright MCP integration
+- [MCP Server for AI Agents](./docs/mcp.md) - Setup, tools, options
+- [Integrations](./docs/integrations.md) - Playwright, Puppeteer, browser-use, Stagehand, Playwright MCP
 - [Getting Started](./docs/getting-started.md)
 - [Configuration Reference](./docs/configuration.md)
 - [How Failover Works](./docs/failover.md)
