@@ -4,10 +4,21 @@ import { timingSafeEqual, createHmac, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from "node:fs";
 import { join, extname } from "node:path";
 import WebSocket from "ws";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Gateway } from "../core/index.js";
 import { ProviderConfigSchema } from "../core/types.js";
 import { writeConfig } from "./config/writer.js";
 import { loadedConfigPath } from "./config/loader.js";
+
+function getPackageVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../package.json"), "utf-8"));
+    return pkg.version;
+  } catch {
+    return "0.0.0";
+  }
+}
 
 function safeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -82,6 +93,23 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string) {
 
   app.get("/health", (c) => {
     return c.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.get("/json/version", (c) => {
+    const host = c.req.header("host") ?? "localhost:9500";
+    const protocol = c.req.url.startsWith("https") ? "wss" : "ws";
+    const tokenParam = c.req.query("token");
+    const wsUrl = `${protocol}://${host}/v1/connect${tokenParam ? `?token=${tokenParam}` : ""}`;
+
+    return c.json({
+      Browser: `browser-gateway/${getPackageVersion()}`,
+      "Protocol-Version": "1.3",
+      webSocketDebuggerUrl: wsUrl,
+    });
+  });
+
+  app.get("/json/version/", (c) => {
+    return c.redirect("/json/version");
   });
 
   app.use("/v1/*", async (c, next) => {
