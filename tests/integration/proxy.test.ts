@@ -186,6 +186,31 @@ describe("Proxy - Health and Status", () => {
   });
 });
 
+describe("Proxy - CDP Discovery", () => {
+  it("should return webSocketDebuggerUrl from /json/version", async () => {
+    const res = await fetch(`http://localhost:${GATEWAY_PORT}/json/version`);
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.webSocketDebuggerUrl).toContain(`ws://`);
+    expect(data.webSocketDebuggerUrl).toContain(`/v1/connect`);
+    expect(data.Browser).toContain("browser-gateway");
+    expect(data["Protocol-Version"]).toBe("1.3");
+  });
+
+  it("should forward token from query param into webSocketDebuggerUrl", async () => {
+    const res = await fetch(`http://localhost:${GATEWAY_PORT}/json/version?token=test-secret`);
+    const data = await res.json() as any;
+    expect(data.webSocketDebuggerUrl).toContain("?token=test-secret");
+  });
+
+  it("should handle trailing slash redirect", async () => {
+    const res = await fetch(`http://localhost:${GATEWAY_PORT}/json/version/`, { redirect: "follow" });
+    expect(res.status).toBe(200);
+    const data = await res.json() as any;
+    expect(data.webSocketDebuggerUrl).toBeDefined();
+  });
+});
+
 describe("Proxy - Concurrency Limits", () => {
   it("should enforce maxConcurrent per provider", async () => {
     // echo-1 has maxConcurrent: 1, echo-2 has maxConcurrent: 2
