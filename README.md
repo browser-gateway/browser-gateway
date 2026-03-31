@@ -44,6 +44,7 @@ Your app connects to `ws://gateway:9500/v1/connect`. The gateway picks the best 
 - **Cooldown System** - Skip failing providers automatically, recover after TTL
 - **Health Checks** - Periodic connectivity probes detect unhealthy providers
 - **Graceful Shutdown** - Active sessions drain cleanly on SIGTERM/SIGINT
+- **Session Persistence** - Disconnect and reconnect to the same browser. Cookies, localStorage, page state preserved.
 - **Webhooks** - Get notified when providers go down, recover, or queue overflows
 
 ### MCP Server for AI Agents

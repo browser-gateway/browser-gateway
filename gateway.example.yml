@@ -11,6 +11,7 @@ gateway:
 
   sessions:
     idleTimeoutMs: 300000           # Close idle sessions after 5 min
+    reconnectTimeoutMs: 300000      # Keep disconnected sessions for reconnection (5 min)
 
 providers:
   cloud-provider:

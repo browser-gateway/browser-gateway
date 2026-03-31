@@ -103,3 +103,31 @@ gateway:
 ```
 
 This protects against leaked connections where a client disconnects without a proper close handshake (e.g., network drop, crashed process). The provider's concurrency slot is freed when the idle timeout fires.
+
+### Session Reconnection
+
+When a client disconnects, the gateway remembers which provider the session was on. If the client reconnects with the same session ID within the reconnect timeout, it routes back to the same provider. The browser at the provider stays alive between connections, preserving all state (cookies, localStorage, page content).
+
+```yaml
+gateway:
+  sessions:
+    reconnectTimeoutMs: 300000   # 5 minutes (default)
+```
+
+To reconnect, pass the session ID as a query parameter:
+
+```
+ws://gateway:9500/v1/connect?sessionId=<session-id>
+```
+
+The session ID is returned in the `X-Session-Id` response header when a connection is first established.
+
+This is useful for:
+- AI agents that crash mid-workflow and need to resume
+- Long-running automation jobs interrupted by network issues
+- Multi-step processes where losing browser state means starting over
+
+Limitations:
+- Only works with Puppeteer and raw CDP clients (Playwright destroys contexts on disconnect)
+- Does not survive gateway restart (session registry is in-memory)
+- Does not survive browser crash at the provider

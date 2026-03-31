@@ -37,6 +37,7 @@ gateway:
 
   sessions:
     idleTimeoutMs: 300000              # Close sessions with no activity after this (default: 300000 = 5 min)
+    reconnectTimeoutMs: 300000         # How long a disconnected session stays available for reconnection (default: 300000 = 5 min)
 
   queue:
     maxSize: 50                        # Max requests waiting when all providers are busy (default: 50)
