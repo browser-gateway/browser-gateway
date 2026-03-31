@@ -6,6 +6,7 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { ProviderState } from "../../core/types.js";
+import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
 
 function safeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -18,7 +19,12 @@ function extractBearerToken(header: string | undefined): string | undefined {
   return header.slice(7);
 }
 
-export function createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string) {
+export function createWebSocketHandler(
+  gateway: Gateway,
+  logger: Logger,
+  token?: string,
+  reconnectRegistry?: ReconnectRegistry,
+) {
 
   async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -48,6 +54,38 @@ export function createWebSocketHandler(gateway: Gateway, logger: Logger, token?:
       return;
     }
 
+    // Session reconnection
+    const reconnectSessionId = url.searchParams.get("sessionId");
+    if (reconnectSessionId && reconnectRegistry) {
+      const parked = reconnectRegistry.claim(reconnectSessionId);
+
+      if (!parked) {
+        logger.debug({ sessionId: reconnectSessionId }, "session reconnect: not found or expired");
+        // Fall through to normal routing - not an error, just creates a new session
+      } else {
+        const provider = gateway.registry.get(parked.providerId);
+
+        if (!provider) {
+          logger.warn({ sessionId: reconnectSessionId, providerId: parked.providerId }, "session reconnect: provider no longer exists");
+        } else if (!gateway.acquireSlot(provider.id, reconnectSessionId)) {
+          logger.warn({ sessionId: reconnectSessionId, providerId: provider.id }, "session reconnect: provider at capacity");
+        } else {
+          logger.info({ sessionId: reconnectSessionId, providerId: provider.id }, "session reconnecting to same provider");
+
+          const connected = await pipeToProvider(
+            gateway, logger, socket, head, req, reconnectSessionId, provider, reconnectRegistry,
+          );
+
+          if (connected) return;
+
+          gateway.releaseSlot(reconnectSessionId, provider.id);
+          gateway.recordFailure(provider.id);
+          logger.warn({ sessionId: reconnectSessionId }, "session reconnect: failed to connect to provider");
+        }
+      }
+    }
+
+    // Normal routing (new session or failed reconnect)
     const sessionId = randomUUID();
 
     const tryConnect = async (): Promise<boolean> => {
@@ -64,7 +102,7 @@ export function createWebSocketHandler(gateway: Gateway, logger: Logger, token?:
         }
 
         const connected = await pipeToProvider(
-          gateway, logger, socket, head, req, sessionId, provider
+          gateway, logger, socket, head, req, sessionId, provider, reconnectRegistry,
         );
 
         if (connected) return true;
@@ -76,14 +114,11 @@ export function createWebSocketHandler(gateway: Gateway, logger: Logger, token?:
       return false;
     };
 
-    // Try immediate connection
     if (await tryConnect()) return;
 
-    // Queue if all providers at capacity
     const slotAvailable = await gateway.waitForSlot();
     if (slotAvailable && await tryConnect()) return;
 
-    // All attempts failed
     logger.warn({ sessionId, queueSize: gateway.queueSize }, "connection failed, all providers exhausted");
     socket.write(
       "HTTP/1.1 503 Service Unavailable\r\n" +
@@ -103,7 +138,8 @@ function pipeToProvider(
   head: Buffer,
   req: IncomingMessage,
   sessionId: string,
-  provider: ProviderState
+  provider: ProviderState,
+  reconnectRegistry?: ReconnectRegistry,
 ): Promise<boolean> {
   return new Promise((resolve) => {
     const providerUrl = new URL(provider.config.url);
@@ -159,7 +195,15 @@ function pipeToProvider(
         gateway.emit("session.created", { sessionId, providerId: provider.id });
         logger.info({ sessionId, providerId: provider.id }, "session established");
 
-        clientSocket.write(responseBuffer);
+        // Inject X-Session-Id header into the 101 response
+        const headerPart = responseBuffer.subarray(0, headerEnd).toString();
+        const afterHeaders = responseBuffer.subarray(headerEnd + 4); // skip \r\n\r\n
+        const modifiedResponse = `${headerPart}\r\nX-Session-Id: ${sessionId}\r\n\r\n`;
+
+        clientSocket.write(modifiedResponse);
+        if (afterHeaders.length > 0) {
+          clientSocket.write(afterHeaders);
+        }
 
         clientSocket.pipe(providerSocket);
         providerSocket.pipe(clientSocket);
@@ -187,6 +231,18 @@ function pipeToProvider(
 
       const durationMs = Date.now() - startTime;
       gateway.recordSuccess(provider.id, durationMs);
+
+      // Park session for reconnection
+      if (reconnectRegistry && session) {
+        reconnectRegistry.park(
+          sessionId,
+          provider.id,
+          provider.config.url,
+          session.connectedAt,
+          session.messageCount,
+        );
+        logger.info({ sessionId, providerId: provider.id, durationMs }, "session parked for reconnection");
+      }
 
       gateway.emit("session.ended", { sessionId, providerId: provider.id, durationMs });
 

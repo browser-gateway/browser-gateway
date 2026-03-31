@@ -30,6 +30,7 @@ function loadEnvFile(): void {
   }
 }
 import { Gateway } from "../core/index.js";
+import { ReconnectRegistry } from "../core/proxy/reconnect.js";
 import { WebhookNotifier } from "../core/notifications/webhooks.js";
 import { loadConfig } from "./config/loader.js";
 import { createApp } from "./app.js";
@@ -150,7 +151,11 @@ async function startServer() {
   const sessionManager = createSessionManager(gateway, logger);
   logger.info("mcp server initialized (Streamable HTTP at /mcp)");
 
-  const { handleUpgrade } = createWebSocketHandler(gateway, logger, token);
+  const reconnectRegistry = new ReconnectRegistry();
+  const reconnectTtl = config.gateway.sessions?.reconnectTimeoutMs ?? 300000;
+  reconnectRegistry.startCleanup(reconnectTtl);
+
+  const { handleUpgrade } = createWebSocketHandler(gateway, logger, token, reconnectRegistry);
 
   const activeSockets = new Map<string, { client: Duplex; provider: Duplex }>();
 
@@ -337,7 +342,7 @@ async function startMcpStdio() {
         connectionTimeout: 10000,
         shutdownDrainMs: 30000,
         cooldown: { defaultMs: 30000, failureThreshold: 0.5, minRequestVolume: 3 },
-        sessions: { idleTimeoutMs: 300000 },
+        sessions: { idleTimeoutMs: 300000, reconnectTimeoutMs: 300000 },
         queue: { maxSize: 20, timeoutMs: 30000 },
       },
       providers: {
@@ -365,7 +370,7 @@ async function startMcpStdio() {
         connectionTimeout: 10000,
         shutdownDrainMs: 30000,
         cooldown: { defaultMs: 30000, failureThreshold: 0.5, minRequestVolume: 3 },
-        sessions: { idleTimeoutMs: 300000 },
+        sessions: { idleTimeoutMs: 300000, reconnectTimeoutMs: 300000 },
         queue: { maxSize: 20, timeoutMs: 30000 },
       },
       providers: {} as Record<string, { url: string; limits: { maxConcurrent: number }; priority: number; weight: number }>,

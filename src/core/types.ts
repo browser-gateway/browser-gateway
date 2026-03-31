@@ -19,6 +19,7 @@ const CooldownSchema = z.object({
 
 const SessionsSchema = z.object({
   idleTimeoutMs: z.number().int().default(300000),
+  reconnectTimeoutMs: z.number().int().default(300000),
 });
 
 const QueueSchema = z.object({

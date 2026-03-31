@@ -88,7 +88,7 @@ export async function setupLocalChrome(stderrLog?: (msg: string) => void, option
       connectionTimeout: 10000,
       shutdownDrainMs: 30000,
       cooldown: { defaultMs: 30000, failureThreshold: 0.5, minRequestVolume: 3 },
-      sessions: { idleTimeoutMs: 300000 },
+      sessions: { idleTimeoutMs: 300000, reconnectTimeoutMs: 300000 },
       queue: { maxSize: 20, timeoutMs: 30000 },
     },
     providers: {
