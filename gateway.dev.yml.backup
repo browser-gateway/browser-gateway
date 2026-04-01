@@ -1,0 +1,14 @@
+version: 1
+
+gateway:
+  port: 9500
+
+providers:
+  local-test:
+    url: ws://localhost:9999
+    limits:
+      maxConcurrent: 10
+    priority: 1
+
+logging:
+  level: debug
