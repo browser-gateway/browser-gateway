@@ -335,7 +335,7 @@ export function registerTools(
     const targetId = sessionId ?? sessionManager.getFirstSession()?.sessionId;
     if (!targetId) return err("No active session to close.");
 
-    const result = sessionManager.releaseSession(targetId);
+    const result = await sessionManager.releaseSession(targetId);
     if (!result.success) return err(`Session not found: ${targetId}`);
     return text({ success: true, durationMs: result.durationMs });
   });

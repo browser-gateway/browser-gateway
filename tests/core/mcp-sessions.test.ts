@@ -79,8 +79,8 @@ describe("McpSessionManager", () => {
     manager = new McpSessionManager(gateway, silentLogger);
   });
 
-  afterEach(() => {
-    manager.releaseAll();
+  afterEach(async () => {
+    await manager.releaseAll();
     manager.stopCleanupTimer();
   });
 
@@ -121,7 +121,7 @@ describe("McpSessionManager", () => {
   describe("releaseSession", () => {
     it("should release session and close CDP", async () => {
       const session = await manager.createSession();
-      const result = manager.releaseSession(session!.sessionId);
+      const result = await manager.releaseSession(session!.sessionId);
 
       expect(result.success).toBe(true);
       expect(result.durationMs).toBeGreaterThanOrEqual(0);
@@ -129,8 +129,8 @@ describe("McpSessionManager", () => {
       expect(gateway.registry.get("echo-1")!.active).toBe(0);
     });
 
-    it("should return failure for unknown session", () => {
-      expect(manager.releaseSession("nonexistent").success).toBe(false);
+    it("should return failure for unknown session", async () => {
+      expect((await manager.releaseSession("nonexistent")).success).toBe(false);
     });
   });
 
@@ -152,7 +152,7 @@ describe("McpSessionManager", () => {
     it("should release all sessions and close all CDP connections", async () => {
       const s1 = await manager.createSession();
       const s2 = await manager.createSession();
-      manager.releaseAll();
+      await manager.releaseAll();
 
       expect(manager.count()).toBe(0);
       expect(s1!.cdp.connected).toBe(false);

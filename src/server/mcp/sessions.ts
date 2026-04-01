@@ -108,13 +108,17 @@ export class McpSessionManager {
     return null;
   }
 
-  releaseSession(sessionId: string): { success: boolean; durationMs?: number } {
+  async releaseSession(sessionId: string): Promise<{ success: boolean; durationMs?: number }> {
     const session = this.sessions.get(sessionId);
     if (!session) {
       return { success: false };
     }
 
     const durationMs = Date.now() - session.createdAt;
+
+    try {
+      await session.cdp.send("Browser.close").catch(() => {});
+    } catch {}
 
     session.cdp.close();
     this.sessions.delete(sessionId);
@@ -153,12 +157,12 @@ export class McpSessionManager {
 
   startCleanupTimer(idleTimeoutMs: number = 300000): void {
     if (this.cleanupTimer) return;
-    this.cleanupTimer = setInterval(() => {
+    this.cleanupTimer = setInterval(async () => {
       const now = Date.now();
       for (const [id, session] of this.sessions) {
         if (now - session.lastActivity > idleTimeoutMs) {
           this.logger.info({ sessionId: id }, "mcp session idle - releasing");
-          this.releaseSession(id);
+          await this.releaseSession(id);
         }
       }
     }, 30000);
@@ -171,9 +175,9 @@ export class McpSessionManager {
     }
   }
 
-  releaseAll(): void {
+  async releaseAll(): Promise<void> {
     for (const [id] of this.sessions) {
-      this.releaseSession(id);
+      await this.releaseSession(id);
     }
   }
 }
