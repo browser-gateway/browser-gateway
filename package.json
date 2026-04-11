@@ -55,7 +55,7 @@
     "test:run": "vitest run",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run test:run && npm run build:all",
-    "publish": "npm run test:run && npm run build:all && npm publish",
+    "publish": "npm publish",
     "docker:build": "docker build -t ghcr.io/browser-gateway/server:$(node -p \"require('./package.json').version\") -t ghcr.io/browser-gateway/server:latest .",
     "docker:push": "docker push ghcr.io/browser-gateway/server:$(node -p \"require('./package.json').version\") && docker push ghcr.io/browser-gateway/server:latest",
     "docker:release": "npm run docker:build && npm run docker:push"
