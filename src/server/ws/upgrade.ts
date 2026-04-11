@@ -131,6 +131,26 @@ export function createWebSocketHandler(
   return { handleUpgrade };
 }
 
+import { resolveWsUrl, isHttpUrl } from "../../core/providers/cdp.js";
+
+const cdpUrlCache = new Map<string, { wsUrl: string; resolvedAt: number }>();
+const CDP_CACHE_TTL = 30000;
+
+async function cachedResolveWsUrl(providerUrl: string, timeoutMs: number): Promise<string> {
+  if (!isHttpUrl(providerUrl)) return providerUrl;
+
+  const cached = cdpUrlCache.get(providerUrl);
+  if (cached && Date.now() - cached.resolvedAt < CDP_CACHE_TTL) {
+    return cached.wsUrl;
+  }
+
+  const resolved = await resolveWsUrl(providerUrl, Math.min(timeoutMs, 3000));
+  if (resolved !== providerUrl) {
+    cdpUrlCache.set(providerUrl, { wsUrl: resolved, resolvedAt: Date.now() });
+  }
+  return resolved;
+}
+
 function pipeToProvider(
   gateway: Gateway,
   logger: Logger,
@@ -141,8 +161,15 @@ function pipeToProvider(
   provider: ProviderState,
   reconnectRegistry?: ReconnectRegistry,
 ): Promise<boolean> {
-  return new Promise((resolve) => {
-    const providerUrl = new URL(provider.config.url);
+  return new Promise(async (resolve) => {
+    let resolvedUrl: string;
+    try {
+      resolvedUrl = await cachedResolveWsUrl(provider.config.url, gateway.config.gateway.connectionTimeout);
+    } catch {
+      resolvedUrl = provider.config.url;
+    }
+
+    const providerUrl = new URL(resolvedUrl);
     const isSecure = providerUrl.protocol === "wss:";
     const port = parseInt(providerUrl.port || (isSecure ? "443" : "80"), 10);
     const hostname = providerUrl.hostname;
@@ -217,6 +244,7 @@ function pipeToProvider(
           { sessionId, providerId: provider.id, response: headerStr.slice(0, 200) },
           "provider rejected upgrade"
         );
+        cdpUrlCache.delete(provider.config.url);
         providerSocket.destroy();
         resolve(false);
       }

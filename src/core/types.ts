@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PoolConfigSchema } from "./pool/types.js";
 
 export const ProviderConfigSchema = z.object({
   url: z.string().url(),
@@ -57,6 +58,7 @@ export const GatewayConfigSchema = z.object({
   version: z.number().default(1),
   gateway: GatewaySettingsSchema.default(() => GatewaySettingsSchema.parse({})),
   providers: z.record(z.string(), ProviderConfigSchema),
+  pool: PoolConfigSchema.default(() => PoolConfigSchema.parse({})),
   webhooks: z.array(WebhookSchema).default([]),
   dashboard: DashboardSchema.default(() => DashboardSchema.parse({})),
   logging: LoggingSchema.default(() => LoggingSchema.parse({})),

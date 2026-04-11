@@ -47,6 +47,14 @@ Your app connects to `ws://gateway:9500/v1/connect`. The gateway picks the best 
 - **Session Persistence** - Disconnect and reconnect to the same browser. Cookies, localStorage, page state preserved.
 - **Webhooks** - Get notified when providers go down, recover, or queue overflows
 
+### REST API
+
+- **Screenshot** - `POST /v1/screenshot` — capture any page as PNG or JPEG
+- **Content Extraction** - `POST /v1/content` — get page content as markdown, text, HTML, or cleaned article
+- **Scrape** - `POST /v1/scrape` — extract data with CSS selectors or get full-page content
+- **Session Pool** - Browser connections are reused across requests (like a database connection pool)
+- **Auto-Retry** - Failed requests automatically retry with a fresh browser page
+
 ### MCP Server for AI Agents
 
 - **8 Browser Tools** - navigate, snapshot, screenshot, viewport, interact, evaluate, close, status
@@ -104,6 +112,20 @@ const browser = await chromium.connectOverCDP('ws://localhost:9500/v1/connect');
 
 // For Playwright run-server providers
 const browser = await chromium.connect('ws://localhost:9500/v1/connect');
+```
+
+Or use the REST API — no WebSocket management needed:
+
+```bash
+# Screenshot
+curl -X POST http://localhost:9500/v1/screenshot \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}' --output screenshot.png
+
+# Extract content as markdown
+curl -X POST http://localhost:9500/v1/content \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com", "formats": ["markdown"]}'
 ```
 
 Dashboard at `http://localhost:9500/web`.
@@ -188,7 +210,10 @@ browser-gateway help                     # Show help
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v1/connect` | WebSocket | Connect to a browser (the core feature) |
-| `/v1/status` | GET | Gateway health + provider status |
+| `/v1/screenshot` | POST | Take a screenshot of any URL ([docs](./docs/rest-api.md)) |
+| `/v1/content` | POST | Extract page content as markdown, text, or HTML ([docs](./docs/rest-api.md)) |
+| `/v1/scrape` | POST | Extract data via CSS selectors or full-page formats ([docs](./docs/rest-api.md)) |
+| `/v1/status` | GET | Gateway health + provider status + pool status |
 | `/v1/sessions` | GET | Active sessions |
 | `/v1/providers` | GET/POST | List or add providers |
 | `/v1/providers/:id` | PUT/DELETE | Update or remove a provider |

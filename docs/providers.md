@@ -75,11 +75,13 @@ Config:
 ```yaml
 providers:
   my-chrome:
-    url: ws://chrome-host:9222/devtools/browser/UUID
+    url: http://chrome-host:9222       # Auto-discovers the WebSocket endpoint
     limits:
       maxConcurrent: 1
     priority: 1
 ```
+
+Use `http://` for Chrome CDP — the gateway auto-discovers the full WebSocket path via `/json/version`. You can also use the full `ws://` URL if you already have it.
 
 ## Connection Modes
 

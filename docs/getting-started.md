@@ -84,6 +84,32 @@ curl http://localhost:9500/v1/sessions
 browser-gateway check
 ```
 
+## REST API
+
+If you don't want to manage WebSocket connections, use the REST API. Send a POST request, get back the result.
+
+```bash
+# Take a screenshot
+curl -X POST http://localhost:9500/v1/screenshot \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}' \
+  --output screenshot.png
+
+# Extract page content as markdown
+curl -X POST http://localhost:9500/v1/content \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com", "formats": ["markdown"]}'
+
+# Scrape specific elements
+curl -X POST http://localhost:9500/v1/scrape \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com", "selectors": [{"name": "title", "selector": "h1"}]}'
+```
+
+The gateway handles everything internally: picks a provider, opens a browser page, does the work, returns the result. Failed requests are automatically retried with a fresh browser page.
+
+See the full [REST API Reference](./rest-api.md) for all options.
+
 ## Web Dashboard
 
 The gateway includes a built-in web dashboard at `/web`:
@@ -117,6 +143,7 @@ When auth is enabled:
 
 ## Next Steps
 
+- [REST API Reference](./rest-api.md) - Screenshot, content extraction, and scraping endpoints
 - [Web Dashboard](./dashboard.md) - Every page explained with what you can do
 - [Configuration Reference](./configuration.md) - Every config option explained
 - [How Failover Works](./failover.md) - Understanding automatic failover

@@ -101,7 +101,7 @@ Use `host.docker.internal` (Docker Desktop) or `--network host` (Linux):
 ```yaml
 providers:
   local-chrome:
-    url: ws://host.docker.internal:9222/devtools/browser/UUID
+    url: http://host.docker.internal:9222
 ```
 
 ### External providers (cloud)

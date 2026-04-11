@@ -99,6 +99,7 @@ export async function setupLocalChrome(stderrLog?: (msg: string) => void, option
         weight: 1,
       },
     },
+    pool: { minSessions: 0, maxSessions: 5, maxPagesPerSession: 10, retireAfterPages: 100, retireAfterMs: 3600000, idleTimeoutMs: 300000, pageTimeoutMs: 30000 },
     webhooks: [],
     dashboard: { enabled: false },
     logging: { level: "info" as const },

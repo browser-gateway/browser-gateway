@@ -2,6 +2,7 @@ import WebSocket from "ws";
 import type { Logger } from "pino";
 import type { ProviderState } from "../types.js";
 import type { ProviderRegistry } from "./registry.js";
+import { isHttpUrl, fetchCdpVersion } from "./cdp.js";
 
 export class HealthChecker {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -41,7 +42,11 @@ export class HealthChecker {
     const { id, config } = provider;
 
     try {
-      await this.probe(config.url);
+      if (isHttpUrl(config.url)) {
+        await fetchCdpVersion(config.url, this.probeTimeoutMs);
+      } else {
+        await this.probeWebSocket(config.url);
+      }
 
       this.consecutiveFailures.set(id, 0);
 
@@ -68,7 +73,7 @@ export class HealthChecker {
     }
   }
 
-  private probe(url: string): Promise<void> {
+  private probeWebSocket(url: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         ws.close();

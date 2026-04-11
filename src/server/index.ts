@@ -29,7 +29,7 @@ function loadEnvFile(): void {
     }
   }
 }
-import { Gateway } from "../core/index.js";
+import { Gateway, SessionPool } from "../core/index.js";
 import { ReconnectRegistry } from "../core/proxy/reconnect.js";
 import { WebhookNotifier } from "../core/notifications/webhooks.js";
 import { loadConfig } from "./config/loader.js";
@@ -88,7 +88,7 @@ Examples:
   browser-gateway serve
   browser-gateway serve --config ./my-config.yml --port 8080
   browser-gateway mcp
-  browser-gateway mcp --cdp-endpoint ws://localhost:9222/devtools/browser/xxx
+  browser-gateway mcp --cdp-endpoint http://localhost:9222
   browser-gateway mcp --config gateway.yml
 `);
   process.exit(0);
@@ -126,6 +126,7 @@ async function startServer() {
         : undefined,
   });
 
+
   const gateway = new Gateway(config, logger);
   const token = process.env.BG_TOKEN;
 
@@ -134,8 +135,10 @@ async function startServer() {
     logger.info({ count: config.webhooks.length }, "webhooks configured");
   }
 
+  const pool = new SessionPool(config.gateway.port, logger, config.pool, token);
+
   const webDir = findWebDir();
-  const app = createApp(gateway, token, webDir);
+  const app = createApp(gateway, token, webDir, logger, pool);
 
   if (token) {
     logger.info("auth enabled - BG_TOKEN is set");
@@ -279,16 +282,19 @@ async function startServer() {
 
   gateway.start();
 
-  server.listen(config.gateway.port, () => {
+  server.listen(config.gateway.port, async () => {
     logger.info(
       { port: config.gateway.port, providers: gateway.registry.size() },
       `browser-gateway running on http://localhost:${config.gateway.port}`
     );
     logger.info(`WebSocket proxy at ws://localhost:${config.gateway.port}/v1/connect`);
+    logger.info(`REST API at http://localhost:${config.gateway.port}/v1/screenshot, /v1/content, /v1/scrape`);
     logger.info(`Status API at http://localhost:${config.gateway.port}/v1/status`);
     if (webDir) {
       logger.info(`Dashboard at http://localhost:${config.gateway.port}/web`);
     }
+
+    await pool.start();
   });
 
   const shutdown = async () => {
@@ -301,6 +307,7 @@ async function startServer() {
     }
     mcpTransports.clear();
 
+    await pool.shutdown();
     server.close();
 
     await gateway.gracefulShutdown();
@@ -353,6 +360,7 @@ async function startMcpStdio() {
           weight: 1,
         },
       },
+      pool: { minSessions: 0, maxSessions: 5, maxPagesPerSession: 10, retireAfterPages: 100, retireAfterMs: 3600000, idleTimeoutMs: 300000, pageTimeoutMs: 30000 },
       webhooks: [] as { url: string; events?: string[] }[],
       dashboard: { enabled: false },
       logging: { level: "info" as const },
@@ -374,6 +382,7 @@ async function startMcpStdio() {
         queue: { maxSize: 20, timeoutMs: 30000 },
       },
       providers: {} as Record<string, { url: string; limits: { maxConcurrent: number }; priority: number; weight: number }>,
+      pool: { minSessions: 0, maxSessions: 5, maxPagesPerSession: 10, retireAfterPages: 100, retireAfterMs: 3600000, idleTimeoutMs: 300000, pageTimeoutMs: 30000 },
       webhooks: [] as { url: string; events?: string[] }[],
       dashboard: { enabled: false },
       logging: { level: "info" as const },

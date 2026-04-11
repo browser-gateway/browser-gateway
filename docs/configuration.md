@@ -81,7 +81,7 @@ providers:
 
   # Raw Chrome with remote debugging
   my-chrome:
-    url: ws://chrome-host:9222/devtools/browser/UUID
+    url: http://chrome-host:9222              # Auto-discovers WebSocket endpoint
 
   # Any WebSocket endpoint
   my-custom:
@@ -199,3 +199,33 @@ providers:
 ```
 
 This setup: use the primary cloud provider first (3 concurrent), overflow to self-hosted Playwright servers (20 concurrent across 2 servers), fall back to the backup provider if everything else is full.
+
+## Session Pool
+
+The session pool manages browser connections for the REST API endpoints (`/v1/screenshot`, `/v1/content`, `/v1/scrape`). Instead of opening a new browser connection for every request, the pool keeps a small number of long-lived connections and creates lightweight pages (tabs) within them.
+
+```yaml
+pool:
+  minSessions: 0          # Minimum browser sessions to keep alive
+  maxSessions: 5           # Maximum browser connections from pool
+  maxPagesPerSession: 10   # Pages per browser before creating another
+  retireAfterPages: 100    # Recycle browser after this many total pages
+  retireAfterMs: 3600000   # Recycle after 1 hour max
+  idleTimeoutMs: 300000    # Close idle browsers after 5 minutes
+```
+
+| Setting | Default | What it does |
+|---------|---------|-------------|
+| minSessions | 0 | How many browser sessions to keep alive even when idle. 0 means scale to zero — no browser running until the first REST request. Set to 1 to eliminate cold start latency. |
+| maxSessions | 5 | Hard cap on total browser connections. 5 sessions with 10 pages each = 50 concurrent REST operations. |
+| maxPagesPerSession | 10 | When a browser session has this many active pages, the next request creates a new session. Higher values use less connections but put more load on each browser. |
+| retireAfterPages | 100 | After serving this many total pages, the session is marked for retirement. It finishes active pages, then closes. This prevents Chrome memory leaks from accumulating over time. |
+| retireAfterMs | 3600000 | Maximum lifetime of a browser session (1 hour). Even if the page count hasn't been reached, long-running sessions are recycled. |
+| idleTimeoutMs | 300000 | Close idle sessions (no active pages) after this many milliseconds. Only applies to sessions above minSessions — the pool never closes below the minimum. |
+
+**When to adjust these settings:**
+
+- **High throughput, beefy providers:** Increase `maxPagesPerSession` to 20 and `maxSessions` to 10
+- **Memory-constrained providers:** Lower `maxPagesPerSession` to 5, lower `retireAfterPages` to 50
+- **Zero idle cost:** Keep `minSessions: 0` (default) — browsers only run when requests are active
+- **Zero cold start:** Set `minSessions: 1` — one browser stays warm at all times

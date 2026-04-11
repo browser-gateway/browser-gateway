@@ -109,6 +109,8 @@ export default function OverviewPage() {
 
       <ConnectionEndpoint />
 
+      <RestApiEndpoints />
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="glass">
           <CardContent className="p-5">
@@ -223,6 +225,102 @@ export default function OverviewPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function RestApiEndpoints() {
+  const [copied, setCopied] = useState<string | null>(null);
+
+  let baseUrl = "http://localhost:9500";
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol;
+    const host = window.location.hostname;
+    const port = window.location.port;
+    const portSuffix =
+      (protocol === "https:" && port === "443") ||
+      (protocol === "http:" && port === "80") ||
+      !port
+        ? ""
+        : `:${port}`;
+    baseUrl = `${protocol}//${host}${portSuffix}`;
+  }
+
+  const copy = async (text: string, id: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(id);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const endpoints = [
+    {
+      id: "screenshot",
+      method: "POST",
+      path: "/v1/screenshot",
+      desc: "Capture a screenshot of any URL",
+      example: `curl -X POST ${baseUrl}/v1/screenshot -H "Content-Type: application/json" -d '{"url":"https://example.com"}' --output screenshot.png`,
+    },
+    {
+      id: "content",
+      method: "POST",
+      path: "/v1/content",
+      desc: "Extract page content as markdown, HTML, or text",
+      example: `curl -X POST ${baseUrl}/v1/content -H "Content-Type: application/json" -d '{"url":"https://example.com","formats":["markdown"]}'`,
+    },
+    {
+      id: "scrape",
+      method: "POST",
+      path: "/v1/scrape",
+      desc: "Extract data using CSS selectors or full-page formats",
+      example: `curl -X POST ${baseUrl}/v1/scrape -H "Content-Type: application/json" -d '{"url":"https://example.com","selectors":[{"name":"title","selector":"h1"}]}'`,
+    },
+  ];
+
+  return (
+    <Card className="glass">
+      <CardContent className="px-5 py-4 space-y-3">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">
+            REST API
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Simple HTTP endpoints for screenshots, content extraction, and
+            scraping. Each request uses the routing engine automatically.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          {endpoints.map((ep) => (
+            <div
+              key={ep.id}
+              className="flex items-center gap-2 text-xs"
+            >
+              <Badge
+                variant="secondary"
+                className="font-mono text-[10px] px-1.5 py-0 shrink-0"
+              >
+                {ep.method}
+              </Badge>
+              <code className="font-mono text-sm text-foreground/90">
+                {ep.path}
+              </code>
+              <span className="text-muted-foreground truncate hidden sm:inline">
+                {ep.desc}
+              </span>
+              <button
+                onClick={() => copy(ep.example, ep.id)}
+                className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
+              >
+                {copied === ep.id ? (
+                  <Check className="h-3 w-3" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
+              </button>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -29,10 +29,20 @@ providers:
   # Add as many providers as you need:
   #
   # my-chrome:
-  #   url: ws://192.168.1.100:9222/devtools/browser/UUID
+  #   url: http://192.168.1.100:9222   # Chrome CDP (auto-discovers WebSocket endpoint)
   #   limits:
   #     maxConcurrent: 1
   #   priority: 3
+
+# Session pool for REST API (/v1/screenshot, /v1/content, /v1/scrape)
+# The pool keeps browser sessions alive and serves pages from them.
+pool:
+  minSessions: 0                    # 0 = scale to zero when idle (no browser running)
+  maxSessions: 5                    # Max browser connections from pool
+  maxPagesPerSession: 10            # Pages per browser before creating another
+  retireAfterPages: 100             # Recycle browser after this many total pages
+  retireAfterMs: 3600000            # Recycle after 1 hour max
+  idleTimeoutMs: 300000             # Close idle browsers after 5 min
 
 dashboard:
   enabled: true

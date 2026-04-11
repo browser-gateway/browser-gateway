@@ -6,10 +6,14 @@ import { join, extname } from "node:path";
 import WebSocket from "ws";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Logger } from "pino";
 import type { Gateway } from "../core/index.js";
+import { isHttpUrl, fetchCdpVersion } from "../core/providers/cdp.js";
 import { ProviderConfigSchema } from "../core/types.js";
 import { writeConfig } from "./config/writer.js";
 import { loadedConfigPath } from "./config/loader.js";
+import type { SessionPool } from "../core/pool/index.js";
+import { createRestRoutes } from "./rest/index.js";
 
 function getPackageVersion(): string {
   try {
@@ -83,7 +87,7 @@ function isAuthenticated(c: { req: { header: (name: string) => string | undefine
   return false;
 }
 
-export function createApp(gateway: Gateway, token?: string, webDir?: string) {
+export function createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool) {
   const app = new Hono();
   const sessionSecret = getSessionSecret(token);
 
@@ -140,6 +144,7 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string) {
       queueSize: status.queueSize,
       strategy: status.strategy,
       providers,
+      ...(pool ? { pool: pool.getStatus() } : {}),
     });
   });
 
@@ -158,6 +163,12 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string) {
       sessions,
     });
   });
+
+  if (pool) {
+    const restLogger = logger ?? gateway.logger;
+    const restRoutes = createRestRoutes(pool, gateway, restLogger);
+    app.route("/v1", restRoutes);
+  }
 
   // Provider CRUD endpoints
   app.get("/v1/providers", (c) => {
@@ -294,6 +305,16 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string) {
 
     const start = Date.now();
     try {
+      if (isHttpUrl(url)) {
+        const data = await fetchCdpVersion(url, 5000);
+        return c.json({
+          ok: true,
+          latencyMs: Date.now() - start,
+          browser: data.browser,
+          wsUrl: data.webSocketDebuggerUrl,
+        });
+      }
+
       await new Promise<void>((resolve, reject) => {
         const ws = new WebSocket(url, { handshakeTimeout: 5000 });
         ws.on("open", () => { ws.close(); resolve(); });
@@ -445,7 +466,7 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string) {
     return c.json(
       {
         error: "Not found",
-        message: "Connect via WebSocket at /v1/connect, dashboard at /web, or check /v1/status",
+        message: "WebSocket at /v1/connect, REST API at /v1/screenshot or /v1/content or /v1/scrape, dashboard at /web, status at /v1/status",
       },
       404
     );

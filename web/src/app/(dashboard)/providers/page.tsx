@@ -143,7 +143,7 @@ export default function ProvidersPage() {
                   <div>
                     <p className="text-sm font-medium">Chrome Remote Debugging</p>
                     <p className="text-xs text-muted-foreground">Chrome launched with <span className="font-mono">--remote-debugging-port</span></p>
-                    <p className="text-xs text-muted-foreground/70 font-mono mt-1">ws://192.168.1.100:9222/devtools/browser/UUID</p>
+                    <p className="text-xs text-muted-foreground/70 font-mono mt-1">http://192.168.1.100:9222</p>
                   </div>
                 </div>
               </div>
