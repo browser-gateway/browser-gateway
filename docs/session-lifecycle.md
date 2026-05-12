@@ -106,7 +106,17 @@ This protects against leaked connections where a client disconnects without a pr
 
 ### Session Reconnection
 
-When a client disconnects, the gateway remembers which provider the session was on. If the client reconnects with the same session ID within the reconnect timeout, it routes back to the same provider. The browser at the provider stays alive between connections, preserving all state (cookies, localStorage, page content).
+**What the gateway does:** when a client connects, the gateway assigns a session ID and remembers which provider that session was routed to. If the client disconnects and reconnects with the same session ID within the reconnect timeout, the gateway sends it back to the same provider.
+
+**What the gateway does not do:** the gateway does not keep the browser alive itself. It does not buffer messages, replay CDP traffic, or hold any browser state on its side. Persistence depends entirely on the provider continuing to run the browser after the WebSocket closes.
+
+This works because:
+- **Raw Chrome** (`--remote-debugging-port`) keeps the browser process running after a CDP client disconnects.
+- **Cloud providers like Browserless, Steel, and similar** keep browsers alive for a configured timeout after disconnect.
+
+It does not work when the provider kills the browser on disconnect (for example, a self-hosted Playwright server that ties the browser lifetime to the WebSocket).
+
+When persistence does work, all browser state (cookies, localStorage, open tabs, page content, scroll position) is intact on reconnect, because the same browser process is still running on the provider.
 
 ```yaml
 gateway:

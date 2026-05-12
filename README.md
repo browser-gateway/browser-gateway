@@ -44,7 +44,7 @@ Your app connects to `ws://gateway:9500/v1/connect`. The gateway picks the best 
 - **Cooldown System** - Skip failing providers automatically, recover after TTL
 - **Health Checks** - Periodic connectivity probes detect unhealthy providers
 - **Graceful Shutdown** - Active sessions drain cleanly on SIGTERM/SIGINT
-- **Session Persistence** - Disconnect and reconnect to the same browser. Cookies, localStorage, page state preserved.
+- **Session Reconnect** - If a client drops, reconnect with the same session ID and the gateway routes you back to the same provider. The browser there is still alive (as long as the provider keeps it running), so cookies, localStorage, and page state are intact. Works best with raw Chrome and providers that don't kill the browser on disconnect.
 - **Webhooks** - Get notified when providers go down, recover, or queue overflows
 
 ### REST API
