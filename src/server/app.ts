@@ -14,6 +14,13 @@ import { writeConfig } from "./config/writer.js";
 import { loadedConfigPath } from "./config/loader.js";
 import type { SessionPool } from "../core/pool/index.js";
 import { createRestRoutes } from "./rest/index.js";
+import { createProfileRoutes } from "./rest/profiles.js";
+import type { FilesystemProfileStore } from "./profile/filesystem-store.js";
+
+export interface ProfileAppDeps {
+  store: FilesystemProfileStore;
+  dekByVersion: ReadonlyMap<number, Buffer>;
+}
 
 function getPackageVersion(): string {
   try {
@@ -87,7 +94,14 @@ function isAuthenticated(c: { req: { header: (name: string) => string | undefine
   return false;
 }
 
-export function createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool) {
+export function createApp(
+  gateway: Gateway,
+  token?: string,
+  webDir?: string,
+  logger?: Logger,
+  pool?: SessionPool,
+  profile?: ProfileAppDeps,
+) {
   const app = new Hono();
   const sessionSecret = getSessionSecret(token);
 
@@ -168,6 +182,16 @@ export function createApp(gateway: Gateway, token?: string, webDir?: string, log
     const restLogger = logger ?? gateway.logger;
     const restRoutes = createRestRoutes(pool, gateway, restLogger);
     app.route("/v1", restRoutes);
+  }
+
+  if (profile) {
+    const profileLogger = logger ?? gateway.logger;
+    const profileRoutes = createProfileRoutes({
+      store: profile.store,
+      dekByVersion: profile.dekByVersion,
+      logger: profileLogger,
+    });
+    app.route("/v1", profileRoutes);
   }
 
   // Provider CRUD endpoints

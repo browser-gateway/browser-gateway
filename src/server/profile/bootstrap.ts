@@ -11,6 +11,8 @@ export interface ProfileBootstrap {
   lifecycle: ProfileLifecycle;
   store: FilesystemProfileStore;
   storePath: string;
+  dekByVersion: ReadonlyMap<number, Buffer>;
+  currentDekVersion: number;
 }
 
 export interface ProfileBootstrapDisabled {
@@ -96,5 +98,12 @@ export async function bootstrapProfiles(
     "profiles: enabled",
   );
 
-  return { enabled: true, lifecycle, store, storePath };
+  return {
+    enabled: true,
+    lifecycle,
+    store,
+    storePath,
+    dekByVersion: opened.dekByVersion,
+    currentDekVersion: opened.currentDekVersion,
+  };
 }

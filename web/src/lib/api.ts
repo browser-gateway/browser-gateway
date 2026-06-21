@@ -179,3 +179,54 @@ export interface SessionsResponse {
   count: number;
   sessions: SessionInfo[];
 }
+
+export interface ProfileMetaItem {
+  id: string;
+  updatedAt: string;
+  sizeBytes: number;
+  dekVersion: number;
+}
+
+export interface ProfileListResponse {
+  count: number;
+  profiles: ProfileMetaItem[];
+}
+
+export async function fetchProfiles(): Promise<ProfileListResponse> {
+  const res = await fetch(`${API_BASE}/v1/profiles`, fetchOpts);
+  if (res.status === 401) throw new AuthError();
+  if (res.status === 404) return { count: 0, profiles: [] };
+  if (!res.ok) throw new Error(`Profiles API error: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteProfile(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/profiles/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    ...fetchOpts,
+  });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Delete failed: ${res.status}`);
+  }
+}
+
+export function exportProfileUrl(id: string): string {
+  return `${API_BASE}/v1/profiles/${encodeURIComponent(id)}/export`;
+}
+
+export async function importProfile(blob: Blob): Promise<{ imported: string; bytes: number }> {
+  const res = await fetch(`${API_BASE}/v1/profiles/import`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: blob,
+    ...fetchOpts,
+  });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Import failed: ${res.status}`);
+  }
+  return res.json();
+}

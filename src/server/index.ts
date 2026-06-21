@@ -138,8 +138,29 @@ async function startServer() {
 
   const pool = new SessionPool(config.gateway.port, logger, config.pool, token);
 
+  let profileBootstrap;
+  try {
+    profileBootstrap = await bootstrapProfiles(config.profiles, logger);
+  } catch (err) {
+    if (err instanceof ProfileBootstrapError) {
+      logger.fatal({ error: err.message }, "profile bootstrap failed");
+    } else {
+      logger.fatal({ error: err instanceof Error ? err.message : String(err) }, "profile bootstrap failed");
+    }
+    process.exit(1);
+  }
+
   const webDir = findWebDir();
-  const app = createApp(gateway, token, webDir, logger, pool);
+  const app = createApp(
+    gateway,
+    token,
+    webDir,
+    logger,
+    pool,
+    profileBootstrap.enabled
+      ? { store: profileBootstrap.store, dekByVersion: profileBootstrap.dekByVersion }
+      : undefined,
+  );
 
   if (token) {
     logger.info("auth enabled - BG_TOKEN is set");
@@ -158,18 +179,6 @@ async function startServer() {
   const reconnectRegistry = new ReconnectRegistry();
   const reconnectTtl = config.gateway.sessions?.reconnectTimeoutMs ?? 300000;
   reconnectRegistry.startCleanup(reconnectTtl);
-
-  let profileBootstrap;
-  try {
-    profileBootstrap = await bootstrapProfiles(config.profiles, logger);
-  } catch (err) {
-    if (err instanceof ProfileBootstrapError) {
-      logger.fatal({ error: err.message }, "profile bootstrap failed");
-    } else {
-      logger.fatal({ error: err instanceof Error ? err.message : String(err) }, "profile bootstrap failed");
-    }
-    process.exit(1);
-  }
 
   const { handleUpgrade } = createWebSocketHandler(
     gateway,
