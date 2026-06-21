@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   distDir: "dist",
   basePath: "/web",
   trailingSlash: true,
+  images: {
+    unoptimized: true,
+  },
 };
 
 export default nextConfig;

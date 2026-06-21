@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { Logger } from "pino";
-import type { GatewayConfig, ProviderState, Session } from "./types.js";
+import type { GatewayConfig, ProviderState } from "./types.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import { HealthChecker } from "./providers/health.js";
 import { ProviderSelector, type Strategy } from "./router/selector.js";
@@ -8,6 +8,13 @@ import { ConcurrencyTracker } from "./tracking/concurrency.js";
 import { CooldownTracker } from "./tracking/cooldown.js";
 import { SessionTracker } from "./proxy/session.js";
 
+/**
+ * Map of events emitted by the {@link Gateway} class. Useful for typing
+ * `gateway.on("event-name", handler)` consumers, even though EventEmitter
+ * doesn't enforce these types at runtime.
+ *
+ * @public
+ */
 export interface GatewayEvents {
   "session.created": { sessionId: string; providerId: string };
   "session.ended": { sessionId: string; providerId: string; durationMs: number };

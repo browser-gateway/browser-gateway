@@ -13,7 +13,7 @@ const CONFIG_PATH = "/tmp/bg-integration-test.yml";
 let echoServer1: Server;
 let echoServer2: Server;
 let providerWss1: WebSocketServer;
-let providerWss2: WebSocketServer;
+let _providerWss2: WebSocketServer;
 let gatewayProcess: ChildProcess;
 
 function createEchoProvider(port: number): { server: Server; wss: WebSocketServer } {
@@ -37,7 +37,7 @@ beforeAll(async () => {
 
   const b2 = createEchoProvider(PROVIDER_PORT_2);
   echoServer2 = b2.server;
-  providerWss2 = b2.wss;
+  _providerWss2 = b2.wss;
 
   writeFileSync(
     CONFIG_PATH,

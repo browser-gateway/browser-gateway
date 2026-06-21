@@ -20,7 +20,7 @@
     "load-balancer",
     "websocket"
   ],
-  "homepage": "https://browsergateway.io",
+  "homepage": "https://browsergateway.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/browser-gateway/browser-gateway.git"
@@ -54,14 +54,26 @@
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "tsc --noEmit",
+    "lint:dup": "jscpd src tests/integration tests/core",
+    "lint:dead": "knip --no-progress",
+    "lint:eslint": "eslint . --max-warnings 0",
+    "lint:all": "npm run lint && npm run lint:eslint && npm run lint:dup && npm run lint:dead",
+    "catalog:gen": "tsx scripts/gen-helper-catalog.ts",
+    "catalog:check": "tsx scripts/gen-helper-catalog.ts --check",
+    "api:check": "npm run build && api-extractor run",
+    "api:update": "npm run build && api-extractor run --local && echo 'API surface updated. Commit the change to docs/api/.'",
+    "stryker": "stryker run",
+    "stryker:incremental": "stryker run --incremental",
+    "precommit:gates": "npm run lint:all && npm run catalog:check && npm run api:check && npm run test:run",
+    "prepush:gates": "npm run stryker:incremental",
     "prepublishOnly": "npm run test:run && npm run build:all",
     "publish": "npm publish",
     "docker:build": "docker build -t ghcr.io/browser-gateway/server:$(node -p \"require('./package.json').version\") -t ghcr.io/browser-gateway/server:latest .",
     "docker:push": "docker push ghcr.io/browser-gateway/server:$(node -p \"require('./package.json').version\") && docker push ghcr.io/browser-gateway/server:latest",
-    "docker:release": "npm run docker:build && npm run docker:push"
+    "docker:release": "npm run docker:build && npm run docker:push",
+    "prepare": "husky"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.11",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "chrome-launcher": "^1.2.1",
     "defuddle": "^0.15.0",
@@ -77,13 +89,24 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@microsoft/api-extractor": "^7.58.9",
+    "@stryker-mutator/core": "^9.6.1",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^22.12.0",
     "@types/proper-lockfile": "^4.1.4",
     "@types/write-file-atomic": "^4.0.3",
     "@types/ws": "^8.18.1",
+    "eslint": "^10.5.0",
+    "eslint-plugin-sonarjs": "^4.1.0",
+    "husky": "^9.1.7",
+    "jscpd": "^5.0.11",
+    "knip": "^6.17.1",
     "puppeteer-core": "^24.40.0",
+    "ts-morph": "^28.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.61.1",
     "vitest": "^3.1.0"
   },
   "engines": {

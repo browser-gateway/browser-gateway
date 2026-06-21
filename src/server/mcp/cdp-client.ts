@@ -1,4 +1,5 @@
 import WebSocket from "ws";
+import { assertCdpConnected } from "../../core/profile/cdp-event-base.js";
 
 const COMMAND_TIMEOUT_MS = 30000;
 
@@ -114,9 +115,7 @@ export class CdpClient {
   }
 
   async send(method: string, params?: Record<string, unknown>): Promise<unknown> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error("CDP not connected");
-    }
+    assertCdpConnected(this.ws);
 
     const id = this.nextId++;
 

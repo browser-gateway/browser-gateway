@@ -54,7 +54,7 @@ export class HealthChecker {
         provider.healthy = true;
         this.logger.info({ providerId: id }, "health check recovered");
       }
-    } catch (err) {
+    } catch {
       const failures = (this.consecutiveFailures.get(id) ?? 0) + 1;
       this.consecutiveFailures.set(id, failures);
 

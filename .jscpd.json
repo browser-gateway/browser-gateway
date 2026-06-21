@@ -1,0 +1,25 @@
+{
+  "threshold": 0.1,
+  "minTokens": 50,
+  "minLines": 5,
+  "absolute": true,
+  "silent": true,
+  "reporters": [
+    "console",
+    "html"
+  ],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/web/dist/**",
+    "**/coverage/**",
+    "**/.next/**",
+    "**/*.test.ts",
+    "**/*.bench.ts"
+  ],
+  "format": [
+    "typescript",
+    "javascript"
+  ],
+  "output": "./jscpd-report"
+}

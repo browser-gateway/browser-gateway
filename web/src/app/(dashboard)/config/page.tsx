@@ -197,7 +197,7 @@ export default function ConfigPage() {
         </p>
         <p>
           Need help? See the{" "}
-          <a href="https://browsergateway.io" target="_blank" rel="noopener noreferrer" className="text-foreground/70 underline underline-offset-4">
+          <a href="https://browsergateway.com" target="_blank" rel="noopener noreferrer" className="text-foreground/70 underline underline-offset-4">
             configuration reference
           </a>{" "}
           for all available options.

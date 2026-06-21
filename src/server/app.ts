@@ -3,14 +3,14 @@ import { cors } from "hono/cors";
 import { timingSafeEqual, createHmac, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from "node:fs";
 import { join, extname } from "node:path";
-import WebSocket from "ws";
+import { probeWebSocket } from "./ws/probe.js";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Logger } from "pino";
 import type { Gateway } from "../core/index.js";
 import { isHttpUrl, fetchCdpVersion } from "../core/providers/cdp.js";
-import { ProviderConfigSchema } from "../core/types.js";
 import { writeConfig } from "./config/writer.js";
+import { parseProviderConfigBody, parseYamlGatewayConfig } from "./validation.js";
 import { loadedConfigPath } from "./config/loader.js";
 import type { SessionPool } from "../core/pool/index.js";
 import { createRestRoutes } from "./rest/index.js";
@@ -209,12 +209,8 @@ export function createApp(
   app.post("/v1/providers", async (c) => {
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
     const id = body.id as string | undefined;
-    const url = body.url as string | undefined;
-    const maxConcurrent = body.maxConcurrent as number | undefined;
-    const priority = body.priority as number | undefined;
-    const weight = body.weight as number | undefined;
 
-    if (!id || !url) {
+    if (!id || !body.url) {
       return c.json({ error: "Missing required fields: id, url" }, 400);
     }
 
@@ -226,24 +222,17 @@ export function createApp(
       return c.json({ error: `Provider '${id}' already exists` }, 409);
     }
 
-    const providerConfig = ProviderConfigSchema.safeParse({
-      url,
-      limits: maxConcurrent ? { maxConcurrent } : undefined,
-      priority: priority ?? 1,
-      weight: weight ?? 1,
-    });
-
-    if (!providerConfig.success) {
-      const errors = providerConfig.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
-      return c.json({ error: "Invalid provider config", details: errors }, 400);
+    const parsed = parseProviderConfigBody(body);
+    if (parsed.errors) {
+      return c.json({ error: "Invalid provider config", details: parsed.errors }, 400);
     }
 
-    gateway.config.providers[id] = providerConfig.data;
-    gateway.registry.register(id, providerConfig.data);
+    gateway.config.providers[id] = parsed.data;
+    gateway.registry.register(id, parsed.data);
 
     try {
       writeConfig(gateway.config);
-    } catch (err) {
+    } catch {
       return c.json({ error: "Provider added but failed to save config file" }, 500);
     }
 
@@ -252,34 +241,22 @@ export function createApp(
 
   app.put("/v1/providers/:id", async (c) => {
     const id = c.req.param("id");
-    if (!gateway.config.providers[id]) {
+    const existing = gateway.config.providers[id];
+    if (!existing) {
       return c.json({ error: `Provider '${id}' not found` }, 404);
     }
 
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
-    const url = body.url as string | undefined;
-    const maxConcurrent = body.maxConcurrent as number | undefined;
-    const priority = body.priority as number | undefined;
-    const weight = body.weight as number | undefined;
-
-    const existing = gateway.config.providers[id];
-    const providerConfig = ProviderConfigSchema.safeParse({
-      url: url ?? existing.url,
-      limits: maxConcurrent !== undefined ? { maxConcurrent } : existing.limits,
-      priority: priority ?? existing.priority,
-      weight: weight ?? existing.weight ?? 1,
-    });
-
-    if (!providerConfig.success) {
-      const errors = providerConfig.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
-      return c.json({ error: "Invalid provider config", details: errors }, 400);
+    const parsed = parseProviderConfigBody(body, existing);
+    if (parsed.errors) {
+      return c.json({ error: "Invalid provider config", details: parsed.errors }, 400);
     }
 
-    gateway.config.providers[id] = providerConfig.data;
+    gateway.config.providers[id] = parsed.data;
 
     const state = gateway.registry.get(id);
     if (state) {
-      state.config = providerConfig.data;
+      state.config = parsed.data;
     }
 
     try {
@@ -339,12 +316,7 @@ export function createApp(
         });
       }
 
-      await new Promise<void>((resolve, reject) => {
-        const ws = new WebSocket(url, { handshakeTimeout: 5000 });
-        ws.on("open", () => { ws.close(); resolve(); });
-        ws.on("error", reject);
-        setTimeout(() => { ws.close(); reject(new Error("timeout")); }, 5000);
-      });
+      await probeWebSocket(url, 5000);
       return c.json({ ok: true, latencyMs: Date.now() - start });
     } catch (err: any) {
       return c.json({ ok: false, error: err.message, latencyMs: Date.now() - start });
@@ -362,44 +334,31 @@ export function createApp(
   });
 
   app.post("/v1/config/validate", async (c) => {
-    const { parse } = await import("yaml");
-    const { GatewayConfigSchema } = await import("../core/types.js");
-
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
     const yaml = body.yaml as string | undefined;
     if (!yaml) return c.json({ valid: false, errors: ["No YAML content provided"] });
 
-    try {
-      const parsed = parse(yaml) as Record<string, unknown>;
-      const result = GatewayConfigSchema.safeParse(parsed);
-      if (result.success) {
-        const providerCount = Object.keys(result.data.providers).length;
-        return c.json({ valid: true, providerCount });
-      }
-      const errors = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
-      return c.json({ valid: false, errors });
-    } catch (err: any) {
-      return c.json({ valid: false, errors: [`YAML parse error: ${err.message}`] });
+    const result = await parseYamlGatewayConfig(yaml);
+    if (result.kind === "parse-error") {
+      return c.json({ valid: false, errors: [`YAML parse error: ${result.message}`] });
     }
+    if (result.kind === "validation-error") {
+      return c.json({ valid: false, errors: result.errors });
+    }
+    return c.json({ valid: true, providerCount: Object.keys(result.data.providers).length });
   });
 
   app.put("/v1/config", async (c) => {
-    const { parse } = await import("yaml");
-    const { GatewayConfigSchema } = await import("../core/types.js");
-
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
     const yaml = body.yaml as string | undefined;
     if (!yaml) return c.json({ error: "No YAML content provided" }, 400);
 
-    try {
-      const parsed = parse(yaml) as Record<string, unknown>;
-      const result = GatewayConfigSchema.safeParse(parsed);
-      if (!result.success) {
-        const errors = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
-        return c.json({ error: "Invalid configuration", details: errors }, 400);
-      }
-    } catch (err: any) {
-      return c.json({ error: `YAML parse error: ${err.message}` }, 400);
+    const result = await parseYamlGatewayConfig(yaml);
+    if (result.kind === "parse-error") {
+      return c.json({ error: `YAML parse error: ${result.message}` }, 400);
+    }
+    if (result.kind === "validation-error") {
+      return c.json({ error: "Invalid configuration", details: result.errors }, 400);
     }
 
     const path = loadedConfigPath ?? "./gateway.yml";

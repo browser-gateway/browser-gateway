@@ -32,9 +32,14 @@ export function AppSidebar() {
     <Sidebar className="border-r border-sidebar-border">
       <SidebarHeader className="px-4 py-5">
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-foreground text-background text-[11px] font-bold">
-            BG
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/web/browser-gateway.svg"
+            alt="browser-gateway"
+            width={28}
+            height={28}
+            className="h-7 w-7 shrink-0"
+          />
           <span className="text-sm font-semibold tracking-tight">
             browser-gateway
           </span>
@@ -68,12 +73,12 @@ export function AppSidebar() {
       <SidebarFooter className="px-4 py-4">
         <div className="flex items-center justify-between">
           <a
-            href="https://browsergateway.io"
+            href="https://browsergateway.com"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            browsergateway.io
+            browsergateway.com
             <ExternalLink className="h-3 w-3" />
           </a>
           <ThemeToggle />

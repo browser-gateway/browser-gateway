@@ -6,24 +6,50 @@ interface GetCookiesResponse {
 }
 
 /**
+ * Wrap an op so it rejects after timeoutMs even when the underlying Promise has
+ * no internal timer. Critical for CDP send(): the WS may stay open while the
+ * peer never responds. Combined with closing the client on timeout (H2 fix),
+ * this guarantees the lifecycle never holds a lock indefinitely.
+ */
+function withDeadline<T>(op: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timeout after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+    op.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
+/**
  * Capture all browser-level cookies via a transient CDP WebSocket.
  *
- * Opens a CDP WebSocket, runs Storage.getCookies (browser-wide, no target attach needed),
- * closes the connection. Total round trips: 1 + open + close.
+ * timeoutMs covers the entire operation (connect + send + close). If the peer
+ * never responds, the deadline fires, the client is closed (rejecting any
+ * pending send via the H2 fix), and the lifecycle's lock is released.
  *
- * On providers that count each WebSocket as a billable concurrent session (Browserless),
- * this counts as one brief connection. On persistent-session providers (Steel,
- * Browserbase, our runtime, raw Chrome), this is essentially free.
+ * On providers that count each WebSocket as a billable concurrent session
+ * (Browserless), this counts as one brief connection. On persistent-session
+ * providers (Steel, Browserbase, our runtime, raw Chrome), this is essentially free.
  */
 export async function captureCookiesViaTransient(
   wsUrl: string,
   timeoutMs = 10_000,
 ): Promise<CdpCookie[]> {
   const client = new WsCDPClient();
-  await client.connect(wsUrl, timeoutMs);
   try {
-    const res = (await client.send("Storage.getCookies")) as GetCookiesResponse | null;
-    return res?.cookies ?? [];
+    return await withDeadline(
+      (async () => {
+        await client.connect(wsUrl, timeoutMs);
+        const res = (await client.send("Storage.getCookies")) as GetCookiesResponse | null;
+        return res?.cookies ?? [];
+      })(),
+      timeoutMs,
+      "captureCookiesViaTransient",
+    );
   } finally {
     await client.close().catch(() => undefined);
   }
@@ -32,7 +58,7 @@ export async function captureCookiesViaTransient(
 /**
  * Inject cookies via a transient CDP WebSocket using Storage.setCookies.
  *
- * No-op if cookies is empty.
+ * No-op if cookies is empty. timeoutMs covers the entire operation.
  */
 export async function injectCookiesViaTransient(
   wsUrl: string,
@@ -41,11 +67,17 @@ export async function injectCookiesViaTransient(
 ): Promise<void> {
   if (cookies.length === 0) return;
   const client = new WsCDPClient();
-  await client.connect(wsUrl, timeoutMs);
   try {
-    await client.send("Storage.setCookies", {
-      cookies: cookies.map(prepareCookieForInject),
-    });
+    await withDeadline(
+      (async () => {
+        await client.connect(wsUrl, timeoutMs);
+        await client.send("Storage.setCookies", {
+          cookies: cookies.map(prepareCookieForInject),
+        });
+      })(),
+      timeoutMs,
+      "injectCookiesViaTransient",
+    );
   } finally {
     await client.close().catch(() => undefined);
   }
@@ -54,8 +86,11 @@ export async function injectCookiesViaTransient(
 /**
  * Strip fields the CDP setCookies API doesn't accept on injection. The shape returned
  * by getCookies has metadata (size, session) that's not valid input.
+ *
+ * Exported so callers building their own setCookies batch (e.g. the per-origin
+ * inject path in `inject.ts`) don't reimplement the same field-filtering logic.
  */
-function prepareCookieForInject(c: CdpCookie): Record<string, unknown> {
+export function prepareCookieForInject(c: CdpCookie): Record<string, unknown> {
   const out: Record<string, unknown> = {
     name: c.name,
     value: c.value,

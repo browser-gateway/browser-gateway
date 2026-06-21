@@ -77,4 +77,57 @@ describe("blob (BGP1 binary format)", () => {
     expect(() => encodeBlob(newDek(), 0, Buffer.from("x"), "p")).toThrow();
     expect(() => encodeBlob(newDek(), 256, Buffer.from("x"), "p")).toThrow();
   });
+
+  // Boundary tests — distinguish `<` from `<=` and `>` from `>=` for the
+  // dekVersion range check. Without these a mutation could shift the
+  // boundaries undetected.
+  it("accepts dekVersion at the inclusive lower bound (1)", () => {
+    expect(() => encodeBlob(newDek(), 1, Buffer.from("x"), "p")).not.toThrow();
+  });
+
+  it("accepts dekVersion at the inclusive upper bound (255)", () => {
+    expect(() => encodeBlob(newDek(), 255, Buffer.from("x"), "p")).not.toThrow();
+  });
+
+  // The decodeBlobHeader path has its own dekVersion >= 1 check. Encoding
+  // refuses 0, so we craft a blob with dekVersion=0 written directly into the
+  // header bytes to exercise the decode-side guard.
+  it("decodeBlobHeader rejects blobs with dekVersion=0 written into the header", () => {
+    const dek = newDek();
+    const { bytes } = encodeBlob(dek, 1, Buffer.from("x"), "p");
+    bytes.writeUInt8(0, 6); // header byte 6 = dekVersion field
+    expect(() => decodeBlobHeader(bytes)).toThrow(/dekVersion/);
+  });
+
+  // Boundary test for the AAD truncation check (`blob.length < aadEnd`). The
+  // existing "rejects truncated AAD" test only covers `blob.length < aadEnd`.
+  // This one verifies the no-ciphertext edge case (`blob.length === aadEnd`)
+  // is accepted at the header level, distinguishing `<` from `<=`.
+  it("decodeBlobHeader accepts a blob whose length equals header+AAD (no ciphertext)", () => {
+    const dek = newDek();
+    const { bytes } = encodeBlob(dek, 1, Buffer.from("plain"), "longer-id-name");
+    // Compute aadEnd from the header and truncate to exactly that.
+    const header = decodeBlobHeader(bytes);
+    const aadEnd = HEADER_LEN + header.aad.length;
+    const exactBoundary = bytes.subarray(0, aadEnd);
+    // Header decode should succeed even with zero ciphertext.
+    expect(() => decodeBlobHeader(exactBoundary)).not.toThrow();
+    const header2 = decodeBlobHeader(exactBoundary);
+    expect(header2.ciphertext.length).toBe(0);
+  });
+
+  // Distinguish `blob.length < HEADER_LEN` from `<=`. The existing test passes
+  // HEADER_LEN - 1. This one passes exactly HEADER_LEN.
+  it("decodeBlobHeader accepts a blob whose length equals exactly HEADER_LEN", () => {
+    // A blob exactly HEADER_LEN bytes with valid magic + version + alg + dekVersion
+    // and aadLen=0. Will likely fail later in AAD parsing, but the "too small" guard
+    // must NOT trip.
+    const buf = Buffer.alloc(HEADER_LEN);
+    MAGIC.copy(buf, 0);
+    buf.writeUInt8(1, 4);  // version
+    buf.writeUInt8(0x01, 5); // alg
+    buf.writeUInt8(1, 6);  // dekVersion
+    buf.writeUInt32LE(0, 36); // aadLen=0
+    expect(() => decodeBlobHeader(buf)).not.toThrow(/too small/);
+  });
 });

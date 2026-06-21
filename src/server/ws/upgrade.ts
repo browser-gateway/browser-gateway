@@ -209,25 +209,37 @@ export function createWebSocketHandler(
 
 import { resolveWsUrl, isHttpUrl } from "../../core/providers/cdp.js";
 
+// L1 fix: bounded LRU. If you remove and re-add providers many times the cache
+// would otherwise grow forever; in practice the cap is reached by anyone using
+// many distinct provider URLs, so the bound is defense-in-depth.
 const cdpUrlCache = new Map<string, { wsUrl: string; resolvedAt: number }>();
 const CDP_CACHE_TTL = 30000;
+const CDP_CACHE_MAX = 256;
 
 async function cachedResolveWsUrl(providerUrl: string, timeoutMs: number): Promise<string> {
   if (!isHttpUrl(providerUrl)) return providerUrl;
 
   const cached = cdpUrlCache.get(providerUrl);
   if (cached && Date.now() - cached.resolvedAt < CDP_CACHE_TTL) {
+    // Refresh LRU position
+    cdpUrlCache.delete(providerUrl);
+    cdpUrlCache.set(providerUrl, cached);
     return cached.wsUrl;
   }
 
   const resolved = await resolveWsUrl(providerUrl, Math.min(timeoutMs, 3000));
   if (resolved !== providerUrl) {
+    if (cdpUrlCache.size >= CDP_CACHE_MAX) {
+      // Evict oldest entry (Map iteration order = insertion order)
+      const oldestKey = cdpUrlCache.keys().next().value;
+      if (oldestKey !== undefined) cdpUrlCache.delete(oldestKey);
+    }
     cdpUrlCache.set(providerUrl, { wsUrl: resolved, resolvedAt: Date.now() });
   }
   return resolved;
 }
 
-function pipeToProvider(
+async function pipeToProvider(
   gateway: Gateway,
   logger: Logger,
   clientSocket: Duplex,
@@ -239,33 +251,34 @@ function pipeToProvider(
   profileLifecycle?: ProfileLifecycle,
   acquired?: AcquiredProfile | null,
 ): Promise<boolean> {
-  return new Promise(async (resolve) => {
-    let resolvedUrl: string;
+  // L4 fix: do the awaited setup OUTSIDE the Promise constructor so async
+  // errors don't get silently swallowed by a missing reject path.
+  let resolvedUrl: string;
+  try {
+    resolvedUrl = await cachedResolveWsUrl(provider.config.url, gateway.config.gateway.connectionTimeout);
+  } catch {
+    resolvedUrl = provider.config.url;
+  }
+
+  // Inject the profile via a transient CDP connection BEFORE handing the user's
+  // pipe over. If inject fails, treat as a provider failure (retryable).
+  if (acquired && profileLifecycle && acquired.cookies.length > 0) {
     try {
-      resolvedUrl = await cachedResolveWsUrl(provider.config.url, gateway.config.gateway.connectionTimeout);
-    } catch {
-      resolvedUrl = provider.config.url;
+      await profileLifecycle.inject(acquired, resolvedUrl);
+    } catch (err) {
+      logger.warn(
+        {
+          sessionId,
+          providerId: provider.id,
+          error: err instanceof Error ? err.message : String(err),
+        },
+        "profile inject failed, trying next provider",
+      );
+      return false;
     }
+  }
 
-    // Inject the profile via a transient CDP connection BEFORE handing the user's
-    // pipe over. If inject fails, treat as a provider failure (retryable).
-    if (acquired && profileLifecycle && acquired.cookies.length > 0) {
-      try {
-        await profileLifecycle.inject(acquired, resolvedUrl);
-      } catch (err) {
-        logger.warn(
-          {
-            sessionId,
-            providerId: provider.id,
-            error: err instanceof Error ? err.message : String(err),
-          },
-          "profile inject failed, trying next provider",
-        );
-        resolve(false);
-        return;
-      }
-    }
-
+  return new Promise((resolve) => {
     const providerUrl = new URL(resolvedUrl);
     const isSecure = providerUrl.protocol === "wss:";
     const port = parseInt(providerUrl.port || (isSecure ? "443" : "80"), 10);
@@ -404,6 +417,23 @@ function pipeToProvider(
     clientSocket.on("close", cleanup("client"));
     clientSocket.on("error", cleanup("client-error"));
     providerSocket.on("close", cleanup("provider"));
+
+    // L5 fix: defensive watchdog — if neither socket emits a close/error event
+    // (rare but real for abrupt destruction or VM suspend), poll periodically
+    // and force cleanup once both sockets are destroyed. Stops the profile lock
+    // and provider slot from being held indefinitely.
+    const watchdog = setInterval(() => {
+      if (cleanedUp) {
+        clearInterval(watchdog);
+        return;
+      }
+      if (clientSocket.destroyed && providerSocket.destroyed) {
+        clearInterval(watchdog);
+        cleanup("watchdog")();
+      }
+    }, 5_000);
+    watchdog.unref();
+
     providerSocket.on("error", (err) => {
       clearTimeout(timeout);
       if (!gotUpgradeResponse) {

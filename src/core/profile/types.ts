@@ -50,17 +50,6 @@ export interface ProfileMeta {
   dekVersion: number;
 }
 
-export interface EncryptedBlob {
-  magic: Buffer;
-  version: number;
-  alg: number;
-  dekVersion: number;
-  iv: Buffer;
-  authTag: Buffer;
-  aad: Buffer;
-  ciphertext: Buffer;
-}
-
 export interface KdfParams {
   algorithm: "scrypt";
   N: number;

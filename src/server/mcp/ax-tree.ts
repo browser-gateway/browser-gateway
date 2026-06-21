@@ -22,16 +22,12 @@ interface RefEntry {
   name: string;
 }
 
-let refMap = new Map<number, RefEntry>();
+const refMap = new Map<number, RefEntry>();
 let nextRef = 1;
 
 export function clearRefs(): void {
   refMap.clear();
   nextRef = 1;
-}
-
-export function getRef(ref: number): RefEntry | undefined {
-  return refMap.get(ref);
 }
 
 export async function getSnapshot(cdp: CdpClient): Promise<string> {
@@ -56,7 +52,6 @@ export async function getSnapshot(cdp: CdpClient): Promise<string> {
     }
 
     const lines: string[] = [];
-    const nodeMap = new Map(result.nodes.map((n) => [n.nodeId, n]));
     const depths = new Map<string, number>();
     depths.set(result.nodes[0]?.nodeId ?? "", 0);
 
@@ -175,71 +170,50 @@ async function fallbackSnapshot(cdp: CdpClient): Promise<string> {
   return lines.length > 0 ? lines.join("\n") : "(empty page - no interactive elements found)";
 }
 
-export async function resolveRefToSelector(cdp: CdpClient, ref: number): Promise<string | null> {
+/**
+ * Resolve a ref to a Runtime objectId and run `action` against it. Returns
+ * a uniform {success, error} shape — used by every ref-based MCP tool so the
+ * error-handling contract stays identical across `clickByRef`, `typeByRef`,
+ * and any future ref-based actions.
+ */
+async function withResolvedRef(
+  cdp: CdpClient,
+  ref: number,
+  action: (objectId: string) => Promise<unknown>,
+): Promise<{ success: boolean; error?: string }> {
   const entry = refMap.get(ref);
-  if (!entry) return null;
-
-  try {
-    const resolved = await cdp.send("DOM.resolveNode", {
-      backendNodeId: entry.backendDOMNodeId,
-    }) as { object: { objectId: string } };
-
-    const descResult = await cdp.send("Runtime.callFunctionOn", {
-      objectId: resolved.object.objectId,
-      functionDeclaration: `function() {
-        const el = this;
-        if (el.id) return '#' + el.id;
-        const tag = el.tagName.toLowerCase();
-        const name = el.getAttribute('name');
-        if (name) return tag + '[name="' + name + '"]';
-        const text = (el.textContent || '').trim().slice(0, 50);
-        return JSON.stringify({ tag, text, role: el.getAttribute('role') });
-      }`,
-      returnByValue: true,
-    }) as { result: { value: string } };
-
-    return descResult.result.value;
-  } catch {
-    return null;
+  if (!entry) {
+    return { success: false, error: `Ref [${ref}] not found. Run browser_snapshot to refresh refs.` };
   }
-}
-
-export async function clickByRef(cdp: CdpClient, ref: number): Promise<{ success: boolean; error?: string }> {
-  const entry = refMap.get(ref);
-  if (!entry) return { success: false, error: `Ref [${ref}] not found. Run browser_snapshot to refresh refs.` };
-
   try {
     const resolved = await cdp.send("DOM.resolveNode", {
       backendNodeId: entry.backendDOMNodeId,
     }) as { object: { objectId: string } };
-
-    await cdp.send("Runtime.callFunctionOn", {
-      objectId: resolved.object.objectId,
-      functionDeclaration: `function() { this.scrollIntoView({ block: 'center' }); this.click(); }`,
-    });
-
+    await action(resolved.object.objectId);
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
 }
 
-export async function typeByRef(
+export function clickByRef(cdp: CdpClient, ref: number): Promise<{ success: boolean; error?: string }> {
+  return withResolvedRef(cdp, ref, (objectId) =>
+    cdp.send("Runtime.callFunctionOn", {
+      objectId,
+      functionDeclaration: `function() { this.scrollIntoView({ block: 'center' }); this.click(); }`,
+    }),
+  );
+}
+
+export function typeByRef(
   cdp: CdpClient,
   ref: number,
   text: string,
   clear: boolean = true,
 ): Promise<{ success: boolean; error?: string }> {
-  const entry = refMap.get(ref);
-  if (!entry) return { success: false, error: `Ref [${ref}] not found. Run browser_snapshot to refresh refs.` };
-
-  try {
-    const resolved = await cdp.send("DOM.resolveNode", {
-      backendNodeId: entry.backendDOMNodeId,
-    }) as { object: { objectId: string } };
-
-    await cdp.send("Runtime.callFunctionOn", {
-      objectId: resolved.object.objectId,
+  return withResolvedRef(cdp, ref, (objectId) =>
+    cdp.send("Runtime.callFunctionOn", {
+      objectId,
       functionDeclaration: `function(text, shouldClear) {
         this.focus();
         const nativeSetter = Object.getOwnPropertyDescriptor(
@@ -261,10 +235,6 @@ export async function typeByRef(
         { value: text },
         { value: clear },
       ],
-    });
-
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
+    }),
+  );
 }

@@ -320,6 +320,6 @@ MIT - see [LICENSE](LICENSE).
 
 ## Links
 
-- [browsergateway.io](https://browsergateway.io)
+- [browsergateway.com](https://browsergateway.com)
 - [GitHub](https://github.com/browser-gateway/browser-gateway)
 - [npm](https://www.npmjs.com/package/browser-gateway)

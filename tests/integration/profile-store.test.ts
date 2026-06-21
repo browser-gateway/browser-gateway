@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { encodeBlob, newDek } from "../../src/core/profile/index.js";
+import { encodeBlob } from "../../src/core/profile/index.js";
 import {
   FilesystemProfileStore,
   KeycheckMismatchError,

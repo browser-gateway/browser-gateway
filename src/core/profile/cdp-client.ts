@@ -1,6 +1,6 @@
-import { EventEmitter } from "node:events";
 import WebSocket from "ws";
 import type { CDPClient } from "./cdp.js";
+import { TypedCdpEventEmitter, assertCdpConnected } from "./cdp-event-base.js";
 
 interface CDPMessage {
   id?: number;
@@ -22,18 +22,11 @@ interface PendingCall {
  * - Suitable for Storage.* commands (browser-wide cookies, etc.) without a target.
  * - Tests use the existing EventEmitter-based MockCDP; production uses this.
  */
-export class WsCDPClient extends EventEmitter implements CDPClient {
+export class WsCDPClient extends TypedCdpEventEmitter implements CDPClient {
   private ws: WebSocket | null = null;
   private nextId = 1;
   private readonly pending = new Map<number, PendingCall>();
   private closeError: Error | null = null;
-
-  on(event: string, listener: (params: unknown) => void): this {
-    return super.on(event, listener);
-  }
-  off(event: string, listener: (params: unknown) => void): this {
-    return super.off(event, listener);
-  }
 
   async connect(wsUrl: string, timeoutMs = 10_000): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -69,9 +62,7 @@ export class WsCDPClient extends EventEmitter implements CDPClient {
   }
 
   async send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error("CDP not connected");
-    }
+    assertCdpConnected(this.ws);
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
@@ -88,7 +79,15 @@ export class WsCDPClient extends EventEmitter implements CDPClient {
     if (!this.ws) return;
     if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
       await new Promise<void>((resolve) => {
-        const t = setTimeout(resolve, 2_000);
+        const t = setTimeout(() => {
+          // H2: if the peer never sends a close frame, the pending sends would
+          // otherwise hang forever after we null this.ws. Force-reject them.
+          this.rejectAllPending(
+            new Error("CDP close timeout — connection did not close cleanly"),
+          );
+          try { this.ws!.terminate(); } catch {}
+          resolve();
+        }, 2_000);
         this.ws!.once("close", () => {
           clearTimeout(t);
           resolve();
@@ -97,6 +96,13 @@ export class WsCDPClient extends EventEmitter implements CDPClient {
       });
     }
     this.ws = null;
+  }
+
+  private rejectAllPending(err: Error): void {
+    for (const call of this.pending.values()) {
+      call.reject(err);
+    }
+    this.pending.clear();
   }
 
   private handleMessage(data: Buffer): void {
@@ -126,9 +132,6 @@ export class WsCDPClient extends EventEmitter implements CDPClient {
 
   private handleClose(code: number, reason: string): void {
     const err = this.closeError ?? new Error(`CDP connection closed (code=${code}${reason ? `, reason=${reason}` : ""})`);
-    for (const call of this.pending.values()) {
-      call.reject(err);
-    }
-    this.pending.clear();
+    this.rejectAllPending(err);
   }
 }

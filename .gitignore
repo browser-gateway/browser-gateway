@@ -11,3 +11,7 @@ coverage/
 gateway.dev.yml
 gateway.yml
 gateway.yml.backup
+jscpd-report/
+.stryker-tmp/
+.api-extractor-tmp/
+reports/

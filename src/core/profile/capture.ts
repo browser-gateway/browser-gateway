@@ -2,8 +2,8 @@ import type {
   CDPClient,
   CdpCookie,
   GetAllCookiesResponse,
-  RuntimeEvaluateResponse,
 } from "./cdp.js";
+import { evaluateExpression, navigateAndWait, resolveProfileOptions } from "./cdp-utils.js";
 import {
   PROFILE_VERSION,
   type CapturedProfile,
@@ -21,11 +21,6 @@ export interface CaptureOptions {
   /** AbortSignal for cancellation. */
   signal?: AbortSignal;
 }
-
-const DEFAULTS = {
-  navigationTimeoutMs: 10_000,
-  evaluateTimeoutMs: 5_000,
-};
 
 const STORAGE_DUMP_EXPR = `
   (() => {
@@ -64,12 +59,7 @@ export async function captureState(
   cdp: CDPClient,
   opts: CaptureOptions = {},
 ): Promise<CapturedProfile> {
-  const started = Date.now();
-  const navTimeout = opts.navigationTimeoutMs ?? DEFAULTS.navigationTimeoutMs;
-  const evalTimeout = opts.evaluateTimeoutMs ?? DEFAULTS.evaluateTimeoutMs;
-  const signal = opts.signal;
-
-  if (signal?.aborted) throw new Error("capture aborted");
+  const { started, navTimeout, evalTimeout, signal } = resolveProfileOptions(opts, "capture");
 
   const cookieResp = (await cdp.send("Network.getAllCookies")) as GetAllCookiesResponse;
   const cookies: CdpCookie[] = cookieResp?.cookies ?? [];
@@ -126,73 +116,6 @@ export async function captureState(
       durationMs: Date.now() - started,
     },
   };
-}
-
-/** Navigate the CDP target to the given URL and wait for the page to be evaluable. */
-async function navigateAndWait(cdp: CDPClient, url: string, timeoutMs: number): Promise<void> {
-  await cdp.send("Page.enable").catch(() => undefined);
-
-  const navigatePromise = cdp.send("Page.navigate", { url });
-  const loadPromise = waitForEvent(cdp, "Page.loadEventFired", timeoutMs).catch(() => undefined);
-
-  const navResult = (await withTimeout(navigatePromise, timeoutMs, `navigate(${url})`)) as {
-    errorText?: string;
-  } | undefined;
-  if (navResult?.errorText) {
-    throw new Error(`navigate ${url} failed: ${navResult.errorText}`);
-  }
-  await loadPromise;
-}
-
-async function evaluateExpression(
-  cdp: CDPClient,
-  expression: string,
-  timeoutMs: number,
-): Promise<unknown> {
-  const resp = (await withTimeout(
-    cdp.send("Runtime.evaluate", {
-      expression,
-      returnByValue: true,
-      awaitPromise: false,
-    }),
-    timeoutMs,
-    "Runtime.evaluate",
-  )) as RuntimeEvaluateResponse;
-
-  if (resp.exceptionDetails) {
-    const msg = resp.exceptionDetails.exception?.description
-      ?? resp.exceptionDetails.text
-      ?? "unknown evaluate exception";
-    throw new Error(`runtime exception: ${msg}`);
-  }
-  return resp.result?.value;
-}
-
-function waitForEvent(cdp: CDPClient, event: string, timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const onFire = () => {
-      cleanup();
-      resolve();
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(`timeout waiting for ${event}`));
-    }, timeoutMs);
-    const cleanup = () => {
-      clearTimeout(timer);
-      try { (cdp.off as (e: string, l: unknown) => unknown)(event, onFire); } catch {}
-    };
-    (cdp.on as (e: string, l: unknown) => unknown)(event, onFire);
-  });
-}
-
-function withTimeout<T>(p: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`timeout after ${timeoutMs}ms: ${label}`)), timeoutMs),
-    ),
-  ]);
 }
 
 function uniqueOrigins(list: string[]): string[] {

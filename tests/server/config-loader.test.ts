@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { writeFileSync, unlinkSync, existsSync } from "node:fs";
 import { loadConfig } from "../../src/server/config/loader.js";
 

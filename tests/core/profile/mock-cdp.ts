@@ -1,5 +1,5 @@
-import { EventEmitter } from "node:events";
 import type { CDPClient } from "../../../src/core/profile/cdp.js";
+import { TypedCdpEventEmitter } from "../../../src/core/profile/cdp-event-base.js";
 
 export type Handler = (params: Record<string, unknown>) => Promise<unknown> | unknown;
 
@@ -8,20 +8,13 @@ export interface CallRecord {
   params: Record<string, unknown>;
 }
 
-export class MockCDP extends EventEmitter implements CDPClient {
+export class MockCDP extends TypedCdpEventEmitter implements CDPClient {
   public readonly calls: CallRecord[] = [];
   private readonly handlers = new Map<string, Handler>();
   /** When set, every call to send() resolves after this delay (ms). */
   public sendDelayMs = 0;
   /** When set, fires Page.loadEventFired this many ms after each Page.navigate. */
   public autoFireLoadAfterMs: number | null = 0;
-
-  on(event: string, listener: (params: unknown) => void): this {
-    return super.on(event, listener);
-  }
-  off(event: string, listener: (params: unknown) => void): this {
-    return super.off(event, listener);
-  }
 
   setHandler(method: string, handler: Handler): void {
     this.handlers.set(method, handler);

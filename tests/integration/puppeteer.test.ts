@@ -11,7 +11,7 @@ const PROVIDER_PORT = 14001;
 const CONFIG_PATH = "/tmp/bg-puppeteer-test.yml";
 
 let echoServer: Server;
-let providerWss: WebSocketServer;
+let _providerWss: WebSocketServer;
 let gatewayProcess: ChildProcess;
 
 beforeAll(async () => {
@@ -53,7 +53,7 @@ beforeAll(async () => {
   });
 
   echoServer = server;
-  providerWss = wss;
+  _providerWss = wss;
   server.listen(PROVIDER_PORT);
 
   writeFileSync(

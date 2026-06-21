@@ -28,7 +28,7 @@ export function registerTools(
   server: McpServer,
   gateway: Gateway,
   sessionManager: McpSessionManager,
-  logger: Logger,
+  _logger: Logger,
 ): void {
 
   async function getOrCreateSession(sessionId?: string): Promise<McpBrowserSession | null> {

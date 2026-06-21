@@ -15,8 +15,14 @@ import type { LockToken, ProfileStore } from "../../core/profile/store.js";
 export interface LifecycleOptions {
   /** Lock TTL: maximum time we'll hold a profile lock for one session. */
   lockTtlMs?: number;
-  /** Timeout for transient CDP connect + ops at session boundaries. */
+  /** Timeout for the inject path (CDP connect + Storage.setCookies). */
   cdpTimeoutMs?: number;
+  /**
+   * Timeout for the commit path (CDP connect + Storage.getCookies + write).
+   * Defaults to cdpTimeoutMs if unset. Splitting them lets the lock be released
+   * sooner after disconnect — important for rapid-reconnect agent workflows.
+   */
+  commitTimeoutMs?: number;
 }
 
 export interface AcquiredProfile {
@@ -59,6 +65,15 @@ export class LifecycleError extends Error {
  * a different provider if the first connection attempt fails.
  */
 export class ProfileLifecycle {
+  /**
+   * In-flight commits. We add a promise here when commit() starts and remove it
+   * when it settles. drain() awaits all of these — important so SIGTERM during
+   * graceful shutdown doesn't strand a freshly-disconnected session's commit
+   * (H1 fix).
+   */
+  private readonly pendingCommits = new Set<Promise<void>>();
+  private draining = false;
+
   constructor(
     private readonly store: ProfileStore,
     private readonly dekByVersion: ReadonlyMap<number, Buffer>,
@@ -149,12 +164,39 @@ export class ProfileLifecycle {
    * Errors from the CDP capture step are logged but DO NOT propagate — we still
    * release the lock so the next session can proceed. Previous saved state (if any)
    * is preserved unchanged.
+   *
+   * H1: the returned Promise is tracked in pendingCommits so drain() can await it.
+   * M1: uses commitTimeoutMs (defaults to cdpTimeoutMs) — typically shorter than
+   *     the inject timeout so lock is released sooner.
+   * M2: if capture returns 0 cookies but the previous saved state had cookies,
+   *     we skip the save and log a WARN — preserves the previous state instead of
+   *     silently wiping it.
    */
   async commit(acquired: AcquiredProfile, providerWsUrl: string): Promise<void> {
-    const cdpTimeoutMs = this.opts.cdpTimeoutMs ?? 10_000;
+    const promise = this.runCommit(acquired, providerWsUrl);
+    this.pendingCommits.add(promise);
+    promise.finally(() => this.pendingCommits.delete(promise));
+    return promise;
+  }
+
+  private async runCommit(acquired: AcquiredProfile, providerWsUrl: string): Promise<void> {
+    const commitTimeoutMs = this.opts.commitTimeoutMs ?? this.opts.cdpTimeoutMs ?? 10_000;
 
     try {
-      const cookies = await captureCookiesViaTransient(providerWsUrl, cdpTimeoutMs);
+      const cookies = await captureCookiesViaTransient(providerWsUrl, commitTimeoutMs);
+
+      // M2: if the captured state would silently destroy previous data, preserve instead.
+      if (cookies.length === 0 && acquired.cookies.length > 0) {
+        this.logger.warn(
+          {
+            profileId: acquired.profileId,
+            previousCookies: acquired.cookies.length,
+          },
+          "profile lifecycle: captured 0 cookies but previous state had cookies — preserving previous state, not overwriting",
+        );
+        return;
+      }
+
       const profile: CapturedProfile = {
         version: PROFILE_VERSION,
         capturedAt: new Date().toISOString(),
@@ -193,6 +235,51 @@ export class ProfileLifecycle {
     } finally {
       await this.release(acquired);
     }
+  }
+
+  /**
+   * Wait for all in-flight commits to finish, up to timeoutMs.
+   *
+   * Call this during graceful shutdown after the gateway stops accepting new
+   * connections — it lets the last few sessions persist their cookies before
+   * the process exits.
+   *
+   * Once draining starts, the gateway should not be accepting new sessions, so
+   * the pending set should drain to empty quickly.
+   */
+  async drain(timeoutMs: number): Promise<void> {
+    this.draining = true;
+    if (this.pendingCommits.size === 0) return;
+
+    this.logger.info(
+      { pending: this.pendingCommits.size, timeoutMs },
+      "profile lifecycle: draining in-flight commits",
+    );
+
+    const allDone = Promise.allSettled(Array.from(this.pendingCommits));
+    const deadline = new Promise<"timeout">((resolve) =>
+      setTimeout(() => resolve("timeout"), timeoutMs),
+    );
+
+    const result = await Promise.race([allDone.then(() => "done" as const), deadline]);
+    if (result === "timeout") {
+      this.logger.warn(
+        { remaining: this.pendingCommits.size, timeoutMs },
+        "profile lifecycle: drain timeout — some commits did not finish",
+      );
+    } else {
+      this.logger.info("profile lifecycle: drain complete");
+    }
+  }
+
+  /** Test/observability hook — number of in-flight commits right now. */
+  pendingCommitCount(): number {
+    return this.pendingCommits.size;
+  }
+
+  /** True after drain() has been called. */
+  isDraining(): boolean {
+    return this.draining;
   }
 
   /** Release the lock without saving anything (e.g. session never connected). */

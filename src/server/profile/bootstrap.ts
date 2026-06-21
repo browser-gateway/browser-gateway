@@ -86,6 +86,7 @@ export async function bootstrapProfiles(
     {
       lockTtlMs: config.lockTtlMs,
       cdpTimeoutMs: config.cdpTimeoutMs,
+      commitTimeoutMs: config.commitTimeoutMs,
     },
   );
 

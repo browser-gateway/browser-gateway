@@ -1,4 +1,6 @@
-import type { CDPClient, CdpCookie, RuntimeEvaluateResponse } from "./cdp.js";
+import type { CDPClient, RuntimeEvaluateResponse } from "./cdp.js";
+import { navigateAndWait, resolveProfileOptions, withTimeout } from "./cdp-utils.js";
+import { prepareCookieForInject } from "./cookie-helpers.js";
 import type { CapturedProfile, OriginStorage, SkippedOrigin } from "./types.js";
 
 export interface InjectOptions {
@@ -17,11 +19,6 @@ export interface InjectResult {
   durationMs: number;
 }
 
-const DEFAULTS = {
-  navigationTimeoutMs: 10_000,
-  evaluateTimeoutMs: 5_000,
-};
-
 /**
  * Inject captured state into a fresh browser via CDP.
  *
@@ -37,12 +34,7 @@ export async function injectState(
   profile: CapturedProfile,
   opts: InjectOptions = {},
 ): Promise<InjectResult> {
-  const started = Date.now();
-  const navTimeout = opts.navigationTimeoutMs ?? DEFAULTS.navigationTimeoutMs;
-  const evalTimeout = opts.evaluateTimeoutMs ?? DEFAULTS.evaluateTimeoutMs;
-  const signal = opts.signal;
-
-  if (signal?.aborted) throw new Error("inject aborted");
+  const { started, navTimeout, evalTimeout, signal } = resolveProfileOptions(opts, "inject");
 
   await cdp.send("Network.enable").catch(() => undefined);
 
@@ -99,25 +91,6 @@ export async function injectState(
   };
 }
 
-function prepareCookieForInject(c: CdpCookie): Record<string, unknown> {
-  const out: Record<string, unknown> = {
-    name: c.name,
-    value: c.value,
-    domain: c.domain,
-    path: c.path,
-    secure: c.secure,
-    httpOnly: c.httpOnly,
-  };
-  if (c.expires !== undefined && c.expires > 0) out.expires = c.expires;
-  if (c.sameSite) out.sameSite = c.sameSite;
-  if (c.priority) out.priority = c.priority;
-  if (c.sourceScheme && c.sourceScheme !== "Unset") out.sourceScheme = c.sourceScheme;
-  if (c.sourcePort && c.sourcePort > 0) out.sourcePort = c.sourcePort;
-  if (c.sameParty !== undefined) out.sameParty = c.sameParty;
-  if (c.partitionKey !== undefined) out.partitionKey = c.partitionKey;
-  return out;
-}
-
 function buildStorageWriteExpression(data: OriginStorage): string {
   const local = JSON.stringify(data.localStorage ?? {});
   const session = JSON.stringify(data.sessionStorage ?? {});
@@ -160,48 +133,6 @@ function hasAnyEntries(data: OriginStorage): boolean {
     Object.keys(data.localStorage ?? {}).length > 0
     || Object.keys(data.sessionStorage ?? {}).length > 0
   );
-}
-
-async function navigateAndWait(cdp: CDPClient, url: string, timeoutMs: number): Promise<void> {
-  await cdp.send("Page.enable").catch(() => undefined);
-
-  const navigatePromise = cdp.send("Page.navigate", { url });
-  const loadPromise = waitForEvent(cdp, "Page.loadEventFired", timeoutMs).catch(() => undefined);
-
-  const navResult = (await withTimeout(navigatePromise, timeoutMs, `navigate(${url})`)) as {
-    errorText?: string;
-  } | undefined;
-  if (navResult?.errorText) {
-    throw new Error(`navigate ${url} failed: ${navResult.errorText}`);
-  }
-  await loadPromise;
-}
-
-function waitForEvent(cdp: CDPClient, event: string, timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const onFire = () => {
-      cleanup();
-      resolve();
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error(`timeout waiting for ${event}`));
-    }, timeoutMs);
-    const cleanup = () => {
-      clearTimeout(timer);
-      try { (cdp.off as (e: string, l: unknown) => unknown)(event, onFire); } catch {}
-    };
-    (cdp.on as (e: string, l: unknown) => unknown)(event, onFire);
-  });
-}
-
-function withTimeout<T>(p: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  return Promise.race([
-    p,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`timeout after ${timeoutMs}ms: ${label}`)), timeoutMs),
-    ),
-  ]);
 }
 
 function errorMessage(err: unknown): string {

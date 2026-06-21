@@ -1,6 +1,6 @@
-import { readFile, mkdir, rm, readdir, stat, lstat, open, statfs } from "node:fs/promises";
-import { existsSync, constants as fsc } from "node:fs";
-import { dirname, join, resolve, sep } from "node:path";
+import { readFile, mkdir, rm, readdir, stat, lstat, statfs } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import lockfile from "proper-lockfile";
 import {
@@ -10,6 +10,16 @@ import {
 } from "../../core/profile/index.js";
 import type { LockToken, ProfileStore } from "../../core/profile/store.js";
 import { KEYCHECK_FILE } from "./keycheck.js";
+
+/**
+ * Profile ids the user must never be allowed to use, because they'd collide
+ * with our metadata files at the same nesting level. Add to this list if you
+ * add new metadata files at the store root.
+ */
+const RESERVED_PROFILE_IDS = new Set<string>([
+  KEYCHECK_FILE,             // ".keycheck"
+  KEYCHECK_FILE.slice(1),    // "keycheck" — case-sensitive intentional
+]);
 
 export interface FilesystemStoreOptions {
   storePath: string;
@@ -145,7 +155,7 @@ export class FilesystemProfileStore implements ProfileStore {
   }
 
   private assertProfileId(id: string): void {
-    if (id === KEYCHECK_FILE.slice(1)) {
+    if (RESERVED_PROFILE_IDS.has(id)) {
       throw new Error(`profile id "${id}" is reserved`);
     }
     if (!PROFILE_ID_REGEX.test(id)) {

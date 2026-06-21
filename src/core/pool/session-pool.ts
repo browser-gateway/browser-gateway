@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { chromium, type Browser } from "playwright-core";
+import { chromium } from "playwright-core";
 import type { Logger } from "pino";
 import type {
   PoolConfig,

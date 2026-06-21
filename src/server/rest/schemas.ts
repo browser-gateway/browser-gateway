@@ -37,6 +37,7 @@ export const ScreenshotRequestSchema = z.object({
   waitUntil: WaitUntilSchema.default("load"),
 }).strict();
 
+/** Request body for `POST /v1/screenshot`. Inferred from {@link ScreenshotRequestSchema}. @public */
 export type ScreenshotRequest = z.infer<typeof ScreenshotRequestSchema>;
 
 const ContentFormatSchema = z.enum(["html", "markdown", "text", "readability"]);
@@ -47,6 +48,7 @@ export const ContentRequestSchema = z.object({
   waitUntil: WaitUntilSchema.default("domcontentloaded"),
 }).strict();
 
+/** Request body for `POST /v1/content`. Inferred from {@link ContentRequestSchema}. @public */
 export type ContentRequest = z.infer<typeof ContentRequestSchema>;
 
 const SelectorEntrySchema = z.object({
@@ -66,6 +68,7 @@ export const ScrapeRequestSchema = z.object({
   { message: "Either 'selectors' or 'formats' (or both) must be provided" },
 );
 
+/** Request body for `POST /v1/scrape`. Inferred from {@link ScrapeRequestSchema}. @public */
 export type ScrapeRequest = z.infer<typeof ScrapeRequestSchema>;
 
 export class RestApiError extends Error {

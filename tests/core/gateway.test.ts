@@ -145,7 +145,7 @@ describe("Gateway", () => {
         secret: { url: "wss://provider.com?token=super-secret&key=another", priority: 1 },
       },
     });
-    const logs: string[] = [];
+    const _logs: string[] = [];
     const captureLogger = pino({
       level: "info",
       transport: undefined,

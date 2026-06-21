@@ -38,7 +38,8 @@ describe("SessionTracker", () => {
 
     // Small delay to ensure timestamp changes
     const start = Date.now();
-    while (Date.now() - start < 5) {}
+     
+    while (Date.now() - start < 5) { /* busy-wait */ }
 
     tracker.recordActivity("s1");
     const after = tracker.get("s1")!;

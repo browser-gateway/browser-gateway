@@ -2,14 +2,13 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocketServer } from "ws";
 import { ChildProcess, spawn } from "node:child_process";
-import { writeFileSync, readFileSync, unlinkSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, unlinkSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const GATEWAY_PORT = 16000;
 const ECHO_PORT = 16001;
 const CONFIG_PATH = "/tmp/bg-crud-test.yml";
 const BASE = `http://localhost:${GATEWAY_PORT}`;
-const fetchOpts: RequestInit = { credentials: "include" as const };
 
 let echoServer: Server;
 let gatewayProcess: ChildProcess;

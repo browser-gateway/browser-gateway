@@ -37,24 +37,3 @@ export async function resolveWsUrl(
   return providerUrl;
 }
 
-export async function probeCdpEndpoint(
-  url: string,
-  timeoutMs: number = 5000,
-): Promise<{ ok: boolean; latencyMs: number; browser?: string; wsUrl?: string; error?: string }> {
-  const start = Date.now();
-  try {
-    const data = await fetchCdpVersion(url, timeoutMs);
-    return {
-      ok: true,
-      latencyMs: Date.now() - start,
-      browser: data.browser,
-      wsUrl: data.webSocketDebuggerUrl,
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      latencyMs: Date.now() - start,
-      error: (err as Error).message,
-    };
-  }
-}

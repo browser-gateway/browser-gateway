@@ -1,0 +1,22 @@
+#!/usr/bin/env sh
+# Pre-push gate. Runs Stryker mutation testing to verify the tests actually
+# catch bugs (i.e. they aren't trivially passing).
+#
+# Slow (~3-15 min on this codebase). Only fires on push, not on every commit.
+#
+# Workflow: many small local commits are fine. Squash to ONE commit before
+# `git push`, so Stryker runs on the unified diff. See CLAUDE.md > Workflow.
+
+set -e
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Skip on branches that haven't gone through pre-commit (e.g. cherry-picks from
+# other forks). If you're pushing to main, all your commits should have gone
+# through pre-commit already, so the gates passed.
+
+echo "▸ stryker (incremental mutation testing — pre-push only)"
+echo "  This may take several minutes. Drink water."
+npm run --silent stryker:incremental
+
+echo "✓ pre-push gate passed"

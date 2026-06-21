@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { SessionPool } from "../../core/pool/index.js";
 import { ScreenshotRequestSchema, RestApiError } from "./schemas.js";
 import { withBrowserPage, scrollThroughPage } from "./executor.js";
+import { pageOptionsFromBody } from "./rest-helpers.js";
 import type { Context } from "hono";
 
 export async function handleScreenshot(c: Context, pool: SessionPool, logger: Logger) {
@@ -11,18 +12,7 @@ export async function handleScreenshot(c: Context, pool: SessionPool, logger: Lo
   const result = await withBrowserPage(
     pool,
     logger,
-    {
-      url: body.url,
-      viewport: body.viewport,
-      waitUntil: body.waitUntil,
-      waitForSelector: body.waitForSelector,
-      waitForTimeout: body.waitForTimeout,
-      timeout: body.timeout,
-      headers: body.headers,
-      userAgent: body.userAgent,
-      retries: body.retries,
-      signal: c.req.raw.signal,
-    },
+    pageOptionsFromBody(body, c),
     async (page: Page) => {
       if (body.scrollPage) {
         await scrollThroughPage(page);

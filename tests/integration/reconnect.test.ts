@@ -124,7 +124,7 @@ logging:
     // Check which provider via status
     const statusRes = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`);
     const status = await statusRes.json() as any;
-    const activeProvider = status.providers.find((p: any) => p.active > 0);
+    const _activeProvider = status.providers.find((p: any) => p.active > 0);
 
     // Disconnect
     ws1.close();

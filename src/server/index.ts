@@ -30,6 +30,7 @@ function loadEnvFile(): void {
   }
 }
 import { Gateway, SessionPool } from "../core/index.js";
+import { buildMcpGatewayConfig } from "./mcp/config-defaults.js";
 import { ReconnectRegistry } from "../core/proxy/reconnect.js";
 import { WebhookNotifier } from "../core/notifications/webhooks.js";
 import { loadConfig } from "./config/loader.js";
@@ -296,7 +297,6 @@ async function startServer() {
         method,
         headers,
         body,
-        // @ts-ignore - duplex required for streaming body in Node.js
         duplex: body ? "half" : undefined,
       })
     );
@@ -340,6 +340,12 @@ async function startServer() {
 
     await gateway.gracefulShutdown();
 
+    // H1 fix: wait for in-flight profile commits to persist their state before exit.
+    // Bounded by gateway.shutdownDrainMs so a hung provider can't block exit forever.
+    if (profileBootstrap.enabled) {
+      await profileBootstrap.lifecycle.drain(config.gateway.shutdownDrainMs ?? 30_000);
+    }
+
     logger.info("server stopped");
     process.exit(0);
   };
@@ -368,69 +374,19 @@ async function startMcpStdio() {
     }
   } else if (cdpEndpoint) {
     const port = parseInt(portOverride ?? process.env.BG_PORT ?? "9500", 10);
-    config = {
-      version: 1 as const,
-      gateway: {
-        port,
-        defaultStrategy: "priority-chain" as const,
-        healthCheckInterval: 30000,
-        connectionTimeout: 10000,
-        shutdownDrainMs: 30000,
-        cooldown: { defaultMs: 30000, failureThreshold: 0.5, minRequestVolume: 3 },
-        sessions: { idleTimeoutMs: 300000, reconnectTimeoutMs: 300000 },
-        queue: { maxSize: 20, timeoutMs: 30000 },
+    config = buildMcpGatewayConfig(port, {
+      "remote-cdp": {
+        url: cdpEndpoint,
+        limits: { maxConcurrent: 5 },
+        priority: 1,
+        weight: 1,
       },
-      providers: {
-        "remote-cdp": {
-          url: cdpEndpoint,
-          limits: { maxConcurrent: 5 },
-          priority: 1,
-          weight: 1,
-        },
-      },
-      pool: { minSessions: 0, maxSessions: 5, maxPagesPerSession: 10, retireAfterPages: 100, retireAfterMs: 3600000, idleTimeoutMs: 300000, pageTimeoutMs: 30000 },
-      webhooks: [] as { url: string; events?: string[] }[],
-      dashboard: { enabled: false },
-      logging: { level: "info" as const },
-      profiles: {
-        enabled: false,
-        store: "filesystem" as const,
-        filesystem: { path: "./profiles" },
-        encryption: { keyEnv: "BG_ENCRYPTION_KEY" },
-        lockTtlMs: 300000,
-        cdpTimeoutMs: 10000,
-      },
-    };
+    });
     log(`Using CDP endpoint: ${cdpEndpoint}`);
   } else {
     // Zero-config mode: defer Chrome launch until first tool call (same pattern as playwright-mcp)
     const port = parseInt(portOverride ?? process.env.BG_PORT ?? "9500", 10);
-    config = {
-      version: 1 as const,
-      gateway: {
-        port,
-        defaultStrategy: "priority-chain" as const,
-        healthCheckInterval: 30000,
-        connectionTimeout: 10000,
-        shutdownDrainMs: 30000,
-        cooldown: { defaultMs: 30000, failureThreshold: 0.5, minRequestVolume: 3 },
-        sessions: { idleTimeoutMs: 300000, reconnectTimeoutMs: 300000 },
-        queue: { maxSize: 20, timeoutMs: 30000 },
-      },
-      providers: {} as Record<string, { url: string; limits: { maxConcurrent: number }; priority: number; weight: number }>,
-      pool: { minSessions: 0, maxSessions: 5, maxPagesPerSession: 10, retireAfterPages: 100, retireAfterMs: 3600000, idleTimeoutMs: 300000, pageTimeoutMs: 30000 },
-      webhooks: [] as { url: string; events?: string[] }[],
-      dashboard: { enabled: false },
-      logging: { level: "info" as const },
-      profiles: {
-        enabled: false,
-        store: "filesystem" as const,
-        filesystem: { path: "./profiles" },
-        encryption: { keyEnv: "BG_ENCRYPTION_KEY" },
-        lockTtlMs: 300000,
-        cdpTimeoutMs: 10000,
-      },
-    };
+    config = buildMcpGatewayConfig(port, {});
     isZeroConfig = true;
     log("Zero-config mode - Chrome will launch on first browser tool use");
   }
@@ -441,7 +397,6 @@ async function startMcpStdio() {
 
   const logger = pino({ level: "silent" });
   const gateway = new Gateway(config, logger);
-  const token = process.env.BG_TOKEN;
 
   const { mcpServer, sessionManager } = createMcpServer(gateway, logger);
 
@@ -482,7 +437,7 @@ async function startMcpStdio() {
 }
 
 async function checkProviders() {
-  const { default: WebSocket } = await import("ws");
+  const { probeWebSocket } = await import("./ws/probe.js");
 
   let config;
   try {
@@ -499,19 +454,7 @@ async function checkProviders() {
   for (const [id, provider] of Object.entries(config.providers)) {
     const start = Date.now();
     try {
-      await new Promise<void>((resolve, reject) => {
-        const ws = new WebSocket(provider.url, { handshakeTimeout: 5000 });
-        ws.on("open", () => {
-          ws.close();
-          resolve();
-        });
-        ws.on("error", reject);
-        setTimeout(() => {
-          ws.close();
-          reject(new Error("timeout"));
-        }, 5000);
-      });
-
+      await probeWebSocket(provider.url, 5000);
       const latency = Date.now() - start;
       console.log(`  ${id.padEnd(25)} OK    ${latency}ms`);
     } catch (err) {

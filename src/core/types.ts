@@ -68,7 +68,14 @@ export const ProfilesConfigSchema = z.object({
   filesystem: ProfilesFilesystemSchema.default(() => ProfilesFilesystemSchema.parse({})),
   encryption: ProfilesEncryptionSchema.default(() => ProfilesEncryptionSchema.parse({})),
   lockTtlMs: z.number().int().default(5 * 60_000),
+  /** Timeout for the inject path (open WS + Storage.setCookies). */
   cdpTimeoutMs: z.number().int().default(10_000),
+  /**
+   * Timeout for the commit path (capture + write). Defaults to a SHORTER 4s so the
+   * profile lock releases sooner after disconnect — important for rapid-reconnect
+   * agent workflows (M1). If your provider is slow on Storage.getCookies, raise this.
+   */
+  commitTimeoutMs: z.number().int().default(4_000),
 });
 
 export type ProfilesConfig = z.infer<typeof ProfilesConfigSchema>;

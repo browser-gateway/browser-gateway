@@ -1,5 +1,6 @@
 import { platform } from "node:os";
 import type { GatewayConfig } from "../../core/types.js";
+import { buildMcpGatewayConfig } from "./config-defaults.js";
 
 // Match playwright-mcp's detection: headed on macOS/Windows, headless on Linux without DISPLAY
 function shouldDefaultHeadless(): boolean {
@@ -79,43 +80,14 @@ export async function setupLocalChrome(stderrLog?: (msg: string) => void, option
     gatewayPort = 9500;
   }
 
-  return {
-    version: 1,
-    gateway: {
-      port: gatewayPort,
-      defaultStrategy: "priority-chain" as const,
-      healthCheckInterval: 30000,
-      connectionTimeout: 10000,
-      shutdownDrainMs: 30000,
-      cooldown: { defaultMs: 30000, failureThreshold: 0.5, minRequestVolume: 3 },
-      sessions: { idleTimeoutMs: 300000, reconnectTimeoutMs: 300000 },
-      queue: { maxSize: 20, timeoutMs: 30000 },
+  return buildMcpGatewayConfig(gatewayPort, {
+    "local-chrome": {
+      url: cdpUrl,
+      limits: { maxConcurrent: 5 },
+      priority: 1,
+      weight: 1,
     },
-    providers: {
-      "local-chrome": {
-        url: cdpUrl,
-        limits: { maxConcurrent: 5 },
-        priority: 1,
-        weight: 1,
-      },
-    },
-    pool: { minSessions: 0, maxSessions: 5, maxPagesPerSession: 10, retireAfterPages: 100, retireAfterMs: 3600000, idleTimeoutMs: 300000, pageTimeoutMs: 30000 },
-    webhooks: [],
-    dashboard: { enabled: false },
-    logging: { level: "info" as const },
-    profiles: {
-      enabled: false,
-      store: "filesystem" as const,
-      filesystem: { path: "./profiles" },
-      encryption: { keyEnv: "BG_ENCRYPTION_KEY" },
-      lockTtlMs: 300000,
-      cdpTimeoutMs: 10000,
-    },
-  };
-}
-
-export function getLocalChromeInstance(): LocalChromeInstance | null {
-  return instance;
+  });
 }
 
 export async function killLocalChrome(): Promise<void> {
