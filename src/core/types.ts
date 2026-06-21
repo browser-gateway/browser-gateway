@@ -54,6 +54,25 @@ const WebhookSchema = z.object({
   events: z.array(z.string()).optional(),
 });
 
+const ProfilesFilesystemSchema = z.object({
+  path: z.string().default("./profiles"),
+});
+
+const ProfilesEncryptionSchema = z.object({
+  keyEnv: z.string().default("BG_ENCRYPTION_KEY"),
+});
+
+export const ProfilesConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  store: z.enum(["filesystem"]).default("filesystem"),
+  filesystem: ProfilesFilesystemSchema.default(() => ProfilesFilesystemSchema.parse({})),
+  encryption: ProfilesEncryptionSchema.default(() => ProfilesEncryptionSchema.parse({})),
+  lockTtlMs: z.number().int().default(5 * 60_000),
+  cdpTimeoutMs: z.number().int().default(10_000),
+});
+
+export type ProfilesConfig = z.infer<typeof ProfilesConfigSchema>;
+
 export const GatewayConfigSchema = z.object({
   version: z.number().default(1),
   gateway: GatewaySettingsSchema.default(() => GatewaySettingsSchema.parse({})),
@@ -62,6 +81,7 @@ export const GatewayConfigSchema = z.object({
   webhooks: z.array(WebhookSchema).default([]),
   dashboard: DashboardSchema.default(() => DashboardSchema.parse({})),
   logging: LoggingSchema.default(() => LoggingSchema.parse({})),
+  profiles: ProfilesConfigSchema.default(() => ProfilesConfigSchema.parse({})),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;

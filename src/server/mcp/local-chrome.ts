@@ -103,6 +103,14 @@ export async function setupLocalChrome(stderrLog?: (msg: string) => void, option
     webhooks: [],
     dashboard: { enabled: false },
     logging: { level: "info" as const },
+    profiles: {
+      enabled: false,
+      store: "filesystem" as const,
+      filesystem: { path: "./profiles" },
+      encryption: { keyEnv: "BG_ENCRYPTION_KEY" },
+      lockTtlMs: 300000,
+      cdpTimeoutMs: 10000,
+    },
   };
 }
 

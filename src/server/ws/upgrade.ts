@@ -1,12 +1,17 @@
 import { IncomingMessage } from "node:http";
 import { Duplex } from "node:stream";
-import { createConnection, type Socket } from "node:net";
+import { createConnection } from "node:net";
 import { connect as tlsConnect } from "node:tls";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { ProviderState } from "../../core/types.js";
 import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
+import {
+  LifecycleError,
+  type ProfileLifecycle,
+  type AcquiredProfile,
+} from "../profile/lifecycle.js";
 
 function safeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -19,11 +24,33 @@ function extractBearerToken(header: string | undefined): string | undefined {
   return header.slice(7);
 }
 
+function respondError(socket: Duplex, status: number, body: Record<string, unknown>): void {
+  const text = JSON.stringify(body);
+  const statusText = HTTP_STATUS_TEXT[status] ?? "Error";
+  socket.write(
+    `HTTP/1.1 ${status} ${statusText}\r\n` +
+      `Content-Type: application/json\r\n` +
+      `Content-Length: ${Buffer.byteLength(text)}\r\n\r\n` +
+      text,
+  );
+  socket.destroy();
+}
+
+const HTTP_STATUS_TEXT: Record<number, string> = {
+  400: "Bad Request",
+  401: "Unauthorized",
+  404: "Not Found",
+  409: "Conflict",
+  500: "Internal Server Error",
+  503: "Service Unavailable",
+};
+
 export function createWebSocketHandler(
   gateway: Gateway,
   logger: Logger,
   token?: string,
   reconnectRegistry?: ReconnectRegistry,
+  profileLifecycle?: ProfileLifecycle,
 ) {
 
   async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
@@ -54,6 +81,44 @@ export function createWebSocketHandler(
       return;
     }
 
+    // Profile acquisition — lock + decrypt happen BEFORE provider selection so we
+    // fail-fast on contention. Inject happens after we have a wsUrl.
+    const profileId = url.searchParams.get("profile");
+    let acquired: AcquiredProfile | null = null;
+    if (profileId !== null) {
+      if (!profileLifecycle) {
+        respondError(socket, 400, { error: "profiles are not enabled on this gateway" });
+        return;
+      }
+      try {
+        acquired = await profileLifecycle.acquire(profileId);
+        logger.info(
+          { profileId, isExisting: acquired.isExisting, cookies: acquired.cookies.length },
+          "profile lifecycle: acquired",
+        );
+      } catch (err) {
+        if (err instanceof LifecycleError) {
+          if (err.reason === "INVALID_ID") {
+            respondError(socket, 400, { error: err.message });
+            return;
+          }
+          if (err.reason === "LOCK_HELD") {
+            respondError(socket, 409, { error: err.message });
+            return;
+          }
+          logger.error({ profileId, reason: err.reason, error: err.message }, "profile acquire failed");
+          respondError(socket, 500, { error: "profile acquire failed" });
+          return;
+        }
+        logger.error(
+          { profileId, error: err instanceof Error ? err.message : String(err) },
+          "profile acquire failed",
+        );
+        respondError(socket, 500, { error: "profile acquire failed" });
+        return;
+      }
+    }
+
     // Session reconnection
     const reconnectSessionId = url.searchParams.get("sessionId");
     if (reconnectSessionId && reconnectRegistry) {
@@ -74,9 +139,13 @@ export function createWebSocketHandler(
 
           const connected = await pipeToProvider(
             gateway, logger, socket, head, req, reconnectSessionId, provider, reconnectRegistry,
+            profileLifecycle, acquired,
           );
 
-          if (connected) return;
+          if (connected) {
+            acquired = null;
+            return;
+          }
 
           gateway.releaseSlot(reconnectSessionId, provider.id);
           gateway.recordFailure(provider.id);
@@ -103,9 +172,13 @@ export function createWebSocketHandler(
 
         const connected = await pipeToProvider(
           gateway, logger, socket, head, req, sessionId, provider, reconnectRegistry,
+          profileLifecycle, acquired,
         );
 
-        if (connected) return true;
+        if (connected) {
+          acquired = null;
+          return true;
+        }
 
         gateway.releaseSlot(sessionId, provider.id);
         gateway.recordFailure(provider.id);
@@ -114,18 +187,21 @@ export function createWebSocketHandler(
       return false;
     };
 
-    if (await tryConnect()) return;
+    try {
+      if (await tryConnect()) return;
 
-    const slotAvailable = await gateway.waitForSlot();
-    if (slotAvailable && await tryConnect()) return;
+      const slotAvailable = await gateway.waitForSlot();
+      if (slotAvailable && await tryConnect()) return;
 
-    logger.warn({ sessionId, queueSize: gateway.queueSize }, "connection failed, all providers exhausted");
-    socket.write(
-      "HTTP/1.1 503 Service Unavailable\r\n" +
-        "Content-Type: application/json\r\n\r\n" +
-        JSON.stringify({ error: "All providers unavailable" })
-    );
-    socket.destroy();
+      logger.warn({ sessionId, queueSize: gateway.queueSize }, "connection failed, all providers exhausted");
+      respondError(socket, 503, { error: "All providers unavailable" });
+    } finally {
+      // If the profile was acquired but never handed off to a successful pipe, release it.
+      if (acquired && profileLifecycle) {
+        await profileLifecycle.release(acquired);
+        acquired = null;
+      }
+    }
   }
 
   return { handleUpgrade };
@@ -160,6 +236,8 @@ function pipeToProvider(
   sessionId: string,
   provider: ProviderState,
   reconnectRegistry?: ReconnectRegistry,
+  profileLifecycle?: ProfileLifecycle,
+  acquired?: AcquiredProfile | null,
 ): Promise<boolean> {
   return new Promise(async (resolve) => {
     let resolvedUrl: string;
@@ -167,6 +245,25 @@ function pipeToProvider(
       resolvedUrl = await cachedResolveWsUrl(provider.config.url, gateway.config.gateway.connectionTimeout);
     } catch {
       resolvedUrl = provider.config.url;
+    }
+
+    // Inject the profile via a transient CDP connection BEFORE handing the user's
+    // pipe over. If inject fails, treat as a provider failure (retryable).
+    if (acquired && profileLifecycle && acquired.cookies.length > 0) {
+      try {
+        await profileLifecycle.inject(acquired, resolvedUrl);
+      } catch (err) {
+        logger.warn(
+          {
+            sessionId,
+            providerId: provider.id,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          "profile inject failed, trying next provider",
+        );
+        resolve(false);
+        return;
+      }
     }
 
     const providerUrl = new URL(resolvedUrl);
@@ -287,6 +384,21 @@ function pipeToProvider(
 
       if (!clientSocket.destroyed) clientSocket.destroy();
       if (!providerSocket.destroyed) providerSocket.destroy();
+
+      // Capture latest cookies, encrypt, save, release the profile lock.
+      // Fire-and-forget: don't block socket cleanup on remote CDP work.
+      if (acquired && profileLifecycle) {
+        const capturedAcquired = acquired;
+        profileLifecycle.commit(capturedAcquired, resolvedUrl).catch((err) => {
+          logger.warn(
+            {
+              profileId: capturedAcquired.profileId,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            "profile commit failed",
+          );
+        });
+      }
     };
 
     clientSocket.on("close", cleanup("client"));

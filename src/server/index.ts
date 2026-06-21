@@ -35,6 +35,7 @@ import { WebhookNotifier } from "../core/notifications/webhooks.js";
 import { loadConfig } from "./config/loader.js";
 import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
+import { bootstrapProfiles, ProfileBootstrapError } from "./profile/bootstrap.js";
 import { createMcpServer, createSessionManager } from "./mcp/server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -158,7 +159,25 @@ async function startServer() {
   const reconnectTtl = config.gateway.sessions?.reconnectTimeoutMs ?? 300000;
   reconnectRegistry.startCleanup(reconnectTtl);
 
-  const { handleUpgrade } = createWebSocketHandler(gateway, logger, token, reconnectRegistry);
+  let profileBootstrap;
+  try {
+    profileBootstrap = await bootstrapProfiles(config.profiles, logger);
+  } catch (err) {
+    if (err instanceof ProfileBootstrapError) {
+      logger.fatal({ error: err.message }, "profile bootstrap failed");
+    } else {
+      logger.fatal({ error: err instanceof Error ? err.message : String(err) }, "profile bootstrap failed");
+    }
+    process.exit(1);
+  }
+
+  const { handleUpgrade } = createWebSocketHandler(
+    gateway,
+    logger,
+    token,
+    reconnectRegistry,
+    profileBootstrap.enabled ? profileBootstrap.lifecycle : undefined,
+  );
 
   const activeSockets = new Map<string, { client: Duplex; provider: Duplex }>();
 
@@ -364,6 +383,14 @@ async function startMcpStdio() {
       webhooks: [] as { url: string; events?: string[] }[],
       dashboard: { enabled: false },
       logging: { level: "info" as const },
+      profiles: {
+        enabled: false,
+        store: "filesystem" as const,
+        filesystem: { path: "./profiles" },
+        encryption: { keyEnv: "BG_ENCRYPTION_KEY" },
+        lockTtlMs: 300000,
+        cdpTimeoutMs: 10000,
+      },
     };
     log(`Using CDP endpoint: ${cdpEndpoint}`);
   } else {
@@ -386,6 +413,14 @@ async function startMcpStdio() {
       webhooks: [] as { url: string; events?: string[] }[],
       dashboard: { enabled: false },
       logging: { level: "info" as const },
+      profiles: {
+        enabled: false,
+        store: "filesystem" as const,
+        filesystem: { path: "./profiles" },
+        encryption: { keyEnv: "BG_ENCRYPTION_KEY" },
+        lockTtlMs: 300000,
+        cdpTimeoutMs: 10000,
+      },
     };
     isZeroConfig = true;
     log("Zero-config mode - Chrome will launch on first browser tool use");
