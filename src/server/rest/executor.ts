@@ -2,6 +2,7 @@ import type { Page } from "playwright-core";
 import type { Logger } from "pino";
 import type { SessionPool } from "../../core/pool/index.js";
 import { RestApiError } from "./schemas.js";
+import { runPageAction } from "./page-runner.js";
 
 export interface PageOptions {
   url: string;
@@ -72,44 +73,20 @@ export async function withBrowserPage<T>(
 
     try {
       const page = handle.page;
-
-      if (options.viewport) {
-        await page.setViewportSize(options.viewport);
-      }
-      if (options.headers) {
-        await page.setExtraHTTPHeaders(options.headers);
-      }
-
-      const navStart = Date.now();
-      const response = await page.goto(options.url, {
-        waitUntil: options.waitUntil ?? "load",
-        timeout: options.timeout ?? 30000,
-      });
-      const navEnd = Date.now();
-
-      if (options.waitForSelector) {
-        await page.waitForSelector(options.waitForSelector, { timeout: 10000 });
-      }
-      if (options.waitForTimeout) {
-        await page.waitForTimeout(options.waitForTimeout);
-      }
-
-      const actionStart = Date.now();
-      const data = await action(page);
-      const actionEnd = Date.now();
+      const run = await runPageAction(page, options, action);
 
       if (attempt > 1) {
         logger.info({ attempt, url: options.url }, "rest: succeeded on retry");
       }
 
       return {
-        data,
-        statusCode: response?.status() ?? null,
-        resolvedUrl: page.url(),
+        data: run.data,
+        statusCode: run.statusCode,
+        resolvedUrl: run.resolvedUrl,
         timings: {
-          total: actionEnd - startTime,
-          navigation: navEnd - navStart,
-          action: actionEnd - actionStart,
+          total: Date.now() - startTime,
+          navigation: run.navigationMs,
+          action: run.actionMs,
         },
         attempt,
       };

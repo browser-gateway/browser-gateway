@@ -198,7 +198,7 @@ echo 'BG_ENCRYPTION_KEY="${key}"' >> .env`
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-[12px] font-medium text-foreground/80">
-                    Manual setup — paste these and restart
+                    Manual setup. Paste these and restart.
                   </p>
                   <button
                     onClick={() => setShowManual(false)}
@@ -250,7 +250,7 @@ function SuccessPanel({ result }: { result: EnableProfilesResult }) {
         <div className="space-y-1 text-[12.5px]">
           <p className="font-medium text-foreground">Setup complete</p>
           <p className="text-muted-foreground leading-relaxed">
-            Now <span className="font-medium text-foreground">restart the gateway</span> for the changes to take effect — stop the process (<code className="font-mono text-foreground/90 bg-black/40 px-1 py-0.5 rounded text-[11px]">Ctrl+C</code> in the terminal where you started it) and launch it again with the same command you used before.
+            Now <span className="font-medium text-foreground">restart the gateway</span> for the changes to take effect. Stop the process (<code className="font-mono text-foreground/90 bg-black/40 px-1 py-0.5 rounded text-[11px]">Ctrl+C</code> in the terminal where you started it) and launch it again with the same command.
           </p>
         </div>
       </div>
@@ -264,7 +264,7 @@ function SuccessPanel({ result }: { result: EnableProfilesResult }) {
             result.envWritten
               ? { text: "key added", tone: "good" }
               : result.envAlreadyHadKey
-              ? { text: "already had BG_ENCRYPTION_KEY — left untouched", tone: "info" }
+              ? { text: "already had BG_ENCRYPTION_KEY. Left untouched.", tone: "info" }
               : { text: "no change", tone: "info" }
           }
         />
@@ -276,7 +276,7 @@ function SuccessPanel({ result }: { result: EnableProfilesResult }) {
             result.configWritten
               ? { text: "profiles block written", tone: "good" }
               : result.configAlreadyHadBlock
-              ? { text: "already had a profiles block — left untouched", tone: "info" }
+              ? { text: "already had a profiles block. Left untouched.", tone: "info" }
               : { text: "no change", tone: "info" }
           }
         />

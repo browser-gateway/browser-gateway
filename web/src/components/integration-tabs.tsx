@@ -124,7 +124,7 @@ await browser.close()`,
     lang: "bash",
     filename: "raw-cdp.sh",
     code: (gw, query) => `# Connect with any WebSocket client. The gateway proxies every CDP byte
-# after the upgrade handshake — exactly like a direct Chrome WS.
+# after the upgrade handshake, exactly like a direct Chrome WS.
 npx wscat -c "${gw}/v1/connect${query}"
 
 # Once open, send any CDP command:
@@ -232,7 +232,7 @@ export function IntegrationTabs({ wsBase, authEnabled, profileId }: IntegrationT
         )}
         {authEnabled && (
           <>
-            The token is shown masked — the copy button copies the real value.
+            Token shown masked. Copy writes the real value.
           </>
         )}
       </p>

@@ -171,7 +171,11 @@ async function startServer() {
     logger,
     pool,
     profileBootstrap.enabled
-      ? { store: profileBootstrap.store, dekByVersion: profileBootstrap.dekByVersion }
+      ? {
+          store: profileBootstrap.store,
+          dekByVersion: profileBootstrap.dekByVersion,
+          lifecycle: profileBootstrap.lifecycle,
+        }
       : undefined,
   );
 

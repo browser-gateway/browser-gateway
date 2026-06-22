@@ -16,10 +16,12 @@ import type { SessionPool } from "../core/pool/index.js";
 import { createRestRoutes } from "./rest/index.js";
 import { createDisabledProfileRoutes, createProfileRoutes } from "./rest/profiles.js";
 import type { FilesystemProfileStore } from "./profile/filesystem-store.js";
+import type { ProfileLifecycle } from "./profile/lifecycle.js";
 
 export interface ProfileAppDeps {
   store: FilesystemProfileStore;
   dekByVersion: ReadonlyMap<number, Buffer>;
+  lifecycle: ProfileLifecycle;
 }
 
 function getPackageVersion(): string {
@@ -191,7 +193,7 @@ export function createApp(
 
   if (pool) {
     const restLogger = logger ?? gateway.logger;
-    const restRoutes = createRestRoutes(pool, gateway, restLogger);
+    const restRoutes = createRestRoutes(pool, gateway, restLogger, profile?.lifecycle);
     app.route("/v1", restRoutes);
   }
 

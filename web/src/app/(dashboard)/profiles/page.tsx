@@ -218,13 +218,13 @@ export default function ProfilesPage() {
                   <span className="text-foreground font-medium">How it works.</span>{" "}
                   Connect with{" "}
                   <code className="bg-muted px-1.5 py-0.5 rounded text-[12px] text-foreground">?profile=&lt;id&gt;</code>{" "}
-                  on the WebSocket URL — the gateway captures cookies and per-origin storage when your session ends, and replays them on the next connection with the same id. Profiles are encrypted at rest with your{" "}
+                  on the WebSocket URL. The gateway captures cookies and per-origin storage when your session ends, and replays them on the next connection with the same id. Profiles are encrypted at rest with your{" "}
                   <code className="bg-muted px-1.5 py-0.5 rounded text-[12px] text-foreground">BG_ENCRYPTION_KEY</code>{" "}
                   using AES-256-GCM.
                 </p>
                 <p>
                   <span className="text-foreground font-medium">Create.</span>{" "}
-                  Click <em className="not-italic font-medium text-foreground">+ New Profile</em> at the top to generate a connect URL with a new id, or just connect with any new <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] text-foreground">?profile=&lt;id&gt;</code> — the blob is created on first disconnect.{" "}
+                  Click <em className="not-italic font-medium text-foreground">+ New Profile</em> at the top to generate a connect URL with a new id, or connect with any new <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] text-foreground">?profile=&lt;id&gt;</code>. The blob is created on first disconnect.{" "}
                   <span className="text-foreground font-medium">Rename.</span>{" "}
                   Not currently supported; the id is bound into the encryption (anti-swap). To rename, export, then import as a new id and delete the original.{" "}
                   <span className="text-foreground font-medium">Password.</span>{" "}
@@ -232,7 +232,7 @@ export default function ProfilesPage() {
                 </p>
                 <div className="pt-1">
                   <p className="text-foreground/90 font-medium text-[12px] mb-2">
-                    Quick start — pick your client
+                    Quick start by client
                   </p>
                   <IntegrationTabs authEnabled />
                 </div>
@@ -272,7 +272,7 @@ export default function ProfilesPage() {
                         <p className="text-[12px] text-muted-foreground/80">
                           Connect with{" "}
                           <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] text-foreground">?profile=&lt;id&gt;</code>{" "}
-                          on the WebSocket URL — one will be created automatically when your session ends.
+                          on the WebSocket URL. One will be created automatically when your session ends.
                         </p>
                       )}
                     </div>

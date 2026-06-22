@@ -3,12 +3,18 @@ import type { Logger } from "pino";
 import { z } from "zod";
 import type { Gateway } from "../../core/index.js";
 import type { SessionPool } from "../../core/pool/index.js";
+import type { ProfileLifecycle } from "../profile/lifecycle.js";
 import { RestApiError } from "./schemas.js";
 import { handleScreenshot } from "./screenshot.js";
 import { handleContent } from "./content.js";
 import { handleScrape } from "./scrape.js";
 
-export function createRestRoutes(pool: SessionPool, gateway: Gateway, logger: Logger) {
+export function createRestRoutes(
+  pool: SessionPool,
+  gateway: Gateway,
+  logger: Logger,
+  profileLifecycle?: ProfileLifecycle,
+) {
   const rest = new Hono();
 
   /**
@@ -61,15 +67,15 @@ export function createRestRoutes(pool: SessionPool, gateway: Gateway, logger: Lo
   };
 
   rest.post("/screenshot", providerGate, async (c) => {
-    return handleScreenshot(c, pool, logger);
+    return handleScreenshot(c, pool, gateway, logger, profileLifecycle);
   });
 
   rest.post("/content", providerGate, async (c) => {
-    return handleContent(c, pool, logger);
+    return handleContent(c, pool, gateway, logger, profileLifecycle);
   });
 
   rest.post("/scrape", providerGate, async (c) => {
-    return handleScrape(c, pool, logger);
+    return handleScrape(c, pool, gateway, logger, profileLifecycle);
   });
 
   rest.onError((err, c) => {

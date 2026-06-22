@@ -1,8 +1,10 @@
 import type { Page } from "playwright-core";
 import type { Logger } from "pino";
+import type { Gateway } from "../../core/index.js";
 import type { SessionPool } from "../../core/pool/index.js";
+import type { ProfileLifecycle } from "../profile/lifecycle.js";
 import { ScrapeRequestSchema } from "./schemas.js";
-import { withBrowserPage } from "./executor.js";
+import { dispatchPageAction } from "./dispatch.js";
 import { extractFormats, pageOptionsFromBody } from "./rest-helpers.js";
 import type { Context } from "hono";
 
@@ -23,12 +25,18 @@ interface ScrapeData {
   screenshot?: string;
 }
 
-export async function handleScrape(c: Context, pool: SessionPool, logger: Logger) {
+export async function handleScrape(
+  c: Context,
+  pool: SessionPool,
+  gateway: Gateway,
+  logger: Logger,
+  profileLifecycle?: ProfileLifecycle,
+) {
   const body = ScrapeRequestSchema.parse(await c.req.json());
 
-  const result = await withBrowserPage(
-    pool,
-    logger,
+  const result = await dispatchPageAction(
+    { pool, gateway, logger, profileLifecycle },
+    body.profile,
     pageOptionsFromBody(body, c),
     async (page: Page): Promise<ScrapeData> => {
       const output: ScrapeData = {};

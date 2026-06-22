@@ -7,6 +7,16 @@ const ViewportSchema = z.object({
 
 const WaitUntilSchema = z.enum(["load", "domcontentloaded", "networkidle", "commit"]);
 
+// Mirror of PROFILE_ID_REGEX from src/core/profile/types.ts — duplicated here
+// so the REST layer doesn't need to pull in the whole profile module just to
+// validate a request field. If the regex source ever changes, this is the
+// other place to update.
+const ProfileIdSchema = z
+  .string()
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/, {
+    message: "profile id must start with a letter or number and only contain letters, numbers, dots, dashes, underscores (max 128 chars)",
+  });
+
 const BaseFields = {
   url: z.string().url(),
   viewport: ViewportSchema.optional(),
@@ -16,6 +26,14 @@ const BaseFields = {
   retries: z.number().int().min(0).max(5).default(2),
   headers: z.record(z.string(), z.string()).optional(),
   userAgent: z.string().optional(),
+  /**
+   * Optional profile id. When set, the request acquires a profile lock,
+   * injects the stored cookies into the chosen provider, runs the action,
+   * captures the latest cookies on success, and releases the lock. Disables
+   * automatic retries (one-shot — retries could double-commit state). Requires
+   * the `profiles` feature to be enabled on the gateway.
+   */
+  profile: ProfileIdSchema.optional(),
 };
 
 export const ScreenshotRequestSchema = z.object({

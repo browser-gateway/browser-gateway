@@ -160,8 +160,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 20)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps) → unknown` (line 97)
+- **interface** `interface ProfileAppDeps` (line 21)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps) → unknown` (line 99)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 25)
@@ -230,13 +230,25 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class ProfileLifecycle` (line 67) — Orchestrates a profile's lifecycle around one gateway WebSocket session.
 ### `src/server/rest/content.ts`
 
-- **fn** `handleContent(c: Context, pool: SessionPool, logger: Logger) → unknown` (line 15)
+- **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 17)
+### `src/server/rest/dispatch.ts`
+
+- **interface** `interface DispatchDeps` (line 22)
+- **fn** `dispatchPageAction(deps: DispatchDeps, profileId: string | undefined, options: PageOptions, action: (page: Page) => Promise<T>) → Promise<PageResult<T>>` (line 34) — If `profileId` is set, route through the profile-pinned executor; otherwise
 ### `src/server/rest/executor.ts`
 
-- **interface** `interface PageOptions` (line 6)
-- **interface** `interface PageResult` (line 19)
-- **fn** `withBrowserPage(pool: SessionPool, logger: Logger, options: PageOptions, action: (page: Page) => Promise<T>) → Promise<PageResult<T>>` (line 44)
-- **fn** `scrollThroughPage(page: Page) → Promise<void>` (line 159)
+- **interface** `interface PageOptions` (line 7)
+- **interface** `interface PageResult` (line 20)
+- **fn** `withBrowserPage(pool: SessionPool, logger: Logger, options: PageOptions, action: (page: Page) => Promise<T>) → Promise<PageResult<T>>` (line 45)
+- **fn** `scrollThroughPage(page: Page) → Promise<void>` (line 136)
+### `src/server/rest/page-runner.ts`
+
+- **interface** `interface PageRunResult` (line 18)
+- **fn** `runPageAction(page: Page, options: PageOptions, action: (page: Page) => Promise<T>) → Promise<PageRunResult<T>>` (line 28)
+### `src/server/rest/profile-executor.ts`
+
+- **interface** `interface WithProfilePageDeps` (line 36)
+- **fn** `withProfilePage(deps: WithProfilePageDeps, profileId: string, options: PageOptions, action: (page: Page) => Promise<T>) → Promise<PageResult<T>>` (line 42)
 ### `src/server/rest/profiles.ts`
 
 - **interface** `interface ProfileRestDeps` (line 15)
@@ -251,19 +263,19 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `extractFormats(rawHtml: string, pageUrl: string, innerText: () => Promise<string>, formats: ReadonlyArray<"html" | "text" | "markdown" | "readability">) → Promise<{ content: Record<string, string>; metadata: Record<string, unknown> | undefined }>` (line 76) — Run the standard format-extraction matrix used by `/v1/content` and
 ### `src/server/rest/schemas.ts`
 
-- **const** `const ScreenshotRequestSchema` (line 21)
-- **type** `type ScreenshotRequest` (line 41) — Request body for `POST /v1/screenshot`. Inferred from {@link ScreenshotRequestSchema}.
-- **const** `const ContentRequestSchema` (line 45)
-- **type** `type ContentRequest` (line 52) — Request body for `POST /v1/content`. Inferred from {@link ContentRequestSchema}.
-- **const** `const ScrapeRequestSchema` (line 60)
-- **type** `type ScrapeRequest` (line 72) — Request body for `POST /v1/scrape`. Inferred from {@link ScrapeRequestSchema}.
-- **class** `class RestApiError` (line 74)
+- **const** `const ScreenshotRequestSchema` (line 39)
+- **type** `type ScreenshotRequest` (line 59) — Request body for `POST /v1/screenshot`. Inferred from {@link ScreenshotRequestSchema}.
+- **const** `const ContentRequestSchema` (line 63)
+- **type** `type ContentRequest` (line 70) — Request body for `POST /v1/content`. Inferred from {@link ContentRequestSchema}.
+- **const** `const ScrapeRequestSchema` (line 78)
+- **type** `type ScrapeRequest` (line 90) — Request body for `POST /v1/scrape`. Inferred from {@link ScrapeRequestSchema}.
+- **class** `class RestApiError` (line 92)
 ### `src/server/rest/scrape.ts`
 
-- **fn** `handleScrape(c: Context, pool: SessionPool, logger: Logger) → unknown` (line 26)
+- **fn** `handleScrape(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 28)
 ### `src/server/rest/screenshot.ts`
 
-- **fn** `handleScreenshot(c: Context, pool: SessionPool, logger: Logger) → unknown` (line 9)
+- **fn** `handleScreenshot(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 12)
 ### `src/server/setup/profiles-setup.ts`
 
 - **interface** `interface EnableProfilesInput` (line 17)

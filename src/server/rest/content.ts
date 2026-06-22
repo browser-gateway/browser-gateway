@@ -1,8 +1,10 @@
 import type { Page } from "playwright-core";
 import type { Logger } from "pino";
+import type { Gateway } from "../../core/index.js";
 import type { SessionPool } from "../../core/pool/index.js";
+import type { ProfileLifecycle } from "../profile/lifecycle.js";
 import { ContentRequestSchema } from "./schemas.js";
-import { withBrowserPage } from "./executor.js";
+import { dispatchPageAction } from "./dispatch.js";
 import { extractFormats, pageOptionsFromBody } from "./rest-helpers.js";
 import type { Context } from "hono";
 
@@ -12,12 +14,18 @@ interface ContentData {
   links: Array<{ url: string; text: string }>;
 }
 
-export async function handleContent(c: Context, pool: SessionPool, logger: Logger) {
+export async function handleContent(
+  c: Context,
+  pool: SessionPool,
+  gateway: Gateway,
+  logger: Logger,
+  profileLifecycle?: ProfileLifecycle,
+) {
   const body = ContentRequestSchema.parse(await c.req.json());
 
-  const result = await withBrowserPage(
-    pool,
-    logger,
+  const result = await dispatchPageAction(
+    { pool, gateway, logger, profileLifecycle },
+    body.profile,
     pageOptionsFromBody(body, c),
     async (page: Page): Promise<ContentData> => {
       const rawHtml = await page.content();

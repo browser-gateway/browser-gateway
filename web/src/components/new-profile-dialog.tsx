@@ -119,7 +119,7 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
         <DialogHeader>
           <DialogTitle>Create a new profile</DialogTitle>
           <DialogDescription>
-            Pick an id. Creating it writes an empty profile so the row appears in the list immediately — the first session that connects with this id fills it with real cookies and storage on disconnect.
+            Pick an id. Creating it writes an empty profile so the row appears in the list immediately. The first session that connects with this id fills it with real cookies and storage on disconnect.
           </DialogDescription>
         </DialogHeader>
 
@@ -167,7 +167,7 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
               </code>
               {authEnabled && (
                 <p className="text-[11px] text-muted-foreground">
-                  Token shown masked — Copy writes the real value.
+                  Token shown masked. Copy writes the real value.
                 </p>
               )}
             </div>
@@ -179,7 +179,7 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
           {status === "created" && (
             <p className="text-[12px] text-foreground px-1">
               <Check className="size-3 inline mr-1" />
-              Profile created — closing…
+              Profile created. Closing…
             </p>
           )}
         </div>
