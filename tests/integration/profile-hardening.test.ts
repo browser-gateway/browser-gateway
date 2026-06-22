@@ -161,9 +161,15 @@ describe("Hardening: SIGTERM drain preserves last-session state (H1)", () => {
     await startGateway();
 
     await brieflyConnect("h1-profile");
-    // Close socket → cleanup() fires → commit() kicks off
-    // Don't wait — immediately SIGTERM
-    await new Promise((r) => setTimeout(r, 50)); // very small gap
+    // Close socket → server fires close event → cleanup() runs → commit
+    // enqueues into pendingCommits → mock provider's 800ms getCookies starts.
+    // Wait long enough that the commit is REGISTERED in pendingCommits before
+    // we SIGTERM (so drain has something to wait for), but well before the
+    // 800ms commit completes (so we're testing the drain path, not the
+    // happy-completion path). 50ms was enough locally on Mac but raced on
+    // CI's slower runners — bumped to 400ms which leaves >2x headroom on both
+    // ends.
+    await new Promise((r) => setTimeout(r, 400));
 
     await stopGateway();
 
