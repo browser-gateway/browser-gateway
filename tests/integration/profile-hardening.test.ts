@@ -70,7 +70,7 @@ gateway:
   port: ${GATEWAY_PORT}
   defaultStrategy: priority-chain
   connectionTimeout: 5000
-  shutdownDrainMs: 8000
+  shutdownDrainMs: 15000
 providers:
   mock-cdp:
     url: http://localhost:${PROVIDER_PORT}
@@ -156,19 +156,25 @@ describe("Hardening: SIGTERM drain preserves last-session state (H1)", () => {
     provider.state.cookies = [
       { name: "h1-test", value: "alpha", domain: ".example.com", path: "/", secure: true, httpOnly: true },
     ];
-    provider.state.getCookiesDelayMs = 800; // make commit slow enough that fire-and-forget would lose it
+    provider.state.getCookiesDelayMs = 4000; // commit must still be in-flight when SIGTERM fires
 
-    await startGateway();
+    // commitTimeoutMs must comfortably exceed getCookiesDelayMs or the commit
+    // would be abandoned before drain has a chance to wait for it.
+    await startGateway(8_000);
 
     await brieflyConnect("h1-profile");
     // The test's whole point is to SIGTERM while a commit is in-flight, so
-    // drain has something to wait for. The race: after ws.close() the server
-    // needs to fire its close event → cleanup() → commit-enqueue. On a fast
-    // Mac that's a few ms; on CI's slower runners it can take 500ms+ and a
-    // hardcoded sleep undershoots randomly. So we POLL /v1/status for the
-    // active-session count to drop to 0 (= cleanup ran = commit is in
-    // pendingCommits) before issuing SIGTERM. Mock provider's 800ms
-    // getCookies guarantees the commit is still running when we kill.
+    // drain has something to wait for. The race we have to thread:
+    //   1. ws.close() → server fires close event → activeSessions decrements
+    //   2. server's close callback queues the cleanup() onto the next tick
+    //   3. cleanup() captures cookies — provider's 4s delayed getCookies starts
+    //   4. commit promise is added to pendingCommits
+    // Polling activeSessions=0 catches step 1, but the commit isn't tracked
+    // in pendingCommits until step 4 (later, on a different microtask). So we
+    // poll for activeSessions=0 (catches the cleanup window) + add a small
+    // grace period for the cleanup callback to enqueue the commit.
+    // 4s commit delay gives us LOTS of headroom — even on a degraded CI
+    // runner, SIGTERM lands well before the commit completes.
     const deadline = Date.now() + 5000;
     while (Date.now() < deadline) {
       try {
@@ -180,6 +186,8 @@ describe("Hardening: SIGTERM drain preserves last-session state (H1)", () => {
       }
       await sleep(50);
     }
+    // Grace period — let cleanup's microtask run and register the commit.
+    await sleep(500);
 
     await stopGateway();
 
