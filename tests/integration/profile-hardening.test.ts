@@ -161,15 +161,25 @@ describe("Hardening: SIGTERM drain preserves last-session state (H1)", () => {
     await startGateway();
 
     await brieflyConnect("h1-profile");
-    // Close socket → server fires close event → cleanup() runs → commit
-    // enqueues into pendingCommits → mock provider's 800ms getCookies starts.
-    // Wait long enough that the commit is REGISTERED in pendingCommits before
-    // we SIGTERM (so drain has something to wait for), but well before the
-    // 800ms commit completes (so we're testing the drain path, not the
-    // happy-completion path). 50ms was enough locally on Mac but raced on
-    // CI's slower runners — bumped to 400ms which leaves >2x headroom on both
-    // ends.
-    await new Promise((r) => setTimeout(r, 400));
+    // The test's whole point is to SIGTERM while a commit is in-flight, so
+    // drain has something to wait for. The race: after ws.close() the server
+    // needs to fire its close event → cleanup() → commit-enqueue. On a fast
+    // Mac that's a few ms; on CI's slower runners it can take 500ms+ and a
+    // hardcoded sleep undershoots randomly. So we POLL /v1/status for the
+    // active-session count to drop to 0 (= cleanup ran = commit is in
+    // pendingCommits) before issuing SIGTERM. Mock provider's 800ms
+    // getCookies guarantees the commit is still running when we kill.
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      try {
+        const r = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`);
+        const body = (await r.json()) as { activeSessions: number };
+        if (body.activeSessions === 0) break;
+      } catch {
+        // status not yet reachable — keep trying
+      }
+      await sleep(50);
+    }
 
     await stopGateway();
 
