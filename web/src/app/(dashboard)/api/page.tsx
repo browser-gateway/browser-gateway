@@ -9,7 +9,7 @@
  * dashboard's auth cookie.
  */
 import { useEffect, useState } from "react";
-import { Loader2, Play } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Play } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,31 +53,34 @@ export default function ApiPage() {
 
         <TabsContent value="screenshot" className="mt-2 space-y-4">
           <EndpointSection
-            title="Screenshot"
+            featureTitle="Capture a screenshot"
+            featureDescription="Render any URL as a PNG or JPEG image, optionally full-page or scoped to a single element."
             method="POST"
             path="/v1/screenshot"
             doc={screenshotDoc}
-            tryIt={<ScreenshotForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
+            actionPanel={<ScreenshotForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
           />
         </TabsContent>
 
         <TabsContent value="content" className="mt-2 space-y-4">
           <EndpointSection
-            title="Content extraction"
+            featureTitle="Extract page content"
+            featureDescription="Fetch a page and return its content as markdown, plain text, HTML, or a Readability-style article."
             method="POST"
             path="/v1/content"
             doc={contentDoc}
-            tryIt={<ContentForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
+            actionPanel={<ContentForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
           />
         </TabsContent>
 
         <TabsContent value="scrape" className="mt-2 space-y-4">
           <EndpointSection
-            title="Scrape with selectors"
+            featureTitle="Scrape with selectors"
+            featureDescription="Extract structured data from a page using named CSS selectors. Combine with content formats for one-shot capture."
             method="POST"
             path="/v1/scrape"
             doc={scrapeDoc}
-            tryIt={<ScrapeForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
+            actionPanel={<ScrapeForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
           />
         </TabsContent>
       </Tabs>
@@ -97,46 +100,56 @@ function EndpointTab({ value, method, path }: { value: string; method: string; p
 }
 
 function EndpointSection(props: {
-  title: string;
+  featureTitle: string;
+  featureDescription: string;
   method: string;
   path: string;
   doc: typeof screenshotDoc;
-  tryIt: React.ReactNode;
+  actionPanel: React.ReactNode;
 }) {
+  const [docsOpen, setDocsOpen] = useState(false);
+
   return (
     <>
-      <Card className="glass border-border/40">
-        <CardContent className="px-5 py-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border/40 text-muted-foreground tabular-nums">
-              {props.method}
-            </span>
-            <code className="font-mono text-[13.5px] text-foreground">{props.path}</code>
+      {/* Primary feature panel. Elevated styling and dense content to read as
+          the real product surface, not a sandbox. */}
+      <Card className="glass border-border/60">
+        <CardContent className="px-5 py-5 space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold tracking-tight">{props.featureTitle}</h2>
+            <p className="text-[13px] text-muted-foreground">{props.featureDescription}</p>
           </div>
-          <h2 className="text-base font-semibold tracking-tight">{props.title}</h2>
+          <div className="space-y-3">{props.actionPanel}</div>
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="reference" className="w-full">
-        <TabsList>
-          <TabsTrigger value="reference">Reference</TabsTrigger>
-          <TabsTrigger value="try">Try it</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="reference" className="mt-3">
-          <Card className="glass border-border/40">
-            <CardContent className="px-5 py-4">
-              <EndpointReference doc={props.doc} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="try" className="mt-3">
-          <Card className="glass border-border/40">
-            <CardContent className="px-5 py-4 space-y-3">{props.tryIt}</CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/* Secondary, collapsible reference docs. Flat container, no Card so
+          the visual weight stays on the feature panel above. */}
+      <div className="rounded-lg border border-border/30 bg-muted/10">
+        <button
+          onClick={() => setDocsOpen((v) => !v)}
+          className="flex items-center justify-between w-full px-4 py-2.5 group"
+          aria-expanded={docsOpen}
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="text-[11px] font-mono px-1.5 py-0.5 rounded border border-border/40 text-muted-foreground tabular-nums">
+              {props.method}
+            </span>
+            <code className="font-mono text-[12.5px] text-foreground/90">{props.path}</code>
+            <span className="text-[11px] text-muted-foreground ml-2">API reference</span>
+          </div>
+          {docsOpen ? (
+            <ChevronDown className="size-3.5 text-muted-foreground group-hover:text-foreground" />
+          ) : (
+            <ChevronRight className="size-3.5 text-muted-foreground group-hover:text-foreground" />
+          )}
+        </button>
+        {docsOpen && (
+          <div className="px-4 pb-4 pt-1 border-t border-border/20">
+            <EndpointReference doc={props.doc} />
+          </div>
+        )}
+      </div>
     </>
   );
 }
