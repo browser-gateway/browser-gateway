@@ -133,10 +133,10 @@ export default function ConfigPage() {
       )}
 
       {validation && validation.valid && (
-        <Card className="border-emerald-500/30">
+        <Card className="border-border">
           <CardContent className="px-4 py-3 flex items-center gap-2">
-            <Check className="h-4 w-4 text-emerald-500" />
-            <p className="text-sm text-emerald-500">
+            <Check className="h-4 w-4 text-foreground" />
+            <p className="text-sm text-foreground">
               Valid configuration with {validation.providerCount} provider{validation.providerCount !== 1 ? "s" : ""}
             </p>
           </CardContent>
@@ -144,10 +144,10 @@ export default function ConfigPage() {
       )}
 
       {saveResult && saveResult.ok && (
-        <Card className="border-emerald-500/30">
+        <Card className="border-border">
           <CardContent className="px-4 py-3 flex items-center gap-2">
-            <Check className="h-4 w-4 text-emerald-500" />
-            <p className="text-sm text-emerald-500">{saveResult.message}</p>
+            <Check className="h-4 w-4 text-foreground" />
+            <p className="text-sm text-foreground">{saveResult.message}</p>
           </CardContent>
         </Card>
       )}

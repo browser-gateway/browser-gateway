@@ -50,7 +50,7 @@
     "build:web": "cd web && npm run build",
     "build:all": "npm run build && npm run build:web",
     "start": "node dist/server/index.js",
-    "live": "npm run build:all && node dist/server/index.js",
+    "live": "npm run build:all && node dist/server/index.js serve --config gateway.dev.yml",
     "test": "vitest",
     "test:run": "vitest run",
     "lint": "tsc --noEmit",

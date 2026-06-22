@@ -188,16 +188,22 @@ export interface ProfileMetaItem {
 }
 
 export interface ProfileListResponse {
+  /** True when the profiles feature is enabled on the gateway. */
+  enabled: boolean;
   count: number;
   profiles: ProfileMetaItem[];
+  /** Present when enabled === false — human-readable instructions to enable. */
+  reason?: string;
 }
 
 export async function fetchProfiles(): Promise<ProfileListResponse> {
   const res = await fetch(`${API_BASE}/v1/profiles`, fetchOpts);
   if (res.status === 401) throw new AuthError();
-  if (res.status === 404) return { count: 0, profiles: [] };
+  if (res.status === 404) return { enabled: false, count: 0, profiles: [] };
   if (!res.ok) throw new Error(`Profiles API error: ${res.status}`);
-  return res.json();
+  const body = (await res.json()) as ProfileListResponse;
+  // Backwards-compat: gateways that pre-date the enabled flag don't include it.
+  return { enabled: body.enabled ?? true, count: body.count, profiles: body.profiles, reason: body.reason };
 }
 
 export async function deleteProfile(id: string): Promise<void> {
@@ -227,6 +233,46 @@ export async function importProfile(blob: Blob): Promise<{ imported: string; byt
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string };
     throw new Error(body.error ?? `Import failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export interface EnableProfilesResult {
+  envPath: string;
+  envWritten: boolean;
+  envAlreadyHadKey: boolean;
+  configPath: string;
+  configWritten: boolean;
+  configAlreadyHadBlock: boolean;
+  restartRequired: boolean;
+}
+
+export async function createProfile(id: string): Promise<ProfileMetaItem> {
+  const res = await fetch(`${API_BASE}/v1/profiles/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id }),
+    ...fetchOpts,
+  });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Create failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function enableProfilesSetup(encryptionKey: string): Promise<EnableProfilesResult> {
+  const res = await fetch(`${API_BASE}/v1/profiles/setup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ encryptionKey }),
+    ...fetchOpts,
+  });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Setup failed: ${res.status}`);
   }
   return res.json();
 }

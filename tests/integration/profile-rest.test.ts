@@ -176,7 +176,54 @@ describe("Phase 4: profile REST API", () => {
   it("list: returns empty array when no profiles", async () => {
     const r = await getJson("/v1/profiles", { headers: authHeaders });
     expect(r.status).toBe(200);
-    expect(r.body).toEqual({ count: 0, profiles: [] });
+    expect(r.body).toEqual({ enabled: true, count: 0, profiles: [] });
+  });
+
+  it("create: explicit POST writes an empty profile so it appears in the list immediately", async () => {
+    const r = await getJson("/v1/profiles/create", {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "explicit-create" }),
+    });
+    expect(r.status).toBe(201);
+    expect((r.body as { id?: string }).id).toBe("explicit-create");
+
+    const list = await getJson("/v1/profiles", { headers: authHeaders });
+    const items = (list.body as { profiles: { id: string }[] }).profiles;
+    expect(items.find((p) => p.id === "explicit-create")).toBeTruthy();
+
+    // Clean up so downstream tests start clean.
+    await getJson("/v1/profiles/explicit-create", { method: "DELETE", headers: authHeaders });
+  });
+
+  it("create: rejects invalid id and duplicate id", async () => {
+    const bad = await getJson("/v1/profiles/create", {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "-leading-dash" }),
+    });
+    expect(bad.status).toBe(400);
+
+    await getJson("/v1/profiles/create", {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "dup-test" }),
+    });
+    const dup = await getJson("/v1/profiles/create", {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "dup-test" }),
+    });
+    expect(dup.status).toBe(409);
+
+    await getJson("/v1/profiles/dup-test", { method: "DELETE", headers: authHeaders });
+  });
+
+  it("auth/info: returns the configured BG_TOKEN to authenticated callers", async () => {
+    const r = await getJson("/v1/auth/info", { headers: authHeaders });
+    expect(r.status).toBe(200);
+    expect((r.body as { token: string }).token).toBe(TOKEN);
+    expect((r.body as { authEnabled: boolean }).authEnabled).toBe(true);
   });
 
   it("creates a profile via WS session, then lists it", async () => {

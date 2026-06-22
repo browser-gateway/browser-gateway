@@ -123,7 +123,7 @@ export default function ProvidersPage() {
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Common provider types</p>
               <div className="grid gap-2">
                 <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30">
-                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                  <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground mt-1.5 shrink-0" />
                   <div>
                     <p className="text-sm font-medium">Playwright Server</p>
                     <p className="text-xs text-muted-foreground">Self-hosted via <span className="font-mono">npx playwright run-server</span></p>
@@ -131,7 +131,7 @@ export default function ProvidersPage() {
                   </div>
                 </div>
                 <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30">
-                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                  <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground mt-1.5 shrink-0" />
                   <div>
                     <p className="text-sm font-medium">Cloud Browser Service</p>
                     <p className="text-xs text-muted-foreground">Any cloud provider that gives you a WebSocket URL with an API key</p>
@@ -139,11 +139,11 @@ export default function ProvidersPage() {
                   </div>
                 </div>
                 <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/30">
-                  <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                  <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground mt-1.5 shrink-0" />
                   <div>
                     <p className="text-sm font-medium">Chrome Remote Debugging</p>
                     <p className="text-xs text-muted-foreground">Chrome launched with <span className="font-mono">--remote-debugging-port</span></p>
-                    <p className="text-xs text-muted-foreground/70 font-mono mt-1">http://192.168.1.100:9222</p>
+                    <p className="text-xs text-muted-foreground/70 font-mono mt-1">http://your-host:9222</p>
                   </div>
                 </div>
               </div>
@@ -170,7 +170,7 @@ export default function ProvidersPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0 space-y-2">
                     <div className="flex items-center gap-2.5">
-                      <div className={`h-2 w-2 rounded-full shrink-0 ${live?.healthy !== false ? "bg-emerald-500" : "bg-red-500 animate-pulse"}`} />
+                      <div className={`h-2 w-2 rounded-full shrink-0 ${live?.healthy !== false ? "bg-foreground" : "bg-destructive animate-pulse"}`} />
                       <span className="text-sm font-semibold font-mono truncate">{provider.id}</span>
                       <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
                         Priority {provider.priority}
@@ -207,7 +207,7 @@ export default function ProvidersPage() {
                     </div>
 
                     {test && (
-                      <div className={`flex items-center gap-1.5 text-xs ${test.ok ? "text-emerald-500" : "text-destructive"}`}>
+                      <div className={`flex items-center gap-1.5 text-xs ${test.ok ? "text-foreground" : "text-destructive"}`}>
                         {test.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
                         {test.ok ? `Connected successfully in ${test.latencyMs}ms` : `Connection failed: ${test.error}`}
                       </div>
@@ -361,7 +361,7 @@ function ProviderForm({
         </div>
         {errors.url && <p className="text-xs text-destructive mt-1">{errors.url}</p>}
         {testResult && (
-          <p className={`text-xs mt-1.5 ${testResult.ok ? "text-emerald-500" : "text-destructive"}`}>
+          <p className={`text-xs mt-1.5 ${testResult.ok ? "text-foreground" : "text-destructive"}`}>
             {testResult.ok ? `Connected successfully in ${testResult.latencyMs}ms` : `Connection failed: ${testResult.error}`}
           </p>
         )}

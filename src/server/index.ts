@@ -31,6 +31,7 @@ function loadEnvFile(): void {
 }
 import { Gateway, SessionPool } from "../core/index.js";
 import { buildMcpGatewayConfig } from "./mcp/config-defaults.js";
+import { printStartupBanner } from "./startup/banner.js";
 import { ReconnectRegistry } from "../core/proxy/reconnect.js";
 import { WebhookNotifier } from "../core/notifications/webhooks.js";
 import { loadConfig } from "./config/loader.js";
@@ -50,6 +51,17 @@ function findWebDir(): string | undefined {
     if (existsSync(join(dir, "index.html"))) return dir;
   }
   return undefined;
+}
+
+function readPackageVersion(): string {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../package.json"), "utf-8"),
+    );
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
 }
 
 const args = process.argv.slice(2);
@@ -308,19 +320,27 @@ async function startServer() {
 
   server.on("upgrade", handleUpgrade);
 
+  const startTime = Date.now();
   gateway.start();
 
   server.listen(config.gateway.port, async () => {
+    // Structured single-line log for log aggregators
     logger.info(
       { port: config.gateway.port, providers: gateway.registry.size() },
-      `browser-gateway running on http://localhost:${config.gateway.port}`
+      `browser-gateway running on http://localhost:${config.gateway.port}`,
     );
-    logger.info(`WebSocket proxy at ws://localhost:${config.gateway.port}/v1/connect`);
-    logger.info(`REST API at http://localhost:${config.gateway.port}/v1/screenshot, /v1/content, /v1/scrape`);
-    logger.info(`Status API at http://localhost:${config.gateway.port}/v1/status`);
-    if (webDir) {
-      logger.info(`Dashboard at http://localhost:${config.gateway.port}/web`);
-    }
+
+    // Human-readable boxed banner for the TTY
+    printStartupBanner({
+      version: readPackageVersion(),
+      port: config.gateway.port,
+      hasDashboard: !!webDir,
+      authEnabled: !!token,
+      profilesStatus: profileBootstrap.enabled ? "enabled" : "disabled",
+      providers: gateway.registry.getAllSortedByPriority(),
+      readyMs: Date.now() - startTime,
+      config,
+    });
 
     await pool.start();
   });

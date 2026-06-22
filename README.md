@@ -55,6 +55,18 @@ Your app connects to `ws://gateway:9500/v1/connect`. The gateway picks the best 
 - **Session Pool** - Browser connections are reused across requests (like a database connection pool)
 - **Auto-Retry** - Failed requests automatically retry with a fresh browser page
 
+### Profiles — Persistent Browser State
+
+- **Survive Across Sessions** - Cookies, `localStorage`, `sessionStorage`, `IndexedDB` saved on disconnect, replayed on the next connect with the same id
+- **One-Line Opt-In** - Add `?profile=acme` to the WebSocket URL — the rest is automatic
+- **Encrypted At Rest** - AES-256-GCM with envelope encryption, anti-swap binding, scrypt-derived KEK
+- **Provider-Agnostic** - Works across any CDP provider (raw Chrome, Browserless, Steel, Browserbase, etc.) since state is captured at the protocol level
+- **Per-Profile Locking** - Concurrent connects to the same id are rejected cleanly with HTTP 409 to prevent corruption
+- **Export / Import** - Encrypted `.bgp` blobs are portable between gateway installs
+- **One-Click Enable** - Dashboard wizard generates a strong key in your browser and writes the config for you
+
+See [docs/profiles.md](docs/profiles.md) for the full guide, security model, REST endpoints, and limitations.
+
 ### MCP Server for AI Agents
 
 - **8 Browser Tools** - navigate, snapshot, screenshot, viewport, interact, evaluate, close, status
@@ -296,6 +308,7 @@ const browser = await puppeteer.connect({ browserWSEndpoint: "ws://localhost:950
 
 - [MCP Server for AI Agents](./docs/mcp.md) - Setup, tools, options
 - [Integrations](./docs/integrations.md) - Playwright, Puppeteer, browser-use, Stagehand, Playwright MCP
+- [Profiles — Persistent Browser State](./docs/profiles.md) - Save and replay cookies + storage across sessions
 - [Getting Started](./docs/getting-started.md)
 - [Configuration Reference](./docs/configuration.md)
 - [How Failover Works](./docs/failover.md)

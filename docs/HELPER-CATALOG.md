@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-06-21
+Generated: 2026-06-22
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -239,8 +239,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `scrollThroughPage(page: Page) → Promise<void>` (line 159)
 ### `src/server/rest/profiles.ts`
 
-- **interface** `interface ProfileRestDeps` (line 10)
-- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 29) — Profile management REST routes.
+- **interface** `interface ProfileRestDeps` (line 15)
+- **fn** `createDisabledProfileRoutes() → Hono` (line 36) — Profile routes that respond gracefully when the profiles feature is OFF.
+- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 102) — Profile management REST routes.
 ### `src/server/rest/rest-helpers.ts`
 
 - **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body
@@ -263,6 +264,15 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/rest/screenshot.ts`
 
 - **fn** `handleScreenshot(c: Context, pool: SessionPool, logger: Logger) → unknown` (line 9)
+### `src/server/setup/profiles-setup.ts`
+
+- **interface** `interface EnableProfilesInput` (line 17)
+- **interface** `interface EnableProfilesResult` (line 26)
+- **fn** `enableProfilesFlow(input: EnableProfilesInput) → EnableProfilesResult` (line 47)
+### `src/server/startup/banner.ts`
+
+- **interface** `interface BannerOptions` (line 53)
+- **fn** `printStartupBanner(opts: BannerOptions) → void` (line 69)
 ### `src/server/validation.ts`
 
 - **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 14) — Format a Zod error into a human-readable list of "path: message" strings.

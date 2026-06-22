@@ -14,7 +14,7 @@ import { parseProviderConfigBody, parseYamlGatewayConfig } from "./validation.js
 import { loadedConfigPath } from "./config/loader.js";
 import type { SessionPool } from "../core/pool/index.js";
 import { createRestRoutes } from "./rest/index.js";
-import { createProfileRoutes } from "./rest/profiles.js";
+import { createDisabledProfileRoutes, createProfileRoutes } from "./rest/profiles.js";
 import type { FilesystemProfileStore } from "./profile/filesystem-store.js";
 
 export interface ProfileAppDeps {
@@ -136,6 +136,17 @@ export function createApp(
     return c.json({ error: "Unauthorized" }, 401);
   });
 
+  /**
+   * Returns the configured BG_TOKEN to authenticated callers so the dashboard
+   * can render real connect URLs (with the token masked on screen, real on
+   * copy). No privilege escalation — to reach this endpoint the caller must
+   * already have proven they know the token (via Bearer header or the cookie
+   * session HMAC'd against it).
+   */
+  app.get("/v1/auth/info", (c) => {
+    return c.json({ token: token ?? null, authEnabled: !!token });
+  });
+
   app.get("/v1/status", (c) => {
     const status = gateway.getStatus();
 
@@ -192,6 +203,11 @@ export function createApp(
       logger: profileLogger,
     });
     app.route("/v1", profileRoutes);
+  } else {
+    // Profiles feature is OFF. Still register routes so callers (dashboard,
+    // scripts) get a structured "disabled" response instead of falling through
+    // to the catch-all 503. See `createDisabledProfileRoutes` for the shape.
+    app.route("/v1", createDisabledProfileRoutes());
   }
 
   // Provider CRUD endpoints

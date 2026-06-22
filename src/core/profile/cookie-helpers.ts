@@ -31,9 +31,9 @@ function withDeadline<T>(op: Promise<T>, timeoutMs: number, label: string): Prom
  * never responds, the deadline fires, the client is closed (rejecting any
  * pending send via the H2 fix), and the lifecycle's lock is released.
  *
- * On providers that count each WebSocket as a billable concurrent session
- * (Browserless), this counts as one brief connection. On persistent-session
- * providers (Steel, Browserbase, our runtime, raw Chrome), this is essentially free.
+ * On providers that count each WebSocket as a billable concurrent session,
+ * this counts as one brief connection. On persistent-session providers and
+ * raw Chrome, this is essentially free.
  */
 export async function captureCookiesViaTransient(
   wsUrl: string,

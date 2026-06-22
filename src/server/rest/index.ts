@@ -11,8 +11,18 @@ import { handleScrape } from "./scrape.js";
 export function createRestRoutes(pool: SessionPool, gateway: Gateway, logger: Logger) {
   const rest = new Hono();
 
-  rest.use("*", async (c, next) => {
-    // No providers configured at all
+  /**
+   * Guard that only gates the action endpoints (screenshot/content/scrape) which
+   * REQUIRE a browser provider to be available. Other endpoints mounted under
+   * /v1 (profiles, status, sessions) are independent of provider availability
+   * and must NOT be blocked by this gate — that was the regression that made
+   * `/v1/profiles` return 503 with "No providers configured" instead of the
+   * proper feature-disabled response.
+   */
+  const providerGate = async (
+    c: import("hono").Context,
+    next: () => Promise<void>,
+  ): Promise<Response | void> => {
     if (gateway.registry.size() === 0) {
       return c.json({
         success: false,
@@ -20,30 +30,20 @@ export function createRestRoutes(pool: SessionPool, gateway: Gateway, logger: Lo
         message: "Add browser providers to gateway.yml or via the dashboard at /web/providers",
       }, 503);
     }
-
-    // Gateway is shutting down
     if (gateway.shuttingDown) {
-      return c.json({
-        success: false,
-        error: "Gateway is shutting down",
-      }, 503);
+      return c.json({ success: false, error: "Gateway is shutting down" }, 503);
     }
-
-    // All providers are in cooldown or unhealthy
     const providers = gateway.registry.getAll();
     const now = Date.now();
     const allDown = providers.every(
       (p) => (p.cooldownUntil && p.cooldownUntil > now) || !p.healthy,
     );
-
     if (allDown) {
       const soonest = providers
         .filter((p) => p.cooldownUntil)
         .map((p) => p.cooldownUntil!)
         .sort((a, b) => a - b)[0];
-
       const retryAfterSec = soonest ? Math.ceil((soonest - now) / 1000) : 10;
-
       c.header("Retry-After", String(retryAfterSec));
       return c.json({
         success: false,
@@ -57,19 +57,18 @@ export function createRestRoutes(pool: SessionPool, gateway: Gateway, logger: Lo
         })),
       }, 503);
     }
-
     return next();
-  });
+  };
 
-  rest.post("/screenshot", async (c) => {
+  rest.post("/screenshot", providerGate, async (c) => {
     return handleScreenshot(c, pool, logger);
   });
 
-  rest.post("/content", async (c) => {
+  rest.post("/content", providerGate, async (c) => {
     return handleContent(c, pool, logger);
   });
 
-  rest.post("/scrape", async (c) => {
+  rest.post("/scrape", providerGate, async (c) => {
     return handleScrape(c, pool, logger);
   });
 
