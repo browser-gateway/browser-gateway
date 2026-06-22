@@ -1,24 +1,23 @@
 "use client";
 
 /**
- * REST API page. Documentation + interactive forms for the three /v1
- * action endpoints (screenshot, content, scrape).
+ * REST API page. One tab per endpoint. Inside each: Reference docs and an
+ * interactive Try-it form, separated as inner tabs.
  *
- * Each section: short description, form, response viewer. Submitting a form
- * calls the real endpoint with the user's auth cookie. Image preview for
- * screenshot, format-toggled text for content, JSON viewer for scrape.
- *
- * Intentionally not a Postman clone. No request history, no endpoint tabs,
- * no environment variables. Three sections stacked top to bottom.
+ * Reference docs are driven by structured data in `./docs.ts` so they stay
+ * consistent across endpoints. The forms hit the real /v1 endpoints with the
+ * dashboard's auth cookie.
  */
 import { useEffect, useState } from "react";
 import { Loader2, Play } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CodeBlock } from "@/components/code-block";
+import { EndpointReference } from "@/components/endpoint-reference";
 import { fetchProfiles, type ProfileMetaItem } from "@/lib/api";
-import { useAuthEnabled } from "@/components/token-autofill";
+import { contentDoc, scrapeDoc, screenshotDoc } from "./docs";
 
 export default function ApiPage() {
   const [profiles, setProfiles] = useState<ProfileMetaItem[] | null>(null);
@@ -31,7 +30,6 @@ export default function ApiPage() {
         setProfiles(r.profiles);
       })
       .catch(() => {
-        // Auth error or other — just skip the profile dropdown
         setProfilesEnabled(false);
         setProfiles([]);
       });
@@ -42,23 +40,116 @@ export default function ApiPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">REST API</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Try the REST API from the dashboard. Each request runs through the gateway&apos;s routing and inherits its failover.
+          Three HTTP endpoints for screenshots, content extraction, and structured scraping. Try each one from the dashboard or read its reference.
         </p>
       </div>
 
-      <ScreenshotSection profiles={profiles ?? []} profilesEnabled={profilesEnabled} />
-      <ContentSection profiles={profiles ?? []} profilesEnabled={profilesEnabled} />
-      <ScrapeSection profiles={profiles ?? []} profilesEnabled={profilesEnabled} />
+      <Tabs defaultValue="screenshot" className="w-full">
+        <TabsList variant="line" className="border-b border-border/40 rounded-none gap-4 px-0 mb-4">
+          <EndpointTab value="screenshot" method="POST" path="/v1/screenshot" />
+          <EndpointTab value="content" method="POST" path="/v1/content" />
+          <EndpointTab value="scrape" method="POST" path="/v1/scrape" />
+        </TabsList>
+
+        <TabsContent value="screenshot" className="mt-2 space-y-4">
+          <EndpointSection
+            title="Screenshot"
+            method="POST"
+            path="/v1/screenshot"
+            doc={screenshotDoc}
+            tryIt={<ScreenshotForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
+          />
+        </TabsContent>
+
+        <TabsContent value="content" className="mt-2 space-y-4">
+          <EndpointSection
+            title="Content extraction"
+            method="POST"
+            path="/v1/content"
+            doc={contentDoc}
+            tryIt={<ContentForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
+          />
+        </TabsContent>
+
+        <TabsContent value="scrape" className="mt-2 space-y-4">
+          <EndpointSection
+            title="Scrape with selectors"
+            method="POST"
+            path="/v1/scrape"
+            doc={scrapeDoc}
+            tryIt={<ScrapeForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
 
-interface SectionProps {
+function EndpointTab({ value, method, path }: { value: string; method: string; path: string }) {
+  return (
+    <TabsTrigger value={value} className="px-1 pb-2 data-active:!text-foreground gap-2">
+      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border/40 text-muted-foreground tabular-nums">
+        {method}
+      </span>
+      <code className="font-mono text-[12.5px]">{path}</code>
+    </TabsTrigger>
+  );
+}
+
+function EndpointSection(props: {
+  title: string;
+  method: string;
+  path: string;
+  doc: typeof screenshotDoc;
+  tryIt: React.ReactNode;
+}) {
+  return (
+    <>
+      <Card className="glass border-border/40">
+        <CardContent className="px-5 py-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border/40 text-muted-foreground tabular-nums">
+              {props.method}
+            </span>
+            <code className="font-mono text-[13.5px] text-foreground">{props.path}</code>
+          </div>
+          <h2 className="text-base font-semibold tracking-tight">{props.title}</h2>
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="reference" className="w-full">
+        <TabsList>
+          <TabsTrigger value="reference">Reference</TabsTrigger>
+          <TabsTrigger value="try">Try it</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="reference" className="mt-3">
+          <Card className="glass border-border/40">
+            <CardContent className="px-5 py-4">
+              <EndpointReference doc={props.doc} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="try" className="mt-3">
+          <Card className="glass border-border/40">
+            <CardContent className="px-5 py-4 space-y-3">{props.tryIt}</CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </>
+  );
+}
+
+// ---------- shared form helpers (kept identical to the previous page so the
+// forms continue to behave the same) ----------
+
+interface FormSectionProps {
   profiles: ProfileMetaItem[];
   profilesEnabled: boolean;
 }
 
-function ScreenshotSection({ profiles, profilesEnabled }: SectionProps) {
+function ScreenshotForm({ profiles, profilesEnabled }: FormSectionProps) {
   const [url, setUrl] = useState("https://example.com");
   const [format, setFormat] = useState<"png" | "jpeg">("png");
   const [fullPage, setFullPage] = useState(false);
@@ -99,12 +190,7 @@ function ScreenshotSection({ profiles, profilesEnabled }: SectionProps) {
   }
 
   return (
-    <EndpointCard
-      method="POST"
-      path="/v1/screenshot"
-      title="Screenshot"
-      description="Capture a page as PNG or JPEG. Returns the raw image bytes. Full-page mode scrolls and stitches the entire scrollable area."
-    >
+    <>
       <FormRow label="URL">
         <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" className="font-mono text-[13px]" />
       </FormRow>
@@ -117,7 +203,7 @@ function ScreenshotSection({ profiles, profilesEnabled }: SectionProps) {
       <FormRow label="Full page">
         <label className="text-[13px] text-muted-foreground flex items-center gap-2">
           <input type="checkbox" checked={fullPage} onChange={(e) => setFullPage(e.target.checked)} className="accent-foreground" />
-          Scroll + stitch entire page
+          Scroll and stitch the entire page
         </label>
       </FormRow>
       <ProfileDropdown profiles={profiles} profilesEnabled={profilesEnabled} value={profile} onChange={setProfile} />
@@ -140,11 +226,11 @@ function ScreenshotSection({ profiles, profilesEnabled }: SectionProps) {
           </p>
         </div>
       )}
-    </EndpointCard>
+    </>
   );
 }
 
-function ContentSection({ profiles, profilesEnabled }: SectionProps) {
+function ContentForm({ profiles, profilesEnabled }: FormSectionProps) {
   const [url, setUrl] = useState("https://example.com");
   const [formats, setFormats] = useState<string[]>(["markdown"]);
   const [profile, setProfile] = useState("");
@@ -187,12 +273,7 @@ function ContentSection({ profiles, profilesEnabled }: SectionProps) {
   const availableFormats = result ? Object.keys(result.content) : [];
 
   return (
-    <EndpointCard
-      method="POST"
-      path="/v1/content"
-      title="Content extraction"
-      description="Fetch a page and return its text in one or more formats: rendered HTML, plain text, markdown, or a Readability-style cleaned article."
-    >
+    <>
       <FormRow label="URL">
         <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" className="font-mono text-[13px]" />
       </FormRow>
@@ -230,17 +311,17 @@ function ContentSection({ profiles, profilesEnabled }: SectionProps) {
           </div>
           <CodeBlock
             code={result.content[activeFormat] ?? ""}
-            lang={activeFormat === "html" ? "typescript" : activeFormat === "text" ? "bash" : "bash"}
+            lang={activeFormat === "html" ? "typescript" : "bash"}
             filename={activeFormat}
             maxHeight="400px"
           />
         </div>
       )}
-    </EndpointCard>
+    </>
   );
 }
 
-function ScrapeSection({ profiles, profilesEnabled }: SectionProps) {
+function ScrapeForm({ profiles, profilesEnabled }: FormSectionProps) {
   const [url, setUrl] = useState("https://example.com");
   const [selectors, setSelectors] = useState<{ name: string; selector: string }[]>([
     { name: "title", selector: "h1" },
@@ -290,12 +371,7 @@ function ScrapeSection({ profiles, profilesEnabled }: SectionProps) {
   }
 
   return (
-    <EndpointCard
-      method="POST"
-      path="/v1/scrape"
-      title="Scrape with selectors"
-      description="Extract data from a page using CSS selectors. Each named selector returns its matches as text + outer HTML. Useful for structured data: titles, prices, tables, lists."
-    >
+    <>
       <FormRow label="URL">
         <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" className="font-mono text-[13px]" />
       </FormRow>
@@ -338,33 +414,7 @@ function ScrapeSection({ profiles, profilesEnabled }: SectionProps) {
           <CodeBlock code={JSON.stringify(result, null, 2)} lang="json" filename="result.json" maxHeight="400px" />
         </div>
       )}
-    </EndpointCard>
-  );
-}
-
-function EndpointCard(props: {
-  method: string;
-  path: string;
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className="glass border-border/40">
-      <CardContent className="px-5 py-4 space-y-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border/40 text-muted-foreground tabular-nums">
-              {props.method}
-            </span>
-            <code className="font-mono text-[13px] text-foreground">{props.path}</code>
-          </div>
-          <h2 className="text-base font-semibold tracking-tight">{props.title}</h2>
-          <p className="text-[13px] text-muted-foreground">{props.description}</p>
-        </div>
-        <div className="space-y-3">{props.children}</div>
-      </CardContent>
-    </Card>
+    </>
   );
 }
 
@@ -396,7 +446,7 @@ function ProfileDropdown(props: {
           ))}
         </NativeSelect>
         <p className="text-[11px] text-muted-foreground">
-          Optional. Runs with the saved cookies + storage of this profile.
+          Optional. Runs with the saved cookies and storage of this profile.
         </p>
       </div>
     </FormRow>
@@ -413,8 +463,6 @@ function NativeSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
 }
 
 function RunButton(props: { loading: boolean; onClick: () => void; label: string }) {
-  // Suppress unused warning; useAuthEnabled is called here to ensure we have the cookie cycle initialized
-  useAuthEnabled();
   return (
     <Button onClick={props.onClick} disabled={props.loading} size="sm" className="gap-1.5">
       {props.loading ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
