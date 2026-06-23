@@ -84,14 +84,14 @@ export default function ConfigPage() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {hasChanges && (
-            <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={handleDiscard}>
+            <Button variant="ghost" size="sm" onClick={handleDiscard}>
               Discard
             </Button>
           )}
           <Button
             variant="secondary"
             size="sm"
-            className="h-8 text-xs gap-1.5"
+            className="gap-1.5"
             onClick={handleValidate}
             disabled={validating || !yaml.trim()}
           >
@@ -100,7 +100,7 @@ export default function ConfigPage() {
           </Button>
           <Button
             size="sm"
-            className="h-8 text-xs gap-1.5"
+            className="gap-1.5"
             onClick={handleSave}
             disabled={saving || !hasChanges || !yaml.trim()}
           >

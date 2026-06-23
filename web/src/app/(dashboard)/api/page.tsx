@@ -405,13 +405,13 @@ function ScrapeForm({ profiles, profilesEnabled }: FormSectionProps) {
                 className="font-mono text-[12.5px] flex-1"
               />
               {selectors.length > 1 && (
-                <Button variant="ghost" size="sm" onClick={() => removeRow(i)} className="h-8 px-2 text-muted-foreground">
+                <Button variant="ghost" size="icon-sm" onClick={() => removeRow(i)} className="text-muted-foreground">
                   ×
                 </Button>
               )}
             </div>
           ))}
-          <Button variant="outline" size="sm" onClick={addRow} className="h-7 text-[11.5px]">
+          <Button variant="outline" size="sm" onClick={addRow}>
             + Add selector
           </Button>
         </div>
@@ -470,7 +470,7 @@ function NativeSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
       {...props}
-      className="bg-muted/30 border border-border/40 rounded px-2 py-1.5 text-[13px] font-mono w-full focus:outline-none focus:ring-1 focus:ring-foreground/40"
+      className="bg-muted/30 border border-border/40 rounded h-10 px-3.5 text-[13px] font-mono w-full focus:outline-none focus:ring-1 focus:ring-foreground/40"
     />
   );
 }

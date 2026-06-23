@@ -14,11 +14,9 @@
  * their gateway was even running.
  */
 import { useEffect, useState } from "react";
-import { Server, Copy, Check, Link2, Activity } from "lucide-react";
+import { Server, Copy, Check } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IntegrationTabs } from "@/components/integration-tabs";
 import { useGatewayToken, useAuthEnabled } from "@/components/token-autofill";
 import { buildConnectUrl, maskUrlToken } from "@/lib/connect-url";
@@ -147,95 +145,27 @@ export default function OverviewPage() {
         <StatCard label="Strategy" valueText={status.strategy} hint="routing strategy" />
       </div>
 
-      {/* 2. Tabbed work area below — pick the thing you came here to do */}
-      <Tabs defaultValue="connect" className="w-full">
-        <TabsList variant="line" className="border-b border-border/40 rounded-none gap-4 px-0 mb-4">
-          <TabsTrigger value="connect" className="px-1 pb-2 data-active:!text-foreground gap-1.5">
-            <Link2 className="size-3.5" />
-            Connect
-          </TabsTrigger>
-          <TabsTrigger value="providers" className="px-1 pb-2 data-active:!text-foreground gap-1.5">
-            <Activity className="size-3.5" />
-            Providers
-          </TabsTrigger>
-        </TabsList>
+      <ConnectionEndpoint />
 
-        <TabsContent value="connect" className="space-y-4 mt-2">
-          <ConnectionEndpoint />
-          <Card className="glass">
-            <CardContent className="px-5 py-4 space-y-3 min-w-0">
-              <div>
-                <p className="text-xs uppercase tracking-wider text-muted-foreground">Quick start</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Copy a snippet for your favorite client. Each example connects through this gateway and inherits its routing + failover. To persist cookies and storage across runs, see{" "}
-                  <a href="/web/profiles/" className="text-foreground underline underline-offset-2 hover:text-foreground/80">
-                    Profiles
-                  </a>{" "}
-                  and add{" "}
-                  <code className="font-mono text-foreground/80 bg-muted px-1 py-0.5 rounded text-[10.5px]">
-                    ?profile=&lt;id&gt;
-                  </code>{" "}
-                  to the URL.
-                </p>
-              </div>
-              <IntegrationTabs authEnabled />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="providers" className="mt-2">
-          <div className="space-y-2">
-            {status.providers.map((provider) => (
-              <Card key={provider.id} className="glass glass-hover">
-                <CardContent className="px-5 py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`h-2 w-2 rounded-full ${
-                          provider.healthy ? "bg-foreground" : "bg-destructive animate-pulse"
-                        }`}
-                      />
-                      <span className="text-sm font-medium font-mono">{provider.id}</span>
-                      <span className="text-xs text-muted-foreground">P{provider.priority}</span>
-                    </div>
-
-                    <div className="flex items-center gap-8">
-                      <div className="text-right">
-                        <span className="text-sm font-mono tabular-nums">
-                          {provider.active}
-                          <span className="text-muted-foreground">
-                            /{provider.maxConcurrent ?? "∞"}
-                          </span>
-                        </span>
-                        <p className="text-xs text-muted-foreground">connections</p>
-                      </div>
-
-                      <div className="text-right min-w-[60px]">
-                        <span className="text-sm font-mono tabular-nums">
-                          {provider.avgLatencyMs}
-                        </span>
-                        <span className="text-xs text-muted-foreground">ms</span>
-                        <p className="text-xs text-muted-foreground">latency</p>
-                      </div>
-
-                      <div className="text-right min-w-[50px]">
-                        <span className="text-sm font-mono tabular-nums">
-                          {provider.totalConnections}
-                        </span>
-                        <p className="text-xs text-muted-foreground">total</p>
-                      </div>
-
-                      {provider.cooldownUntil && (
-                        <Badge variant="destructive" className="text-xs">cooldown</Badge>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+      <Card className="glass">
+        <CardContent className="px-5 py-4 space-y-3 min-w-0">
+          <div>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">Quick start</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Copy a snippet for your favorite client. Each example connects through this gateway and inherits its routing and failover. To persist cookies and storage across runs, see{" "}
+              <a href="/web/profiles/" className="text-foreground underline underline-offset-2 hover:text-foreground/80">
+                Profiles
+              </a>{" "}
+              and add{" "}
+              <code className="font-mono text-foreground/80 bg-muted px-1 py-0.5 rounded text-[10.5px]">
+                ?profile=&lt;id&gt;
+              </code>{" "}
+              to the URL.
+            </p>
           </div>
-        </TabsContent>
-      </Tabs>
+          <IntegrationTabs authEnabled />
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -303,7 +233,7 @@ function ConnectionEndpoint() {
           <Button
             variant="secondary"
             size="sm"
-            className="h-8 text-xs gap-1.5 shrink-0"
+            className="gap-1.5 shrink-0"
             onClick={handleCopy}
           >
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

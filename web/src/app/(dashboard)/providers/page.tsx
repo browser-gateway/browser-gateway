@@ -87,7 +87,7 @@ export default function ProvidersPage() {
           </p>
         </div>
         {providers.length > 0 && (
-          <Button size="sm" onClick={openAdd} className="h-8 text-xs gap-1.5 shrink-0">
+          <Button size="sm" onClick={openAdd} className="gap-1.5 shrink-0">
             <Plus className="h-3.5 w-3.5" />
             Add Provider
           </Button>
@@ -98,7 +98,7 @@ export default function ProvidersPage() {
         <Card className="border-destructive/50">
           <CardContent className="px-4 py-3 flex items-center justify-between">
             <p className="text-sm text-destructive">{error}</p>
-            <Button variant="ghost" size="sm" onClick={() => setError(null)} className="h-6 w-6 p-0">
+            <Button variant="ghost" size="icon-xs" onClick={() => setError(null)}>
               <X className="h-3.5 w-3.5" />
             </Button>
           </CardContent>
@@ -150,7 +150,7 @@ export default function ProvidersPage() {
             </div>
 
             <div className="flex justify-center">
-              <Button size="sm" className="h-9 text-sm gap-2" onClick={openAdd}>
+              <Button onClick={openAdd} className="gap-2">
                 <Plus className="h-4 w-4" />
                 Add Provider
               </Button>
@@ -215,13 +215,13 @@ export default function ProvidersPage() {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleTest(provider.id)} disabled={testingId === provider.id} title="Test connection">
+                    <Button variant="ghost" size="icon-sm" onClick={() => handleTest(provider.id)} disabled={testingId === provider.id} title="Test connection">
                       {testingId === provider.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openEdit(provider)} title="Edit provider">
+                    <Button variant="ghost" size="icon-sm" onClick={() => openEdit(provider)} title="Edit provider">
                       <Pencil className="h-3.5 w-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => handleDelete(provider.id)} title="Remove provider">
+                    <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={() => handleDelete(provider.id)} title="Remove provider">
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
