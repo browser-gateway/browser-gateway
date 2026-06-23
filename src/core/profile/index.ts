@@ -10,3 +10,6 @@ export * from "./cdp-client.js";
 export * from "./cookie-helpers.js";
 export * from "./capture.js";
 export * from "./inject.js";
+export * from "./inject-eager.js";
+export * from "./inject-background.js";
+export * from "./capture-full.js";

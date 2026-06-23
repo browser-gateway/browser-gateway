@@ -23,7 +23,9 @@ import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import { resolveWsUrl } from "../../core/providers/cdp.js";
 import { LifecycleError, type ProfileLifecycle, type AcquiredProfile } from "../profile/lifecycle.js";
+import { runBackgroundInject } from "../../core/profile/index.js";
 import { ScreencastBridge } from "./screencast-bridge.js";
+import { installLazyHydration } from "./lazy-hydration.js";
 
 function safeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -191,14 +193,66 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       };
       ws.on("close", () => { void cleanup(); });
 
+      // Track origins injected by any path (eager / lazy / background).
+      const alreadyInjected = new Set<string>();
+      let teardownLazy: (() => void) | null = null;
+      const backgroundAbort = new AbortController();
+
       try {
         await bridge.setup();
         // Inject AFTER setup but BEFORE the dashboard sees frames — cookies
-        // need to be in the browser before the user navigates.
+        // and top-K storage need to be in the browser before the user navigates.
         if (acquired && profileLifecycle) {
-          await profileLifecycle.inject(acquired, providerWsUrl);
+          const result = await profileLifecycle.inject(acquired, providerWsUrl);
+          for (const o of result.originsInjected) alreadyInjected.add(o);
+
+          // Install lazy hydration on the bridge's attached target. The
+          // remaining (deferred) origins get injected the first time the user
+          // navigates to them.
+          const session = bridge.getCdpAndSession();
+          if (session && result.originsDeferred.length > 0) {
+            teardownLazy = installLazyHydration({
+              cdp: session.cdp,
+              mainSessionId: session.sessionId,
+              storage: acquired.storage,
+              alreadyInjected,
+              logger,
+            });
+
+            // Phase B: kick off background loader for ALL deferred origins on
+            // its own transient CDP connection. Doesn't block the user —
+            // session is already attached. Errors logged, not thrown.
+            void runBackgroundInject({
+              origins: result.originsDeferred,
+              storage: acquired.storage,
+              providerWsUrl,
+              alreadyInjected,
+              signal: backgroundAbort.signal,
+            })
+              .then((bg) => {
+                logger.info(
+                  {
+                    profileId,
+                    injected: bg.injected.length,
+                    skipped: bg.skipped.length,
+                    durationMs: bg.durationMs,
+                  },
+                  "live: background origin hydration finished",
+                );
+              })
+              .catch((err) => {
+                logger.warn(
+                  { profileId, error: err instanceof Error ? err.message : String(err) },
+                  "live: background hydration failed",
+                );
+              });
+          }
         }
         bridge.attachDashboard(ws);
+        ws.on("close", () => {
+          if (teardownLazy) teardownLazy();
+          backgroundAbort.abort();
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logger.warn({ providerId, error: message }, "live: setup failed");

@@ -1,27 +1,9 @@
 import type { CdpCookie } from "./cdp.js";
 import { WsCDPClient } from "./cdp-client.js";
+import { withDeadline } from "./helper-pool.js";
 
 interface GetCookiesResponse {
   cookies: CdpCookie[];
-}
-
-/**
- * Wrap an op so it rejects after timeoutMs even when the underlying Promise has
- * no internal timer. Critical for CDP send(): the WS may stay open while the
- * peer never responds. Combined with closing the client on timeout (H2 fix),
- * this guarantees the lifecycle never holds a lock indefinitely.
- */
-function withDeadline<T>(op: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`${label} timeout after ${timeoutMs}ms`)),
-      timeoutMs,
-    );
-    op.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      (e) => { clearTimeout(timer); reject(e); },
-    );
-  });
 }
 
 /**

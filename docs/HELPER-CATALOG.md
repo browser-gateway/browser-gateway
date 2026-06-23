@@ -42,6 +42,12 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `encodeBlob(dek: Buffer, dekVersion: number, plaintext: Buffer, profileId: string) → EncodedBlob` (line 23)
 - **fn** `decodeBlobHeader(blob: Buffer) → DecodedHeader` (line 50)
 - **fn** `decodeBlob(blob: Buffer, dek: Buffer, expectedProfileId: string) → Buffer` (line 84)
+### `src/core/profile/capture-full.ts`
+
+- **interface** `interface CaptureFullOptions` (line 33)
+- **interface** `interface CaptureFullResult` (line 50)
+- **fn** `captureFullStateViaTransient(providerWsUrl: string, originsToCapture: string[], opts: CaptureFullOptions = {}) → Promise<CaptureFullResult>` (line 76) — Capture cookies + localStorage for a set of origins, via a transient WS.
+- **fn** `originsFromCookies(cookies: CdpCookie[]) → string[]` (line 198) — Helper: derive origin set from a cookie list. We treat each domain (after
 ### `src/core/profile/capture.ts`
 
 - **interface** `interface CaptureOptions` (line 14)
@@ -70,9 +76,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface RuntimeEvaluateResponse` (line 39)
 ### `src/core/profile/cookie-helpers.ts`
 
-- **fn** `captureCookiesViaTransient(wsUrl: string, timeoutMs = 10_000) → Promise<CdpCookie[]>` (line 38) — Capture all browser-level cookies via a transient CDP WebSocket.
-- **fn** `injectCookiesViaTransient(wsUrl: string, cookies: CdpCookie[], timeoutMs = 10_000) → Promise<void>` (line 63) — Inject cookies via a transient CDP WebSocket using Storage.setCookies.
-- **fn** `prepareCookieForInject(c: CdpCookie) → Record<string, unknown>` (line 93) — Strip fields the CDP setCookies API doesn't accept on injection. The shape returned
+- **fn** `captureCookiesViaTransient(wsUrl: string, timeoutMs = 10_000) → Promise<CdpCookie[]>` (line 20) — Capture all browser-level cookies via a transient CDP WebSocket.
+- **fn** `injectCookiesViaTransient(wsUrl: string, cookies: CdpCookie[], timeoutMs = 10_000) → Promise<void>` (line 45) — Inject cookies via a transient CDP WebSocket using Storage.setCookies.
+- **fn** `prepareCookieForInject(c: CdpCookie) → Record<string, unknown>` (line 75) — Strip fields the CDP setCookies API doesn't accept on injection. The shape returned
 ### `src/core/profile/encryption.ts`
 
 - **interface** `interface AeadParts` (line 8)
@@ -84,6 +90,36 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `wrapDek(kek: Buffer, dek: Buffer, version: number) → WrappedDek` (line 6)
 - **fn** `unwrapDek(kek: Buffer, wrapped: WrappedDek) → Buffer` (line 16)
 - **fn** `newDek() → Buffer` (line 26)
+### `src/core/profile/helper-pool.ts`
+
+- **interface** `interface HelperPage` (line 14)
+- **fn** `openHelperPage(client: WsCDPClient) → Promise<HelperPage>` (line 22) — Open one helper target + attach flat-mode + enable Fetch + enable Page.
+- **fn** `installFetchFulfill(client: WsCDPClient, helperSessionIds: Set<string>) → () => void` (line 40) — Register a Fetch.requestPaused listener that fulfills every request scoped
+- **fn** `closeHelperPages(client: WsCDPClient, helpers: HelperPage[]) → Promise<void>` (line 72) — Close every helper target and best-effort `Fetch.disable` each session.
+- **fn** `openHelperPool(client: WsCDPClient, count: number) → Promise<HelperPage[]>` (line 82) — Open up to `count` helper pages. Returns however many succeeded.
+- **fn** `raceTimeout(p: Promise<T>, timeoutMs: number, label: string) → Promise<T>` (line 99) — Race a Promise against a per-operation timeout. Rejects with a labeled error.
+- **fn** `withDeadline(op: Promise<T>, timeoutMs: number, label: string) → Promise<T>` (line 113) — Hard wall-clock deadline around a whole operation. Necessary because
+- **fn** `navigateAndEvaluate(client: WsCDPClient, helper: HelperPage, origin: string, expression: string, timeoutMs: number) → Promise<unknown>` (line 132) — Navigate the helper to an origin (Fetch.fulfillRequest will satisfy it
+- **fn** `runHelperPool(opts: {
+  helpers: HelperPage[];
+  origins: string[];
+  work: (origin: string, helper: HelperPage) => Promise<T>;
+  onSuccess: (origin: string, result: T) => void;
+  onError: (origin: string, reason: string) => void;
+  signal?: AbortSignal;
+}) → Promise<void>` (line 182) — Round-robin worker loop over `origins` across `helpers`. Each helper grabs
+### `src/core/profile/inject-background.ts`
+
+- **interface** `interface BackgroundInjectOptions` (line 34)
+- **interface** `interface BackgroundInjectResult` (line 57)
+- **fn** `runBackgroundInject(opts: BackgroundInjectOptions) → Promise<BackgroundInjectResult>` (line 68) — Run the background phase. Returns when ALL deferred origins are either
+### `src/core/profile/inject-eager.ts`
+
+- **interface** `interface EagerInjectOptions` (line 29)
+- **interface** `interface EagerInjectResult` (line 42)
+- **fn** `injectStateEagerViaTransient(providerWsUrl: string, profile: CapturedProfile, opts: EagerInjectOptions = {}) → Promise<EagerInjectResult>` (line 58) — Eager inject. Opens its own transient CDP WebSocket; closes it on return.
+- **fn** `buildLocalStorageWriteExpression(data: OriginStorage) → string` (line 171) — Build the JS expression that writes localStorage. We skip sessionStorage
+- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 189) — Sort origins by lastVisitedAt descending. Missing field → rank 0.
 ### `src/core/profile/inject.ts`
 
 - **interface** `interface InjectOptions` (line 6)
@@ -174,6 +210,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface CdpEvent` (line 28)
 - **class** `class CdpError` (line 35)
 - **class** `class CdpClient` (line 45)
+### `src/server/live/lazy-hydration.ts`
+
+- **interface** `interface LazyHydrationDeps` (line 20)
+- **fn** `installLazyHydration(deps: LazyHydrationDeps) → () => void` (line 37) — Install a Page.frameNavigated listener that lazily injects storage. Returns
 ### `src/server/live/screencast-bridge.ts`
 
 - **interface** `interface BridgeOptions` (line 33)
@@ -188,8 +228,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type ServerControlMessage` (line 89)
 ### `src/server/live/upgrade.ts`
 
-- **interface** `interface CreateLiveHandlerDeps` (line 49)
-- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 58)
+- **interface** `interface CreateLiveHandlerDeps` (line 51)
+- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 60)
 ### `src/server/mcp/ax-tree.ts`
 
 - **fn** `clearRefs() → void` (line 28)
@@ -244,11 +284,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `rewrapKeycheck(storePath: string, oldPassword: string, newPassword: string) → Promise<void>` (line 107)
 ### `src/server/profile/lifecycle.ts`
 
-- **interface** `interface LifecycleOptions` (line 15)
-- **interface** `interface AcquiredProfile` (line 28)
-- **type** `type LifecycleFailureReason` (line 37)
-- **class** `class LifecycleError` (line 44)
-- **class** `class ProfileLifecycle` (line 67) — Orchestrates a profile's lifecycle around one gateway WebSocket session.
+- **interface** `interface LifecycleOptions` (line 16)
+- **interface** `interface AcquiredProfile` (line 33)
+- **type** `type LifecycleFailureReason` (line 44)
+- **class** `class LifecycleError` (line 51)
+- **class** `class ProfileLifecycle` (line 74) — Orchestrates a profile's lifecycle around one gateway WebSocket session.
 ### `src/server/rest/content.ts`
 
 - **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 17)

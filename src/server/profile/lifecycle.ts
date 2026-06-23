@@ -1,14 +1,15 @@
 import type { Logger } from "pino";
 import {
   PROFILE_VERSION,
-  captureCookiesViaTransient,
+  captureFullStateViaTransient,
   decodeBlob,
   decodeBlobHeader,
   encodeBlob,
-  injectCookiesViaTransient,
+  injectStateEagerViaTransient,
   PROFILE_ID_REGEX,
   type CapturedProfile,
   type CdpCookie,
+  type OriginStorage,
 } from "../../core/profile/index.js";
 import type { LockToken, ProfileStore } from "../../core/profile/store.js";
 
@@ -23,6 +24,10 @@ export interface LifecycleOptions {
    * sooner after disconnect — important for rapid-reconnect agent workflows.
    */
   commitTimeoutMs?: number;
+  /** Top-K origins to inject eagerly. Default 20. */
+  eagerOriginLimit?: number;
+  /** Number of helper pages for parallel inject/capture. Default 4. */
+  helperPages?: number;
 }
 
 export interface AcquiredProfile {
@@ -30,6 +35,8 @@ export interface AcquiredProfile {
   lockToken: LockToken;
   /** Cookies parsed from the existing encrypted blob (empty if profile is new). */
   cookies: CdpCookie[];
+  /** Per-origin localStorage parsed from the existing blob (empty if new). */
+  storage: Record<string, OriginStorage>;
   /** True if the store had an existing entry for this profile id. */
   isExisting: boolean;
 }
@@ -97,7 +104,7 @@ export class ProfileLifecycle {
     try {
       const blob = await this.store.getRaw(profileId);
       if (!blob) {
-        return { profileId, lockToken, cookies: [], isExisting: false };
+        return { profileId, lockToken, cookies: [], storage: {}, isExisting: false };
       }
 
       const header = decodeBlobHeader(blob);
@@ -130,32 +137,71 @@ export class ProfileLifecycle {
       }
 
       const cookies = Array.isArray(parsed.cookies) ? parsed.cookies : [];
-      return { profileId, lockToken, cookies, isExisting: true };
+      const storage = (parsed.storage && typeof parsed.storage === "object")
+        ? parsed.storage as Record<string, OriginStorage>
+        : {};
+      return { profileId, lockToken, cookies, storage, isExisting: true };
     } catch (err) {
       await this.store.unlock(profileId, lockToken).catch(() => undefined);
       throw err;
     }
   }
 
-  /** Inject acquired cookies into the provider browser via a transient CDP connection. */
-  async inject(acquired: AcquiredProfile, providerWsUrl: string): Promise<{ injected: number }> {
-    if (acquired.cookies.length === 0) {
-      return { injected: 0 };
+  /**
+   * Inject acquired state into the provider browser via a transient CDP
+   * connection. Cookies always (one CDP call). For localStorage: eager top-K
+   * origins by `lastVisitedAt` recency, paralleled across helper pages with
+   * `Fetch.fulfillRequest` so each origin costs ~50 ms instead of a real
+   * navigation. The rest become "deferred origins" returned to the caller —
+   * lazy hydration on Page.frameNavigated (live-view) or PR-2's background
+   * loader can pick them up.
+   */
+  async inject(
+    acquired: AcquiredProfile,
+    providerWsUrl: string,
+  ): Promise<{ injected: number; originsInjected: string[]; originsDeferred: string[] }> {
+    if (acquired.cookies.length === 0 && Object.keys(acquired.storage).length === 0) {
+      return { injected: 0, originsInjected: [], originsDeferred: [] };
     }
     const cdpTimeoutMs = this.opts.cdpTimeoutMs ?? 10_000;
+    const eagerOriginLimit = this.opts.eagerOriginLimit ?? 20;
+    const helperPages = this.opts.helperPages ?? 4;
+
+    let result;
     try {
-      await injectCookiesViaTransient(providerWsUrl, acquired.cookies, cdpTimeoutMs);
+      result = await injectStateEagerViaTransient(
+        providerWsUrl,
+        {
+          version: PROFILE_VERSION,
+          capturedAt: new Date().toISOString(),
+          cookies: acquired.cookies,
+          storage: acquired.storage,
+          meta: { capturedOrigins: [], skippedOrigins: [], durationMs: 0 },
+        },
+        { eagerOriginLimit, helperPages, totalTimeoutMs: cdpTimeoutMs },
+      );
     } catch (err) {
       throw new LifecycleError(
         "INJECT_FAILED",
-        `cookie inject failed: ${err instanceof Error ? err.message : String(err)}`,
+        `state inject failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
     this.logger.info(
-      { profileId: acquired.profileId, cookies: acquired.cookies.length },
-      "profile lifecycle: cookies injected",
+      {
+        profileId: acquired.profileId,
+        cookies: result.cookiesSet,
+        originsInjected: result.originsInjected.length,
+        originsDeferred: result.originsDeferred.length,
+        skippedOrigins: result.skippedOrigins.length,
+        durationMs: result.durationMs,
+      },
+      "profile lifecycle: state injected",
     );
-    return { injected: acquired.cookies.length };
+    return {
+      injected: result.cookiesSet,
+      originsInjected: result.originsInjected,
+      originsDeferred: result.originsDeferred,
+    };
   }
 
   /**
@@ -181,9 +227,20 @@ export class ProfileLifecycle {
 
   private async runCommit(acquired: AcquiredProfile, providerWsUrl: string): Promise<void> {
     const commitTimeoutMs = this.opts.commitTimeoutMs ?? this.opts.cdpTimeoutMs ?? 10_000;
+    const helperPages = this.opts.helperPages ?? 4;
 
     try {
-      const cookies = await captureCookiesViaTransient(providerWsUrl, commitTimeoutMs);
+      // Single pass: capture cookies + storage for (existing-blob origins) ∪
+      // (origins derived from this session's cookies). The
+      // includeCookieDerivedOrigins flag does that union internally so we
+      // only open one transient WS.
+      const captureResult = await captureFullStateViaTransient(
+        providerWsUrl,
+        Object.keys(acquired.storage),
+        { helperPages, totalTimeoutMs: commitTimeoutMs, includeCookieDerivedOrigins: true },
+      );
+
+      const cookies = captureResult.cookies;
 
       // M2: if the captured state would silently destroy previous data, preserve instead.
       if (cookies.length === 0 && acquired.cookies.length > 0) {
@@ -197,15 +254,22 @@ export class ProfileLifecycle {
         return;
       }
 
+      // Merge: keep older-origin entries that the fresh capture missed (origin
+      // not visited this session). Newly-captured origins replace the previous.
+      const mergedStorage: Record<string, OriginStorage> = { ...acquired.storage };
+      for (const [origin, data] of Object.entries(captureResult.storage)) {
+        mergedStorage[origin] = data;
+      }
+
       const profile: CapturedProfile = {
         version: PROFILE_VERSION,
         capturedAt: new Date().toISOString(),
         cookies,
-        storage: {},
+        storage: mergedStorage,
         meta: {
-          capturedOrigins: [],
-          skippedOrigins: [],
-          durationMs: 0,
+          capturedOrigins: Object.keys(captureResult.storage),
+          skippedOrigins: captureResult.skippedOrigins,
+          durationMs: captureResult.durationMs,
         },
       };
 

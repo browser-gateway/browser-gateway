@@ -107,6 +107,14 @@ export class ScreencastBridge {
     return { framesSent: this.framesSent, framesDropped: this.framesDropped };
   }
 
+  /** Expose CDP client + flat-mode session id so a sibling module (e.g. lazy
+   *  hydration on Page.frameNavigated) can install listeners on the same
+   *  attached target the bridge owns. Only valid after `setup()` resolves. */
+  getCdpAndSession(): { cdp: CdpClient; sessionId: string } | null {
+    if (!this.attachSessionId) return null;
+    return { cdp: this.cdp, sessionId: this.attachSessionId };
+  }
+
   /**
    * Open the CDP session, attach, prep, and start the screencast.
    * Throws on any setup failure. Caller should then call `attachDashboard`.

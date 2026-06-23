@@ -1,0 +1,203 @@
+/**
+ * Optimized "eager top-K" localStorage inject using Playwright's
+ * Fetch.fulfillRequest pattern.
+ *
+ * Background: there is no CDP method that bulk-writes localStorage without
+ * a navigated frame (see planning/research/v0.3.0-PROFILE-INJECT-OPTIMIZATION.md).
+ * The cheapest known approach is to navigate Chrome to each origin while
+ * intercepting all network requests and returning empty `<html></html>` — no
+ * real network, no subresources, no parser work. Per-origin cost drops from
+ * 200-500 ms to 30-80 ms.
+ *
+ * We open one transient WS to the provider, create N helper page targets, and
+ * dispatch origins round-robin across them.
+ */
+import type { CdpCookie } from "./cdp.js";
+import { WsCDPClient } from "./cdp-client.js";
+import { prepareCookieForInject } from "./cookie-helpers.js";
+import {
+  closeHelperPages,
+  installFetchFulfill,
+  navigateAndEvaluate,
+  openHelperPool,
+  runHelperPool,
+  withDeadline,
+  type HelperPage,
+} from "./helper-pool.js";
+import type { CapturedProfile, OriginStorage, SkippedOrigin } from "./types.js";
+
+export interface EagerInjectOptions {
+  /** Number of helper pages used for parallel inject. Default 4. */
+  helperPages?: number;
+  /** Eagerly inject the top-K origins; defer the rest. Default 20. */
+  eagerOriginLimit?: number;
+  /** Per-origin navigate + evaluate timeout (ms). Default 5_000. */
+  perOriginTimeoutMs?: number;
+  /** Total wall-clock budget (ms). Default 10_000. */
+  totalTimeoutMs?: number;
+  /** AbortSignal for cancellation. */
+  signal?: AbortSignal;
+}
+
+export interface EagerInjectResult {
+  cookiesSet: number;
+  originsInjected: string[];
+  /** Origins not attempted because they were below the K cutoff. */
+  originsDeferred: string[];
+  /** Origins attempted but failed; reason captured per origin. */
+  skippedOrigins: SkippedOrigin[];
+  durationMs: number;
+}
+
+/**
+ * Eager inject. Opens its own transient CDP WebSocket; closes it on return.
+ *
+ * Caller hands us the provider WS URL (browser-level CDP endpoint) and the
+ * decoded profile. We do cookies (one CDP call) + top-K origins in parallel.
+ */
+export async function injectStateEagerViaTransient(
+  providerWsUrl: string,
+  profile: CapturedProfile,
+  opts: EagerInjectOptions = {},
+): Promise<EagerInjectResult> {
+  return withDeadline(
+    injectStateEagerInner(providerWsUrl, profile, opts),
+    opts.totalTimeoutMs ?? 10_000,
+    "injectStateEagerViaTransient",
+  );
+}
+
+async function injectStateEagerInner(
+  providerWsUrl: string,
+  profile: CapturedProfile,
+  opts: EagerInjectOptions,
+): Promise<EagerInjectResult> {
+  const started = Date.now();
+  const helperCount = Math.max(1, opts.helperPages ?? 4);
+  const limit = Math.max(0, opts.eagerOriginLimit ?? 20);
+  const perOriginTimeout = opts.perOriginTimeoutMs ?? 5_000;
+  const totalTimeout = opts.totalTimeoutMs ?? 10_000;
+  const signal = opts.signal;
+
+  const client = new WsCDPClient();
+  try {
+    await client.connect(providerWsUrl, totalTimeout);
+
+    const cookiesSet = await injectCookies(client, profile.cookies);
+
+    const ranked = rankOrigins(profile.storage);
+    const eagerOrigins = ranked.slice(0, limit);
+    const deferred = ranked.slice(limit);
+
+    if (eagerOrigins.length === 0) {
+      return {
+        cookiesSet,
+        originsInjected: [],
+        originsDeferred: deferred,
+        skippedOrigins: [],
+        durationMs: Date.now() - started,
+      };
+    }
+
+    const { injected, skipped } = await injectEagerOrigins(
+      client,
+      eagerOrigins,
+      profile.storage,
+      { helperCount, perOriginTimeout, signal },
+    );
+
+    return {
+      cookiesSet,
+      originsInjected: injected,
+      originsDeferred: deferred,
+      skippedOrigins: skipped,
+      durationMs: Date.now() - started,
+    };
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+async function injectCookies(client: WsCDPClient, cookies: CdpCookie[]): Promise<number> {
+  if (cookies.length === 0) return 0;
+  await client.send("Network.enable").catch(() => undefined);
+  await client.send("Storage.setCookies", { cookies: cookies.map(prepareCookieForInject) });
+  return cookies.length;
+}
+
+async function injectEagerOrigins(
+  client: WsCDPClient,
+  origins: string[],
+  storage: Record<string, OriginStorage>,
+  cfg: { helperCount: number; perOriginTimeout: number; signal?: AbortSignal },
+): Promise<{ injected: string[]; skipped: SkippedOrigin[] }> {
+  const injected: string[] = [];
+  const skipped: SkippedOrigin[] = [];
+
+  const helperSessionIds = new Set<string>();
+  const detachFulfill = installFetchFulfill(client, helperSessionIds);
+  const helpers: HelperPage[] = await openHelperPool(client, Math.min(cfg.helperCount, origins.length));
+  for (const h of helpers) helperSessionIds.add(h.sessionId);
+
+  try {
+    const targetOrigins = origins.filter((o) => hasLocal(storage[o]));
+    await runHelperPool({
+      helpers,
+      origins: targetOrigins,
+      signal: cfg.signal,
+      work: (origin, helper) =>
+        navigateAndEvaluate(
+          client,
+          helper,
+          origin,
+          buildLocalStorageWriteExpression(storage[origin]),
+          cfg.perOriginTimeout,
+        ),
+      onSuccess: (origin) => injected.push(origin),
+      onError: (origin, reason) => skipped.push({ origin, reason }),
+    });
+  } finally {
+    detachFulfill();
+    await closeHelperPages(client, helpers);
+  }
+
+  return { injected, skipped };
+}
+
+/**
+ * Build the JS expression that writes localStorage. We skip sessionStorage
+ * (per-session memory, doesn't persist across browsers anyway).
+ */
+export function buildLocalStorageWriteExpression(data: OriginStorage): string {
+  const local = JSON.stringify(data.localStorage ?? {});
+  return `
+    (() => {
+      const result = { wrote: 0, errors: [] };
+      try {
+        const entries = ${local};
+        for (const [k, v] of Object.entries(entries)) {
+          try { localStorage.setItem(k, v); result.wrote++; }
+          catch (e) { result.errors.push(k + ": " + String(e && e.message || e)); }
+        }
+      } catch (e) { result.errors.push("localStorage failed: " + String(e && e.message || e)); }
+      return result;
+    })()
+  `;
+}
+
+/** Sort origins by lastVisitedAt descending. Missing field → rank 0. */
+export function rankOrigins(storage: Record<string, OriginStorage>): string[] {
+  return Object.entries(storage)
+    .map(([origin, data]) => ({
+      origin,
+      ts: data.lastVisitedAt ? Date.parse(data.lastVisitedAt) : 0,
+    }))
+    .sort((a, b) => b.ts - a.ts)
+    .map((x) => x.origin);
+}
+
+function hasLocal(data: OriginStorage | undefined): boolean {
+  if (!data) return false;
+  return Object.keys(data.localStorage ?? {}).length > 0;
+}
+
