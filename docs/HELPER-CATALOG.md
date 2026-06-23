@@ -133,6 +133,12 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `newKdfParams(overrides?: Partial<KdfParams>) → KdfParams` (line 6)
 - **fn** `deriveKek(password: string, params: KdfParams) → Buffer` (line 15)
 - **fn** `kekFingerprint(kek: Buffer) → string` (line 36)
+### `src/core/profile/limits.ts`
+
+- **interface** `interface ProfileLimits` (line 20)
+- **interface** `interface EnforceResult` (line 32)
+- **const** `const DEFAULT_PROFILE_LIMITS` (line 51)
+- **fn** `enforceProfileLimits(profile: CapturedProfile, limits: ProfileLimits = {}) → EnforceResult` (line 62) — Enforce limits on a profile before persisting. Mutates a *copy* — input is
 ### `src/core/profile/store.ts`
 
 - **type** `type LockToken` (line 3)
@@ -284,11 +290,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `rewrapKeycheck(storePath: string, oldPassword: string, newPassword: string) → Promise<void>` (line 107)
 ### `src/server/profile/lifecycle.ts`
 
-- **interface** `interface LifecycleOptions` (line 16)
-- **interface** `interface AcquiredProfile` (line 33)
-- **type** `type LifecycleFailureReason` (line 44)
-- **class** `class LifecycleError` (line 51)
-- **class** `class ProfileLifecycle` (line 74) — Orchestrates a profile's lifecycle around one gateway WebSocket session.
+- **interface** `interface LifecycleOptions` (line 18)
+- **interface** `interface AcquiredProfile` (line 37)
+- **type** `type LifecycleFailureReason` (line 48)
+- **class** `class LifecycleError` (line 55)
+- **class** `class ProfileLifecycle` (line 78) — Orchestrates a profile's lifecycle around one gateway WebSocket session.
 ### `src/server/rest/content.ts`
 
 - **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 17)

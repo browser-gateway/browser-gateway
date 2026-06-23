@@ -13,3 +13,4 @@ export * from "./inject.js";
 export * from "./inject-eager.js";
 export * from "./inject-background.js";
 export * from "./capture-full.js";
+export * from "./limits.js";

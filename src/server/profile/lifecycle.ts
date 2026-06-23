@@ -5,11 +5,13 @@ import {
   decodeBlob,
   decodeBlobHeader,
   encodeBlob,
+  enforceProfileLimits,
   injectStateEagerViaTransient,
   PROFILE_ID_REGEX,
   type CapturedProfile,
   type CdpCookie,
   type OriginStorage,
+  type ProfileLimits,
 } from "../../core/profile/index.js";
 import type { LockToken, ProfileStore } from "../../core/profile/store.js";
 
@@ -28,6 +30,8 @@ export interface LifecycleOptions {
   eagerOriginLimit?: number;
   /** Number of helper pages for parallel inject/capture. Default 4. */
   helperPages?: number;
+  /** Size limits enforced on commit. See `enforceProfileLimits`. */
+  limits?: ProfileLimits;
 }
 
 export interface AcquiredProfile {
@@ -273,7 +277,40 @@ export class ProfileLifecycle {
         },
       };
 
-      const plaintext = Buffer.from(JSON.stringify(profile), "utf-8");
+      // Enforce size limits BEFORE encrypting/persisting. Evicts oldest
+      // origins by lastVisitedAt when the serialized blob would exceed
+      // hardCapBytes; warns when it would exceed softWarnBytes.
+      const enforced = enforceProfileLimits(profile, this.opts.limits);
+      if (enforced.refused) {
+        this.logger.warn(
+          {
+            profileId: acquired.profileId,
+            bytes: enforced.bytes,
+            reason: enforced.refusedReason,
+          },
+          "profile lifecycle: refused to save — previous state preserved",
+        );
+        return;
+      }
+      if (enforced.evictedOrigins.length > 0) {
+        this.logger.info(
+          {
+            profileId: acquired.profileId,
+            evicted: enforced.evictedOrigins.length,
+            evictedOrigins: enforced.evictedOrigins.slice(0, 5),
+            bytes: enforced.bytes,
+          },
+          "profile lifecycle: evicted oldest origins to fit budget",
+        );
+      }
+      if (enforced.softWarn) {
+        this.logger.warn(
+          { profileId: acquired.profileId, bytes: enforced.bytes },
+          "profile lifecycle: profile exceeds soft-warn threshold",
+        );
+      }
+
+      const plaintext = Buffer.from(JSON.stringify(enforced.profile), "utf-8");
       const dek = this.dekByVersion.get(this.currentDekVersion);
       if (!dek) {
         this.logger.error(
