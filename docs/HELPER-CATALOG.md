@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-06-22
+Generated: 2026-06-23
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -48,7 +48,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `captureState(cdp: CDPClient, opts: CaptureOptions = {}) → Promise<CapturedProfile>` (line 58) — Capture browser state from a CDP session for cross-session replay.
 ### `src/core/profile/cdp-client.ts`
 
-- **class** `class WsCDPClient` (line 25) — Minimal raw-CDP client over a single WebSocket.
+- **class** `class WsCDPClient` (line 26) — Minimal raw-CDP client over a single WebSocket.
 ### `src/core/profile/cdp-event-base.ts`
 
 - **fn** `assertCdpConnected(ws: WebSocket | null) → asserts ws is WebSocket` (line 9) — Assert that a WebSocket is open. Used by every CDP send() implementation —
@@ -109,14 +109,14 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **const** `const PROFILE_VERSION` (line 12)
 - **interface** `interface CapturedProfile` (line 21) — Captured browser state suitable for cross-session replay.
 - **interface** `interface OriginStorage` (line 29)
-- **interface** `interface ProfileCaptureMeta` (line 34)
-- **interface** `interface SkippedOrigin` (line 41)
-- **interface** `interface ProfileMeta` (line 46)
-- **interface** `interface KdfParams` (line 53)
-- **const** `const DEFAULT_KDF_PARAMS: KdfParams` (line 62)
-- **interface** `interface WrappedDek` (line 71)
-- **interface** `interface Keycheck` (line 78)
-- **const** `const KeycheckSchema` (line 88)
+- **interface** `interface ProfileCaptureMeta` (line 40)
+- **interface** `interface SkippedOrigin` (line 47)
+- **interface** `interface ProfileMeta` (line 52)
+- **interface** `interface KdfParams` (line 59)
+- **const** `const DEFAULT_KDF_PARAMS: KdfParams` (line 68)
+- **interface** `interface WrappedDek` (line 77)
+- **interface** `interface Keycheck` (line 84)
+- **const** `const KeycheckSchema` (line 94)
 ### `src/core/providers/cdp.ts`
 
 - **fn** `fetchCdpVersion(httpUrl: string, timeoutMs: number = 3000) → Promise<CdpVersionInfo>` (line 7)
@@ -169,6 +169,27 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/config/writer.ts`
 
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
+### `src/server/live/cdp-client.ts`
+
+- **interface** `interface CdpEvent` (line 28)
+- **class** `class CdpError` (line 35)
+- **class** `class CdpClient` (line 45)
+### `src/server/live/screencast-bridge.ts`
+
+- **interface** `interface BridgeOptions` (line 33)
+- **class** `class ScreencastBridge` (line 78)
+### `src/server/live/types.ts`
+
+- **const** `const ClientMessageSchema` (line 41)
+- **type** `type ClientMessage` (line 65)
+- **interface** `interface ServerFrameMetaMessage` (line 68) — Server→client metadata frame (binary frames carry image bytes only).
+- **interface** `interface ServerUrlMessage` (line 77) — Server→client URL change announcement.
+- **interface** `interface ServerErrorMessage` (line 83) — Server→client error notification before close.
+- **type** `type ServerControlMessage` (line 89)
+### `src/server/live/upgrade.ts`
+
+- **interface** `interface CreateLiveHandlerDeps` (line 49)
+- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 58)
 ### `src/server/mcp/ax-tree.ts`
 
 - **fn** `clearRefs() → void` (line 28)
@@ -299,7 +320,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle) → unknown` (line 48)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle) → unknown` (line 49)
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 

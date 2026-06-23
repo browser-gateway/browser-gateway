@@ -29,6 +29,12 @@ export interface CapturedProfile {
 export interface OriginStorage {
   localStorage: Record<string, string>;
   sessionStorage: Record<string, string>;
+  /**
+   * ISO timestamp of the most recent session that touched this origin. Used
+   * to rank origins for eager inject (top-K by recency). Optional for
+   * backward compatibility — older profiles default to a zero-timestamp rank.
+   */
+  lastVisitedAt?: string;
 }
 
 export interface ProfileCaptureMeta {

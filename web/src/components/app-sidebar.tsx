@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, Server, Plug, FileText, Settings, ExternalLink, IdCard, Code2 } from "lucide-react";
+import { LayoutGrid, Server, Plug, FileText, Settings, ExternalLink, IdCard, Code2, MonitorPlay } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -21,6 +21,7 @@ const navItems = [
   { title: "Providers", href: "/providers/", icon: Server },
   { title: "Sessions", href: "/sessions/", icon: Plug },
   { title: "API", href: "/api/", icon: Code2 },
+  { title: "Playground", href: "/playground/", icon: MonitorPlay },
   { title: "Profiles", href: "/profiles/", icon: IdCard },
   { title: "Logs", href: "/logs/", icon: FileText },
   { title: "Config", href: "/config/", icon: Settings },

@@ -89,6 +89,7 @@ export async function captureState(
       storage[origin] = {
         localStorage: parsed.localStorage as Record<string, string>,
         sessionStorage: parsed.sessionStorage as Record<string, string>,
+        lastVisitedAt: new Date().toISOString(),
       };
       capturedOrigins.push(origin);
     } catch (err) {

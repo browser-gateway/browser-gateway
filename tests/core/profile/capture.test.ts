@@ -54,10 +54,11 @@ describe("captureState — happy path", () => {
 
     const profile = await captureState(cdp, { origins: ["https://example.com"] });
 
-    expect(profile.storage["https://example.com"]).toEqual({
+    expect(profile.storage["https://example.com"]).toMatchObject({
       localStorage: { token: "xyz", user: "alice" },
       sessionStorage: { csrf: "qwerty" },
     });
+    expect(profile.storage["https://example.com"].lastVisitedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(profile.meta.capturedOrigins).toEqual(["https://example.com"]);
     expect(profile.meta.userAgent).toBe("TestUA/1.0");
   });

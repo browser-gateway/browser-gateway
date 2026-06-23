@@ -83,7 +83,8 @@ describeIfChrome("integration: capture + inject end-to-end", () => {
       const captured = await captureState(fresh.cdp, { origins: [server.url] });
       expect(captured.version).toBe(1);
       expect(captured.cookies).toEqual([]);
-      expect(captured.storage[server.url]).toEqual({ localStorage: {}, sessionStorage: {} });
+      expect(captured.storage[server.url]).toMatchObject({ localStorage: {}, sessionStorage: {} });
+      expect(captured.storage[server.url].lastVisitedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     } finally {
       await fresh.close();
     }

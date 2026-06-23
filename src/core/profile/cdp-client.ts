@@ -5,6 +5,7 @@ import { TypedCdpEventEmitter, assertCdpConnected } from "./cdp-event-base.js";
 interface CDPMessage {
   id?: number;
   method?: string;
+  sessionId?: string;
   params?: unknown;
   result?: unknown;
   error?: { code: number; message: string; data?: unknown };
@@ -62,11 +63,26 @@ export class WsCDPClient extends TypedCdpEventEmitter implements CDPClient {
   }
 
   async send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+    return this.sendOn(method, params, undefined);
+  }
+
+  /**
+   * Send a CDP command tagged with a flat-mode sessionId. Identical to send()
+   * when sessionId is undefined — backward-compatible. Used by the eager-inject
+   * helper-page pool to route commands to specific attached targets.
+   */
+  async sendOn(
+    method: string,
+    params: Record<string, unknown> = {},
+    sessionId: string | undefined,
+  ): Promise<unknown> {
     assertCdpConnected(this.ws);
     const id = this.nextId++;
+    const envelope: Record<string, unknown> = { id, method, params };
+    if (sessionId) envelope.sessionId = sessionId;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      this.ws!.send(JSON.stringify({ id, method, params }), (err) => {
+      this.ws!.send(JSON.stringify(envelope), (err) => {
         if (err) {
           this.pending.delete(id);
           reject(err);
@@ -126,7 +142,13 @@ export class WsCDPClient extends TypedCdpEventEmitter implements CDPClient {
     }
 
     if (typeof msg.method === "string") {
-      this.emit(msg.method, msg.params);
+      // Listeners can read `__sessionId` off the params object to scope event
+      // dispatch to the right helper page. Keeping it as a magic key on params
+      // avoids changing the listener signature (the existing TypedCdpEventEmitter
+      // pattern in this file passes params straight through).
+      const params: Record<string, unknown> = { ...(msg.params as Record<string, unknown> ?? {}) };
+      if (typeof msg.sessionId === "string") params.__sessionId = msg.sessionId;
+      this.emit(msg.method, params);
     }
   }
 

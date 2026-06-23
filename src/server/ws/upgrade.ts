@@ -12,6 +12,7 @@ import {
   type ProfileLifecycle,
   type AcquiredProfile,
 } from "../profile/lifecycle.js";
+import { createLiveUpgradeHandler } from "../live/upgrade.js";
 
 function safeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -53,8 +54,15 @@ export function createWebSocketHandler(
   profileLifecycle?: ProfileLifecycle,
 ) {
 
+  const liveHandler = createLiveUpgradeHandler({ gateway, logger, token, profileLifecycle });
+
   async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+    if (url.pathname === "/v1/live") {
+      await liveHandler.handle(req, socket, head);
+      return;
+    }
 
     if (url.pathname !== "/v1/connect") {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
