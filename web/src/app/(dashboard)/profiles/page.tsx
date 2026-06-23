@@ -286,7 +286,21 @@ export default function ProfilesPage() {
                       {formatWhen(p.updatedAt)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-[12px] tabular-nums">
-                      {formatBytes(p.sizeBytes)}
+                      <span
+                        className={p.sizeBytes > 5 * 1024 * 1024 ? "text-foreground" : ""}
+                        title={
+                          p.sizeBytes > 5 * 1024 * 1024
+                            ? `Above 5 MB soft-warn threshold. The lifecycle evicts the oldest origins above 50 MB.`
+                            : undefined
+                        }
+                      >
+                        {formatBytes(p.sizeBytes)}
+                        {p.sizeBytes > 5 * 1024 * 1024 && (
+                          <span className="ml-1.5 inline-flex items-center rounded-sm bg-muted px-1 py-0 text-[10px] uppercase tracking-wider text-muted-foreground">
+                            large
+                          </span>
+                        )}
+                      </span>
                     </TableCell>
                     <TableCell className="text-right">
                       <Badge
