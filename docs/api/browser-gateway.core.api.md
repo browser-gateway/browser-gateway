@@ -250,8 +250,15 @@ export class ProviderRegistry {
     getAll(): ProviderState[];
     // (undocumented)
     getAllSortedByPriority(): ProviderState[];
+    // Warning: (ae-forgotten-export) The symbol "CapabilityRecord" needs to be exported by the entry point index.d.ts
+    //
     // (undocumented)
-    register(id: string, config: ProviderConfig): void;
+    getCapabilityRecord(id: string): CapabilityRecord | undefined;
+    probe(id: string): Promise<void>;
+    // Warning: (ae-forgotten-export) The symbol "RegisterOptions" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    register(id: string, config: ProviderConfig, opts?: RegisterOptions): void;
     // (undocumented)
     remove(id: string): boolean;
     // (undocumented)

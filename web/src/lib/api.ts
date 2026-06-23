@@ -46,6 +46,44 @@ export async function fetchProviders(): Promise<ProviderListResponse> {
   return res.json();
 }
 
+export type CapabilityState = "supported" | "unsupported" | "unknown";
+export type CapabilityProbeStatus = "pending" | "probing" | "ready" | "failed";
+
+export interface ProviderCapabilities {
+  browserCookies: CapabilityState;
+  targetCreate: CapabilityState;
+  targetGetTargets: CapabilityState;
+  fetchInterception: CapabilityState;
+  pageScreencast: CapabilityState;
+  targetCreateLatencyMs: number | null;
+  probedAt: string;
+  probeDurationMs: number;
+  errors: string[];
+}
+
+export interface ProviderCapabilitiesResponse {
+  id: string;
+  status: CapabilityProbeStatus;
+  capabilities: ProviderCapabilities | null;
+}
+
+export async function fetchProviderCapabilities(id: string): Promise<ProviderCapabilitiesResponse> {
+  const res = await fetch(`${API_BASE}/v1/providers/${id}/capabilities`, fetchOpts);
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) throw new Error(`Capabilities API error: ${res.status}`);
+  return res.json();
+}
+
+export async function revalidateProviderCapabilities(id: string): Promise<ProviderCapabilitiesResponse> {
+  const res = await fetch(`${API_BASE}/v1/providers/${id}/capabilities/revalidate`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) throw new Error(`Revalidate API error: ${res.status}`);
+  return res.json();
+}
+
 export async function addProvider(data: {
   id: string;
   url: string;

@@ -163,6 +163,13 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface WrappedDek` (line 77)
 - **interface** `interface Keycheck` (line 84)
 - **const** `const KeycheckSchema` (line 94)
+### `src/core/providers/capabilities.ts`
+
+- **type** `type CapabilityState` (line 4)
+- **interface** `interface ProviderCapabilities` (line 6)
+- **const** `const UNKNOWN_CAPABILITIES: Readonly<Omit<ProviderCapabilities, "probedAt">>` (line 18)
+- **interface** `interface ProbeOptions` (line 29)
+- **fn** `probeProviderCapabilities(providerUrl: string, opts: ProbeOptions = {}) → Promise<ProviderCapabilities>` (line 38) — Probes a provider's CDP endpoint for features the gateway uses. Best-effort:
 ### `src/core/providers/cdp.ts`
 
 - **fn** `fetchCdpVersion(httpUrl: string, timeoutMs: number = 3000) → Promise<CdpVersionInfo>` (line 7)
@@ -173,7 +180,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class HealthChecker` (line 7)
 ### `src/core/providers/registry.ts`
 
-- **class** `class ProviderRegistry` (line 3)
+- **type** `type CapabilityProbeStatus` (line 7)
+- **interface** `interface CapabilityRecord` (line 9)
+- **interface** `interface RegisterOptions` (line 14)
+- **class** `class ProviderRegistry` (line 19)
 ### `src/core/proxy/reconnect.ts`
 
 - **interface** `interface ParkedSession` (line 1)

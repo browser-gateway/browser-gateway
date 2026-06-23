@@ -341,6 +341,33 @@ export function createApp(
     }
   });
 
+  app.get("/v1/providers/:id/capabilities", (c) => {
+    const id = c.req.param("id");
+    if (!gateway.config.providers[id]) {
+      return c.json({ error: `Provider '${id}' not found` }, 404);
+    }
+    const record = gateway.registry.getCapabilityRecord(id);
+    return c.json({
+      id,
+      status: record?.status ?? "pending",
+      capabilities: record?.capabilities ?? null,
+    });
+  });
+
+  app.post("/v1/providers/:id/capabilities/revalidate", async (c) => {
+    const id = c.req.param("id");
+    if (!gateway.config.providers[id]) {
+      return c.json({ error: `Provider '${id}' not found` }, 404);
+    }
+    await gateway.registry.probe(id);
+    const record = gateway.registry.getCapabilityRecord(id);
+    return c.json({
+      id,
+      status: record?.status ?? "failed",
+      capabilities: record?.capabilities ?? null,
+    });
+  });
+
   // Config editor endpoints
   app.get("/v1/config", (c) => {
     const path = loadedConfigPath;

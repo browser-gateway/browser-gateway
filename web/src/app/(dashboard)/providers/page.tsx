@@ -5,6 +5,7 @@ import { Plus, Pencil, Trash2, Zap, Check, X, Loader2, Server, ExternalLink } fr
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { CapabilityStrip } from "@/components/capability-strip";
 import {
   Dialog,
   DialogContent,
@@ -212,6 +213,11 @@ export default function ProvidersPage() {
                         {test.ok ? `Connected successfully in ${test.latencyMs}ms` : `Connection failed: ${test.error}`}
                       </div>
                     )}
+
+                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                      <span className="shrink-0">Supports:</span>
+                      <CapabilityStrip providerId={provider.id} />
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
