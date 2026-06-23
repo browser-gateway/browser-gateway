@@ -26,18 +26,30 @@ const FEATURES: { key: FeatureKey; label: string; description: string }[] = [
   { key: "pageScreencast", label: "Live view", description: "Page.startScreencast — used by /v1/live playground" },
 ];
 
-function Dot({ state, title }: { state: CapabilityState | "unknown"; title: string }) {
-  const cls =
+function FeatureChip({
+  label,
+  state,
+  title,
+}: {
+  label: string;
+  state: CapabilityState | "unknown";
+  title: string;
+}) {
+  const stateLabel = state === "supported" ? "✓" : state === "unsupported" ? "✕" : "—";
+  const stateColor =
     state === "supported"
-      ? "bg-foreground"
+      ? "text-foreground"
       : state === "unsupported"
-      ? "bg-destructive"
-      : "bg-muted-foreground/40";
+      ? "text-destructive"
+      : "text-muted-foreground/60";
   return (
     <span
-      className={`inline-block size-1.5 rounded-full ${cls}`}
       title={title}
-    />
+      className="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-0.5 text-[10.5px] font-mono"
+    >
+      <span className="text-foreground/80">{label}</span>
+      <span className={`tabular-nums ${stateColor}`}>{stateLabel}</span>
+    </span>
   );
 }
 
@@ -83,9 +95,9 @@ export function CapabilityStrip({ providerId }: Props) {
 
   if (!data) {
     return (
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1">
         {FEATURES.map((f) => (
-          <Dot key={f.key} state="unknown" title={`${f.label}: unknown`} />
+          <FeatureChip key={f.key} label={f.label} state="unknown" title={`${f.label}: unknown`} />
         ))}
       </div>
     );
@@ -101,13 +113,14 @@ export function CapabilityStrip({ providerId }: Props) {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-1 flex-wrap">
         {FEATURES.map((f) => {
           const state = data.capabilities?.[f.key];
           return (
-            <Dot
+            <FeatureChip
               key={f.key}
+              label={f.label}
               state={state ?? "unknown"}
               title={`${f.label}: ${state ?? "unknown"} — ${f.description}`}
             />

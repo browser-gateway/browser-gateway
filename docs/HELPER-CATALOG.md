@@ -315,21 +315,21 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/rest/dispatch.ts`
 
 - **interface** `interface DispatchDeps` (line 22)
-- **fn** `dispatchPageAction(deps: DispatchDeps, profileId: string | undefined, options: PageOptions, action: (page: Page) => Promise<T>) → Promise<PageResult<T>>` (line 34) — If `profileId` is set, route through the profile-pinned executor; otherwise
+- **fn** `dispatchPageAction(deps: DispatchDeps, profileId: string | undefined, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 34) — If `profileId` is set, route through the profile-pinned executor; otherwise
 ### `src/server/rest/executor.ts`
 
 - **interface** `interface PageOptions` (line 7)
 - **interface** `interface PageResult` (line 20)
-- **fn** `withBrowserPage(pool: SessionPool, logger: Logger, options: PageOptions, action: (page: Page) => Promise<T>) → Promise<PageResult<T>>` (line 45)
-- **fn** `scrollThroughPage(page: Page) → Promise<void>` (line 136)
+- **fn** `withBrowserPage(pool: SessionPool, logger: Logger, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 45)
+- **fn** `scrollThroughPage(page: Page) → Promise<void>` (line 137)
 ### `src/server/rest/page-runner.ts`
 
 - **interface** `interface PageRunResult` (line 18)
-- **fn** `runPageAction(page: Page, options: PageOptions, action: (page: Page) => Promise<T>) → Promise<PageRunResult<T>>` (line 28)
+- **fn** `runPageAction(page: Page, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageRunResult<T>>` (line 28)
 ### `src/server/rest/profile-executor.ts`
 
 - **interface** `interface WithProfilePageDeps` (line 36)
-- **fn** `withProfilePage(deps: WithProfilePageDeps, profileId: string, options: PageOptions, action: (page: Page) => Promise<T>) → Promise<PageResult<T>>` (line 42)
+- **fn** `withProfilePage(deps: WithProfilePageDeps, profileId: string, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 42)
 ### `src/server/rest/profiles.ts`
 
 - **interface** `interface ProfileRestDeps` (line 15)

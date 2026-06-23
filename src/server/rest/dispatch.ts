@@ -36,6 +36,7 @@ export async function dispatchPageAction<T>(
   profileId: string | undefined,
   options: PageOptions,
   action: (page: Page) => Promise<T>,
+  runOpts: { tolerateGotoTimeout?: boolean } = {},
 ): Promise<PageResult<T>> {
   if (profileId) {
     if (!deps.profileLifecycle) {
@@ -44,14 +45,13 @@ export async function dispatchPageAction<T>(
         "profile field used but profiles are not enabled on this gateway — set profiles.enabled: true in gateway.yml and configure BG_ENCRYPTION_KEY",
       );
     }
-    // Disable automatic retries when a profile is set — a partial commit
-    // across providers could corrupt the stored blob. One-shot only.
     return withProfilePage(
       { gateway: deps.gateway, lifecycle: deps.profileLifecycle, logger: deps.logger },
       profileId,
       { ...options, retries: 0 },
       action,
+      runOpts,
     );
   }
-  return withBrowserPage(deps.pool, deps.logger, options, action);
+  return withBrowserPage(deps.pool, deps.logger, options, action, runOpts);
 }

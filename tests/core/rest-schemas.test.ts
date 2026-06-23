@@ -16,7 +16,7 @@ describe("ScreenshotRequestSchema", () => {
     expect(result.format).toBe("png");
     expect(result.omitBackground).toBe(false);
     expect(result.scrollPage).toBe(false);
-    expect(result.waitUntil).toBe("load");
+    expect(result.waitUntil).toBe("domcontentloaded");
     expect(result.timeout).toBe(30000);
   });
 

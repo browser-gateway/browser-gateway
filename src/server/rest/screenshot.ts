@@ -47,6 +47,7 @@ export async function handleScreenshot(
         omitBackground: body.omitBackground,
       });
     },
+    { tolerateGotoTimeout: true },
   );
 
   return new Response(result.data, {

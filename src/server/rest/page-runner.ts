@@ -29,15 +29,23 @@ export async function runPageAction<T>(
   page: Page,
   options: PageOptions,
   action: (page: Page) => Promise<T>,
+  runOpts: { tolerateGotoTimeout?: boolean } = {},
 ): Promise<PageRunResult<T>> {
   if (options.viewport) await page.setViewportSize(options.viewport);
   if (options.headers) await page.setExtraHTTPHeaders(options.headers);
 
   const navStart = Date.now();
-  const response = await page.goto(options.url, {
-    waitUntil: options.waitUntil ?? "load",
-    timeout: options.timeout ?? 30000,
-  });
+  let response: Awaited<ReturnType<Page["goto"]>> = null;
+  try {
+    response = await page.goto(options.url, {
+      waitUntil: options.waitUntil ?? "load",
+      timeout: options.timeout ?? 30000,
+    });
+  } catch (err) {
+    if (!runOpts.tolerateGotoTimeout || !(err instanceof Error) || !/Timeout/.test(err.message)) {
+      throw err;
+    }
+  }
   const navigationMs = Date.now() - navStart;
 
   if (options.waitForSelector) {

@@ -44,6 +44,7 @@ export async function withProfilePage<T>(
   profileId: string,
   options: PageOptions,
   action: (page: Page) => Promise<T>,
+  runOpts: { tolerateGotoTimeout?: boolean } = {},
 ): Promise<PageResult<T>> {
   const { gateway, lifecycle, logger } = deps;
   const startTime = Date.now();
@@ -118,7 +119,7 @@ export async function withProfilePage<T>(
       const context = contexts[0] ?? (await browser.newContext());
       const page = await context.newPage();
 
-      const run = await runPageAction(page, options, action);
+      const run = await runPageAction(page, options, action, runOpts);
       const result: PageResult<T> = {
         data: run.data,
         statusCode: run.statusCode,

@@ -47,6 +47,7 @@ export async function withBrowserPage<T>(
   logger: Logger,
   options: PageOptions,
   action: (page: Page) => Promise<T>,
+  runOpts: { tolerateGotoTimeout?: boolean } = {},
 ): Promise<PageResult<T>> {
   const startTime = Date.now();
   const maxAttempts = (options.retries ?? 2) + 1;
@@ -73,7 +74,7 @@ export async function withBrowserPage<T>(
 
     try {
       const page = handle.page;
-      const run = await runPageAction(page, options, action);
+      const run = await runPageAction(page, options, action, runOpts);
 
       if (attempt > 1) {
         logger.info({ attempt, url: options.url }, "rest: succeeded on retry");

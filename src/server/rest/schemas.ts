@@ -52,7 +52,7 @@ export const ScreenshotRequestSchema = z.object({
     .optional(),
   omitBackground: z.boolean().default(false),
   scrollPage: z.boolean().default(false),
-  waitUntil: WaitUntilSchema.default("load"),
+  waitUntil: WaitUntilSchema.default("domcontentloaded"),
 }).strict();
 
 /** Request body for `POST /v1/screenshot`. Inferred from {@link ScreenshotRequestSchema}. @public */

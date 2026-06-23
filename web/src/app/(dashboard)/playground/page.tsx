@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { fetchProfiles, fetchProviders, type ProfileMetaItem, type ProviderConfigItem } from "@/lib/api";
 import { LiveClient, eventModifiers, mouseButton, type FrameMeta } from "@/lib/live-client";
 import { useAuthEnabled, useGatewayToken } from "@/components/token-autofill";
+import { NavGuard } from "@/components/nav-guard";
 
 type Status = "idle" | "connecting" | "live" | "error" | "closed";
 
@@ -166,24 +167,13 @@ export default function PlaygroundPage() {
   );
 
   useEffect(() => {
-    if (status !== "live") return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      // Required for some browsers to actually show the prompt.
-      e.returnValue = "";
-    };
+    if (status !== "live" && status !== "connecting") return;
     const onPageHide = () => {
-      // Last-ditch cleanup: ensure the server-side tab is closed if the
-      // browser tears us down without firing unmount.
       clientRef.current?.close();
       clientRef.current = null;
     };
-    window.addEventListener("beforeunload", onBeforeUnload);
     window.addEventListener("pagehide", onPageHide);
-    return () => {
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      window.removeEventListener("pagehide", onPageHide);
-    };
+    return () => window.removeEventListener("pagehide", onPageHide);
   }, [status]);
 
   /**
@@ -386,6 +376,10 @@ export default function PlaygroundPage() {
 
   return (
     <div className="space-y-6">
+      <NavGuard
+        active={status === "live" || status === "connecting"}
+        message="A live browser session is open. Leaving this page will end it. Continue?"
+      />
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Playground</h1>
         <p className="text-sm text-muted-foreground mt-1">
