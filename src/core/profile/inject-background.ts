@@ -1,25 +1,3 @@
-/**
- * Background origin loader — phase B of the hybrid restore strategy.
- *
- * After the eager phase finishes (phase A: top-K injected synchronously),
- * the remaining "cold" origins are NOT pre-loaded. The user's session is
- * already usable. This module spins up helper pages in parallel and chews
- * through the deferred origins INVISIBLY in the background, so that within
- * ~30 seconds of session start every origin in the profile is warm.
- *
- * Coordination with lazy hydration:
- *   - A shared `alreadyInjected` Set guards against double-injection.
- *   - If the user navigates to a cold origin while this loader hasn't reached
- *     it yet, the lazy listener wins (Set.add is atomic in single-threaded JS).
- *   - If the loader gets there first, the lazy listener's `has(origin)` check
- *     short-circuits.
- *
- * Resource awareness:
- *   - Bounded by the helper-page count we open (default 2 to leave headroom
- *     for the user's foreground work).
- *   - Respects abort signal — closes helpers + WS immediately.
- *   - Errors per-origin are recorded but don't abort the whole background pass.
- */
 import { WsCDPClient } from "./cdp-client.js";
 import {
   closeHelperPages,
@@ -60,11 +38,7 @@ export interface BackgroundInjectResult {
   durationMs: number;
 }
 
-/**
- * Run the background phase. Returns when ALL deferred origins are either
- * injected or skipped (or abort fires). Designed to be invoked with `void`
- * — the caller doesn't await it; the session is already usable.
- */
+/** Injects deferred origins in the background. Returns when every origin is settled or aborted. */
 export async function runBackgroundInject(
   opts: BackgroundInjectOptions,
 ): Promise<BackgroundInjectResult> {
@@ -76,8 +50,6 @@ export async function runBackgroundInject(
   const injected: string[] = [];
   const skipped: SkippedOrigin[] = [];
 
-  // Pre-filter: skip origins that are already injected (eager or lazy) OR
-  // have empty storage.
   const queue = opts.origins.filter((origin) => {
     if (opts.alreadyInjected.has(origin)) return false;
     const data = opts.storage[origin];
@@ -99,9 +71,6 @@ export async function runBackgroundInject(
     helpers = await openHelperPool(client, Math.min(helperCount, queue.length));
     for (const h of helpers) helperSessionIds.add(h.sessionId);
 
-    // Reserve all queued origins up-front so a lazy hydration mid-flight
-    // skips anything we're about to touch. Late drops back to the pool only
-    // happen if we never get there (aborted, helper crashed).
     const targetOrigins = queue.filter((o) => {
       if (opts.alreadyInjected.has(o)) return false;
       opts.alreadyInjected.add(o);

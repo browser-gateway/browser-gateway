@@ -18,13 +18,9 @@ import type { LockToken, ProfileStore } from "../../core/profile/store.js";
 export interface LifecycleOptions {
   /** Lock TTL: maximum time we'll hold a profile lock for one session. */
   lockTtlMs?: number;
-  /** Timeout for the inject path (CDP connect + Storage.setCookies). */
+  /** Timeout for the inject path. */
   cdpTimeoutMs?: number;
-  /**
-   * Timeout for the commit path (CDP connect + Storage.getCookies + write).
-   * Defaults to cdpTimeoutMs if unset. Splitting them lets the lock be released
-   * sooner after disconnect — important for rapid-reconnect agent workflows.
-   */
+  /** Timeout for the commit path. Defaults to `cdpTimeoutMs`. */
   commitTimeoutMs?: number;
   /** Top-K origins to inject eagerly. Default 20. */
   eagerOriginLimit?: number;
@@ -62,26 +58,8 @@ export class LifecycleError extends Error {
   }
 }
 
-/**
- * Orchestrates a profile's lifecycle around one gateway WebSocket session.
- *
- * Four phases:
- *   1. acquire(profileId)             — lock + decrypt + return cookies to inject
- *   2. inject(acquired, wsUrl)        — push cookies into provider via transient CDP
- *   3. commit(acquired, wsUrl)        — capture latest cookies + encrypt + save + release lock
- *   4. release(acquired)              — release lock without saving (use after a failed session)
- *
- * Splitting them lets the upgrade handler acquire the lock early (fail-fast on contention)
- * and inject only after a provider has been selected. inject() can be retried against
- * a different provider if the first connection attempt fails.
- */
+/** Orchestrates acquire/inject/commit/release for a profile around one session. */
 export class ProfileLifecycle {
-  /**
-   * In-flight commits. We add a promise here when commit() starts and remove it
-   * when it settles. drain() awaits all of these — important so SIGTERM during
-   * graceful shutdown doesn't strand a freshly-disconnected session's commit
-   * (H1 fix).
-   */
   private readonly pendingCommits = new Set<Promise<void>>();
   private draining = false;
 
@@ -93,7 +71,7 @@ export class ProfileLifecycle {
     private readonly opts: LifecycleOptions = {},
   ) {}
 
-  /** Acquire the profile lock and decrypt the stored blob if any. */
+  /** Acquires the profile lock and decrypts the stored blob if any. */
   async acquire(profileId: string): Promise<AcquiredProfile> {
     if (!PROFILE_ID_REGEX.test(profileId)) {
       throw new LifecycleError("INVALID_ID", `invalid profile id: "${profileId}"`);
@@ -151,15 +129,7 @@ export class ProfileLifecycle {
     }
   }
 
-  /**
-   * Inject acquired state into the provider browser via a transient CDP
-   * connection. Cookies always (one CDP call). For localStorage: eager top-K
-   * origins by `lastVisitedAt` recency, paralleled across helper pages with
-   * `Fetch.fulfillRequest` so each origin costs ~50 ms instead of a real
-   * navigation. The rest become "deferred origins" returned to the caller —
-   * lazy hydration on Page.frameNavigated (live-view) or PR-2's background
-   * loader can pick them up.
-   */
+  /** Injects cookies plus eager top-K localStorage; deferred origins are returned to the caller. */
   async inject(
     acquired: AcquiredProfile,
     providerWsUrl: string,
@@ -208,20 +178,7 @@ export class ProfileLifecycle {
     };
   }
 
-  /**
-   * Capture latest cookies, encrypt + save, release the lock.
-   *
-   * Errors from the CDP capture step are logged but DO NOT propagate — we still
-   * release the lock so the next session can proceed. Previous saved state (if any)
-   * is preserved unchanged.
-   *
-   * H1: the returned Promise is tracked in pendingCommits so drain() can await it.
-   * M1: uses commitTimeoutMs (defaults to cdpTimeoutMs) — typically shorter than
-   *     the inject timeout so lock is released sooner.
-   * M2: if capture returns 0 cookies but the previous saved state had cookies,
-   *     we skip the save and log a WARN — preserves the previous state instead of
-   *     silently wiping it.
-   */
+  /** Captures latest state, encrypts, persists, and releases the lock. Errors are swallowed. */
   async commit(acquired: AcquiredProfile, providerWsUrl: string): Promise<void> {
     const promise = this.runCommit(acquired, providerWsUrl);
     this.pendingCommits.add(promise);
@@ -234,10 +191,6 @@ export class ProfileLifecycle {
     const helperPages = this.opts.helperPages ?? 4;
 
     try {
-      // Single pass: capture cookies + storage for (existing-blob origins) ∪
-      // (origins derived from this session's cookies). The
-      // includeCookieDerivedOrigins flag does that union internally so we
-      // only open one transient WS.
       const captureResult = await captureFullStateViaTransient(
         providerWsUrl,
         Object.keys(acquired.storage),
@@ -246,7 +199,6 @@ export class ProfileLifecycle {
 
       const cookies = captureResult.cookies;
 
-      // M2: if the captured state would silently destroy previous data, preserve instead.
       if (cookies.length === 0 && acquired.cookies.length > 0) {
         this.logger.warn(
           {
@@ -258,8 +210,6 @@ export class ProfileLifecycle {
         return;
       }
 
-      // Merge: keep older-origin entries that the fresh capture missed (origin
-      // not visited this session). Newly-captured origins replace the previous.
       const mergedStorage: Record<string, OriginStorage> = { ...acquired.storage };
       for (const [origin, data] of Object.entries(captureResult.storage)) {
         mergedStorage[origin] = data;
@@ -277,9 +227,6 @@ export class ProfileLifecycle {
         },
       };
 
-      // Enforce size limits BEFORE encrypting/persisting. Evicts oldest
-      // origins by lastVisitedAt when the serialized blob would exceed
-      // hardCapBytes; warns when it would exceed softWarnBytes.
       const enforced = enforceProfileLimits(profile, this.opts.limits);
       if (enforced.refused) {
         this.logger.warn(
@@ -338,16 +285,7 @@ export class ProfileLifecycle {
     }
   }
 
-  /**
-   * Wait for all in-flight commits to finish, up to timeoutMs.
-   *
-   * Call this during graceful shutdown after the gateway stops accepting new
-   * connections — it lets the last few sessions persist their cookies before
-   * the process exits.
-   *
-   * Once draining starts, the gateway should not be accepting new sessions, so
-   * the pending set should drain to empty quickly.
-   */
+  /** Awaits all in-flight commits, up to `timeoutMs`. Logs WARN on timeout. */
   async drain(timeoutMs: number): Promise<void> {
     this.draining = true;
     if (this.pendingCommits.size === 0) return;
@@ -373,17 +311,17 @@ export class ProfileLifecycle {
     }
   }
 
-  /** Test/observability hook — number of in-flight commits right now. */
+  /** Returns the number of in-flight commits. */
   pendingCommitCount(): number {
     return this.pendingCommits.size;
   }
 
-  /** True after drain() has been called. */
+  /** Returns true once `drain()` has been called. */
   isDraining(): boolean {
     return this.draining;
   }
 
-  /** Release the lock without saving anything (e.g. session never connected). */
+  /** Releases the lock without persisting. */
   async release(acquired: AcquiredProfile): Promise<void> {
     await this.store.unlock(acquired.profileId, acquired.lockToken).catch((err) => {
       this.logger.warn(

@@ -1,20 +1,4 @@
-/**
- * `WS /v1/live` upgrade handler. Bridges a dashboard WebSocket to a CDP
- * screencast session against a chosen provider.
- *
- * Behaviour:
- *   1. Validate path, auth (BG_TOKEN), gateway-not-shutting-down
- *   2. Validate `?provider=<id>` exists in the registry, is healthy
- *   3. Resolve the provider's CDP WebSocket URL
- *   4. Upgrade the incoming socket to a real WS using the `ws` library
- *   5. Construct ScreencastBridge, call setup() + attachDashboard()
- *
- * Auth + provider rules match the spec decisions:
- *   - Q2: required `?provider=<id>`, no automatic routing
- *   - Q3: spawn-new (no `?sessionId=` support in v0.3.0)
- *   - Q6: any CDP-compatible provider; raw Chrome + Pi Steel are the
- *         primary targets for v0.3.0 tier-3 testing
- */
+/** WS /v1/live upgrade handler with profile injection. */
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { timingSafeEqual } from "node:crypto";
@@ -59,15 +43,11 @@ export interface CreateLiveHandlerDeps {
 
 export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
   const { gateway, logger, token, profileLifecycle } = deps;
-  // Single WSS used in noServer mode to handle the upgrade handshake. The ws
-  // library handles all the HTTP/1.1 details for us; we then take the resulting
-  // ws object and hand it to the bridge.
   const wss = new WebSocketServer({ noServer: true });
 
   async function handle(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-    // Auth.
     if (token) {
       const reqToken =
         url.searchParams.get("token") ?? extractBearer(req.headers.authorization);
@@ -82,11 +62,10 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       return;
     }
 
-    // Provider selection — explicit ?provider=<id> required per spec Q2.
     const providerId = url.searchParams.get("provider");
     if (!providerId) {
       writeHttpError(socket, 400, {
-        error: "live view requires ?provider=<id> (no auto-routing in v0.3.0)",
+        error: "live view requires ?provider=<id>",
       });
       return;
     }
@@ -101,7 +80,6 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       return;
     }
 
-    // Resolve to a WS URL.
     let providerWsUrl: string;
     try {
       providerWsUrl = await resolveWsUrl(provider.config.url);
@@ -114,8 +92,6 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       return;
     }
 
-    // Optional profile. Acquire lock + decrypt cookies up-front; inject after
-    // the bridge has connected; commit on close. Matches the /v1/connect path.
     const profileId = url.searchParams.get("profile");
     let acquired: AcquiredProfile | null = null;
     if (profileId !== null) {
@@ -149,14 +125,12 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       }
     }
 
-    // Parse optional screencast tuning params (clamped + defaulted).
     const format = url.searchParams.get("format") === "png" ? "png" : "jpeg";
     const quality = clampInt(url.searchParams.get("quality"), 1, 100, 60);
     const maxWidth = clampInt(url.searchParams.get("maxWidth"), 320, 3840, 1280);
     const maxHeight = clampInt(url.searchParams.get("maxHeight"), 240, 2160, 720);
     const everyNthFrame = clampInt(url.searchParams.get("everyNthFrame"), 1, 10, 2);
 
-    // Upgrade.
     wss.handleUpgrade(req, socket, head, async (ws) => {
       logger.info(
         { providerId, profileId, format, quality, maxWidth, maxHeight, everyNthFrame },
@@ -173,9 +147,6 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         logger,
       });
 
-      // When the bridge closes (dashboard disconnects, provider dies, etc.),
-      // commit the profile state (best-effort) so the user's next session
-      // sees the latest cookies.
       let cleanupRan = false;
       const cleanup = async () => {
         if (cleanupRan) return;
@@ -193,22 +164,16 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       };
       ws.on("close", () => { void cleanup(); });
 
-      // Track origins injected by any path (eager / lazy / background).
       const alreadyInjected = new Set<string>();
       let teardownLazy: (() => void) | null = null;
       const backgroundAbort = new AbortController();
 
       try {
         await bridge.setup();
-        // Inject AFTER setup but BEFORE the dashboard sees frames — cookies
-        // and top-K storage need to be in the browser before the user navigates.
         if (acquired && profileLifecycle) {
           const result = await profileLifecycle.inject(acquired, providerWsUrl);
           for (const o of result.originsInjected) alreadyInjected.add(o);
 
-          // Install lazy hydration on the bridge's attached target. The
-          // remaining (deferred) origins get injected the first time the user
-          // navigates to them.
           const session = bridge.getCdpAndSession();
           if (session && result.originsDeferred.length > 0) {
             teardownLazy = installLazyHydration({
@@ -219,9 +184,6 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
               logger,
             });
 
-            // Phase B: kick off background loader for ALL deferred origins on
-            // its own transient CDP connection. Doesn't block the user —
-            // session is already attached. Errors logged, not thrown.
             void runBackgroundInject({
               origins: result.originsDeferred,
               storage: acquired.storage,
@@ -259,16 +221,14 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         try {
           ws.send(JSON.stringify({ type: "error", code: "SETUP_FAILED", message }));
         } catch {
-          // best-effort
+          // ignore
         }
         try {
           ws.close(1011, "setup failed");
         } catch {
-          // best-effort
+          // ignore
         }
         bridge.close();
-        // If setup failed before we could inject, release the lock without
-        // committing — there's nothing to save.
         if (acquired && profileLifecycle) {
           await profileLifecycle.release(acquired).catch(() => {});
           acquired = null;

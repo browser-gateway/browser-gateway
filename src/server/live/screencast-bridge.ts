@@ -1,26 +1,3 @@
-/**
- * Screencast bridge between a provider (via CDP) and a dashboard (via WS).
- *
- * Lifecycle:
- *   1. setup(): open CDP, find/create a page target, attach flat-mode, enable
- *      Page domain, override device metrics, start screencast
- *   2. While running: forward provider's screencastFrame events as binary WS
- *      frames to the dashboard, ACK each frame BEFORE writing it out (spec
- *      §5.1.F — Chromium stalls the queue if acks lag); validate + forward
- *      dashboard input messages to provider as Input.* / Page.navigate
- *   3. close(): stop screencast, detach, close both sockets
- *
- * Backpressure: if the dashboard's `bufferedAmount` exceeds DROP_THRESHOLD we
- * SKIP that frame's send to dashboard but still ack upstream, so the provider
- * keeps streaming and we don't OOM holding frames in memory (spec §5.1.J).
- *
- * NEVER REGRESS — three critical details from the spec's anti-list (§8):
- *   - The frame `sessionId` is an INTEGER (frame counter), the envelope
- *     `sessionId` is a STRING (attach session). Don't conflate.
- *   - Ack synchronously before forwarding the frame, not after.
- *   - Call `Page.setDeviceMetricsOverride` BEFORE `startScreencast` in
- *     headless or frames come back at the wrong size (puppeteer #10527).
- */
 import type { Logger } from "pino";
 import type WebSocket from "ws";
 import { CdpClient, CdpError } from "./cdp-client.js";
@@ -41,7 +18,7 @@ export interface BridgeOptions {
   maxWidth?: number;
   /** Default 720. */
   maxHeight?: number;
-  /** Default 2 (~12 FPS at typical Chrome capture rates). */
+  /** Default 2. */
   everyNthFrame?: number;
   /** Default 1. */
   deviceScaleFactor?: number;
@@ -71,7 +48,6 @@ interface ScreencastFrameParams {
     scrollOffsetY: number;
     timestamp?: number;
   };
-  /** INTEGER frame counter — pass to screencastFrameAck verbatim. */
   sessionId: number;
 }
 
@@ -79,7 +55,6 @@ export class ScreencastBridge {
   private readonly opts: Required<Omit<BridgeOptions, "logger">> & { logger: Logger };
   private readonly cdp: CdpClient;
   private dashboardWs: WebSocket | null = null;
-  /** Flat-mode session id from Target.attachToTarget — a STRING. */
   private attachSessionId: string | null = null;
   private targetId: string | null = null;
   private framesSent = 0;
@@ -102,47 +77,34 @@ export class ScreencastBridge {
     this.cdp = new CdpClient();
   }
 
-  /** Test/observability. */
   getStats() {
     return { framesSent: this.framesSent, framesDropped: this.framesDropped };
   }
 
-  /** Expose CDP client + flat-mode session id so a sibling module (e.g. lazy
-   *  hydration on Page.frameNavigated) can install listeners on the same
-   *  attached target the bridge owns. Only valid after `setup()` resolves. */
+  /** Returns the CDP client and main attach sessionId once `setup()` has resolved. */
   getCdpAndSession(): { cdp: CdpClient; sessionId: string } | null {
     if (!this.attachSessionId) return null;
     return { cdp: this.cdp, sessionId: this.attachSessionId };
   }
 
-  /**
-   * Open the CDP session, attach, prep, and start the screencast.
-   * Throws on any setup failure. Caller should then call `attachDashboard`.
-   */
+  /** Opens the CDP session, attaches a fresh target, and starts the screencast. */
   async setup(): Promise<void> {
     await this.cdp.connect(this.opts.providerWsUrl);
 
-    // Always create a FRESH target. Reusing an existing tab made stale state
-    // leak between playground sessions — the user would refresh the dashboard
-    // and see the previous page again. Each playground session now owns its
-    // own tab end-to-end, closed on disconnect so the provider's Chrome
-    // doesn't accumulate orphan tabs.
     const created = await this.cdp.send<{ targetId: string }>("Target.createTarget", {
       url: "about:blank",
     });
     this.targetId = created.targetId;
 
-    // Attach flat-mode. The string sessionId tags subsequent envelopes.
     const attached = await this.cdp.send<{ sessionId: string }>("Target.attachToTarget", {
       targetId: this.targetId,
       flatten: true,
     });
     this.attachSessionId = attached.sessionId;
 
-    // Page domain for frame nav events.
     await this.cdp.send("Page.enable", {}, this.attachSessionId);
 
-    // setDeviceMetricsOverride BEFORE startScreencast — puppeteer #10527.
+    // must run before Page.startScreencast — puppeteer/puppeteer#10527
     await this.cdp.send(
       "Page.setDeviceMetricsOverride",
       {
@@ -154,7 +116,6 @@ export class ScreencastBridge {
       this.attachSessionId,
     );
 
-    // Wire event listener BEFORE starting the screencast so we don't miss frames.
     const offEvent = this.cdp.on((event) => this.handleCdpEvent(event));
     this.cleanupFns.push(offEvent);
 
@@ -170,7 +131,6 @@ export class ScreencastBridge {
       this.attachSessionId,
     );
 
-    // If the provider dies, close ourselves.
     const offClose = this.cdp.onClose(() => {
       this.opts.logger.info({ targetId: this.targetId }, "live: provider CDP closed");
       this.close();
@@ -178,7 +138,7 @@ export class ScreencastBridge {
     this.cleanupFns.push(offClose);
   }
 
-  /** Wire the dashboard WS for bidirectional traffic. */
+  /** Attaches the dashboard WebSocket for bidirectional traffic. */
   attachDashboard(ws: WebSocket): void {
     this.dashboardWs = ws;
     ws.on("message", (raw) => {
@@ -195,18 +155,13 @@ export class ScreencastBridge {
     if (event.method === "Page.screencastFrame") {
       const p = event.params as unknown as ScreencastFrameParams;
 
-      // Step 1: ACK first (synchronously). The integer sessionId is the frame
-      // counter from the event payload — NOT our attach session.
       this.cdp.sendMayFail(
         "Page.screencastFrameAck",
         { sessionId: p.sessionId },
         this.attachSessionId ?? undefined,
       );
 
-      // Step 2: emit a frameMeta message if dimensions changed (or first frame).
       this.maybeSendFrameMeta(p.metadata);
-
-      // Step 3: forward frame to dashboard, respecting backpressure.
       this.forwardFrame(p.data);
       return;
     }
@@ -298,7 +253,6 @@ export class ScreencastBridge {
               x: msg.event.x,
               y: msg.event.y,
               button: msg.event.button ?? "left",
-              // Steel's simplification: if button is "none", buttons=0; else 1.
               buttons: !msg.event.button || msg.event.button === "none" ? 0 : 1,
               clickCount: msg.event.clickCount ?? (msg.event.kind === "press" || msg.event.kind === "release" ? 1 : 0),
               modifiers: msg.event.modifiers ?? 0,
@@ -362,7 +316,6 @@ export class ScreencastBridge {
           );
           this.opts.maxWidth = msg.width;
           this.opts.maxHeight = msg.height;
-          // Restart screencast so subsequent frames are sized correctly.
           this.cdp.sendMayFail("Page.stopScreencast", {}, this.attachSessionId);
           await this.cdp.send(
             "Page.startScreencast",
@@ -377,8 +330,6 @@ export class ScreencastBridge {
           );
           break;
         case "paste":
-          // Input.insertText commits text directly to the focused element, no
-          // per-character key dispatch. Matches what Chrome's own paste does.
           await this.cdp.send("Input.insertText", { text: msg.text }, this.attachSessionId);
           break;
         case "close":
@@ -413,8 +364,6 @@ export class ScreencastBridge {
       this.cdp.sendMayFail("Page.stopScreencast", {}, this.attachSessionId);
       this.cdp.sendMayFail("Target.detachFromTarget", { sessionId: this.attachSessionId });
     }
-    // Close the tab we created in setup() so the provider's Chrome doesn't
-    // accumulate orphans. Browser-level call (no sessionId envelope).
     if (this.targetId && !this.cdp.isClosed()) {
       this.cdp.sendMayFail("Target.closeTarget", { targetId: this.targetId });
     }

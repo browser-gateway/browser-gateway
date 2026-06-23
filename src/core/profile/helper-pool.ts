@@ -1,14 +1,3 @@
-/**
- * Shared helper-page-pool primitives used by inject-eager, inject-background,
- * and capture-full.
- *
- * All three paths follow the same shape: open N targets, install Fetch
- * interception so navigation costs ~50 ms instead of 200+, walk a list of
- * origins round-robin across the helpers, then clean up.
- *
- * Centralizing here keeps the three paths consistent (one set of timeouts,
- * one fulfill-response shape, one cleanup sequence) and makes jscpd happy.
- */
 import type { WsCDPClient } from "./cdp-client.js";
 
 export interface HelperPage {
@@ -18,7 +7,7 @@ export interface HelperPage {
 
 const FETCH_FULFILL_BODY_B64 = Buffer.from("<html></html>").toString("base64");
 
-/** Open one helper target + attach flat-mode + enable Fetch + enable Page. */
+/** Opens a helper target with Fetch and Page domains enabled. */
 export async function openHelperPage(client: WsCDPClient): Promise<HelperPage> {
   const created = (await client.send("Target.createTarget", { url: "about:blank" })) as {
     targetId: string;
@@ -32,11 +21,7 @@ export async function openHelperPage(client: WsCDPClient): Promise<HelperPage> {
   return { targetId: created.targetId, sessionId: attached.sessionId };
 }
 
-/**
- * Register a Fetch.requestPaused listener that fulfills every request scoped
- * to one of the helper sessions with empty HTML. The returned function
- * removes the listener.
- */
+/** Installs a Fetch.requestPaused fulfiller scoped to the given sessions. Returns an unregister fn. */
 export function installFetchFulfill(
   client: WsCDPClient,
   helperSessionIds: Set<string>,
@@ -68,7 +53,7 @@ export function installFetchFulfill(
   };
 }
 
-/** Close every helper target and best-effort `Fetch.disable` each session. */
+/** Closes helper targets and disables Fetch on each session. */
 export async function closeHelperPages(client: WsCDPClient, helpers: HelperPage[]): Promise<void> {
   await Promise.allSettled(
     helpers.map(async (h) => {
@@ -78,7 +63,7 @@ export async function closeHelperPages(client: WsCDPClient, helpers: HelperPage[
   );
 }
 
-/** Open up to `count` helper pages. Returns however many succeeded. */
+/** Opens up to `count` helper pages sequentially. Returns however many succeeded. */
 export async function openHelperPool(
   client: WsCDPClient,
   count: number,
@@ -95,7 +80,7 @@ export async function openHelperPool(
   return helpers;
 }
 
-/** Race a Promise against a per-operation timeout. Rejects with a labeled error. */
+/** Races a Promise against a per-operation timeout. */
 export function raceTimeout<T>(p: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return Promise.race([
     p,
@@ -105,11 +90,7 @@ export function raceTimeout<T>(p: Promise<T>, timeoutMs: number, label: string):
   ]);
 }
 
-/**
- * Hard wall-clock deadline around a whole operation. Necessary because
- * individual CDP `send` calls have no built-in timeout, so a hung peer could
- * otherwise keep the profile lock held indefinitely.
- */
+/** Wall-clock deadline around a whole operation. Rejects on timeout. */
 export function withDeadline<T>(op: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(
@@ -123,12 +104,7 @@ export function withDeadline<T>(op: Promise<T>, timeoutMs: number, label: string
   });
 }
 
-/**
- * Navigate the helper to an origin (Fetch.fulfillRequest will satisfy it
- * with empty HTML), then Runtime.evaluate the given expression. Raises a
- * single uniform error on either timeout or page-context exception. Returns
- * the evaluated value (or null if no result).
- */
+/** Navigates the helper to an origin and evaluates `expression` in its page context. */
 export async function navigateAndEvaluate(
   client: WsCDPClient,
   helper: HelperPage,
@@ -170,15 +146,7 @@ interface RuntimeEvaluateResponse {
   };
 }
 
-/**
- * Round-robin worker loop over `origins` across `helpers`. Each helper grabs
- * the next index in the shared queue and calls `work(origin, helper)`. Errors
- * are routed to `onError` per-origin; the loop never aborts the others.
- *
- * `abortSignal` is checked at the top of each iteration so a hung work() can
- * still finish its current origin even after abort, but no new ones are
- * picked up.
- */
+/** Round-robin work over `origins` across `helpers`. Per-origin errors go to `onError`. */
 export async function runHelperPool<T>(opts: {
   helpers: HelperPage[];
   origins: string[];

@@ -1,22 +1,3 @@
-/**
- * Transient "full state" capture: cookies + per-origin localStorage.
- *
- * Opens its own CDP WebSocket to the provider, captures cookies (one call),
- * then walks the known-origin set, creating a helper page per origin with
- * Fetch.fulfillRequest interception so the visit costs ~50 ms per origin
- * instead of a real page load.
- *
- * Origins to capture come from:
- *   - the previous profile blob's storage keys (origins we already have data for)
- *   - the captured cookies' domains (origins we visited THIS session)
- *
- * Why not just call the existing `captureState`? Because that one navigates
- * to each origin for real (no Fetch.fulfillRequest), making 500 origins take
- * minutes. The transient path matches the eager-inject strategy and reuses
- * the helper-page pattern from inject-eager.ts.
- *
- * Skipped origins are reported but never throw — capture is best-effort.
- */
 import type { CdpCookie, GetAllCookiesResponse } from "./cdp.js";
 import { WsCDPClient } from "./cdp-client.js";
 import {
@@ -37,11 +18,7 @@ export interface CaptureFullOptions {
   perOriginTimeoutMs?: number;
   /** Total wall-clock budget (ms). Default 30_000. */
   totalTimeoutMs?: number;
-  /**
-   * Also capture for any origin derived from the cookies returned by this
-   * session. Catches sites visited this session that weren't in the previous
-   * blob. Default false.
-   */
+  /** Also capture origins derived from the session's cookies. Default false. */
   includeCookieDerivedOrigins?: boolean;
   /** AbortSignal for cancellation. */
   signal?: AbortSignal;
@@ -69,10 +46,7 @@ const STORAGE_DUMP_EXPR = `
   })()
 `;
 
-/**
- * Capture cookies + localStorage for a set of origins, via a transient WS.
- * Returns a partial profile (caller wraps in version/meta envelope).
- */
+/** Captures cookies and per-origin localStorage over a transient CDP WS. */
 export async function captureFullStateViaTransient(
   providerWsUrl: string,
   originsToCapture: string[],
@@ -104,9 +78,6 @@ async function captureFullStateInner(
     const cookieResp = (await client.send("Storage.getCookies")) as GetAllCookiesResponse | null;
     const cookies: CdpCookie[] = cookieResp?.cookies ?? [];
 
-    // Optionally fold cookie-derived origins into the capture set. This is
-    // how we catch sites the user visited THIS session that weren't already
-    // in the previous profile blob.
     let originSet = originsToCapture;
     if (opts.includeCookieDerivedOrigins) {
       const cookieOrigins = originsFromCookies(cookies);
@@ -188,18 +159,11 @@ async function captureOneOrigin(
   };
 }
 
-/**
- * Helper: derive origin set from a cookie list. We treat each domain (after
- * stripping a leading '.') as an origin candidate at https. This won't be
- * 100% accurate (e.g. http-only sites get https origin), but the localStorage
- * inject path tolerates that since fetch-fulfilled navigation works for any
- * URL scheme.
- */
+/** Returns https origin candidates derived from a cookie list. */
 export function originsFromCookies(cookies: CdpCookie[]): string[] {
   const set = new Set<string>();
   for (const c of cookies) {
     const domain = c.domain.startsWith(".") ? c.domain.slice(1) : c.domain;
-    // Skip ip-like / localhost / empty.
     if (!domain || /^\d+\.\d+\.\d+\.\d+$/.test(domain) || domain === "localhost") continue;
     set.add(`https://${domain}`);
   }

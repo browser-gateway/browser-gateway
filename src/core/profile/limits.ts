@@ -1,20 +1,3 @@
-/**
- * Profile size limits + LRU origin eviction.
- *
- * Without bounds, a profile blob can grow indefinitely as the user visits
- * more sites. Storage is expensive on three axes — disk, inject latency, and
- * memory during decode. We enforce two thresholds:
- *
- *   - `softWarnBytes` (default 5 MB): the lifecycle logs WARN once per
- *     commit. The dashboard surfaces this via the Profiles page.
- *   - `hardCapBytes` (default 50 MB): we evict origins (oldest by
- *     lastVisitedAt) until the serialized blob fits under the cap. If
- *     even an empty-storage blob is over the cap (huge cookie jar), we
- *     refuse to save and preserve the previous blob unchanged.
- *
- * Default thresholds match the spec in
- * planning/research/v0.3.0-PROFILE-INJECT-OPTIMIZATION.md §4.
- */
 import type { CapturedProfile, OriginStorage } from "./types.js";
 
 export interface ProfileLimits {
@@ -22,10 +5,7 @@ export interface ProfileLimits {
   softWarnBytes?: number;
   /** Hard cap — evict origins to fit. Default 50 MB. */
   hardCapBytes?: number;
-  /**
-   * Maximum origins allowed in a profile. Default 1000. Once exceeded, the
-   * least-recently-visited origins are dropped.
-   */
+  /** Maximum origins allowed. Default 1000. Oldest-by-visit are evicted first. */
   maxOrigins?: number;
 }
 
@@ -36,15 +16,11 @@ export interface EnforceResult {
   bytes: number;
   /** Origins removed during enforcement (LRU eviction). */
   evictedOrigins: string[];
-  /**
-   * True if the serialized size exceeds `softWarnBytes`. Caller should log
-   * a WARN and surface a banner on the dashboard. Note the soft warn is on
-   * the FINAL size (after any eviction).
-   */
+  /** True if the FINAL serialized size exceeds `softWarnBytes`. */
   softWarn: boolean;
-  /** Always false if we succeeded; true if we couldn't fit and refused. */
+  /** True if the profile could not be fit under `hardCapBytes`. */
   refused: boolean;
-  /** Why we refused (if refused). */
+  /** Reason set when `refused` is true. */
   refusedReason?: string;
 }
 
@@ -54,11 +30,7 @@ export const DEFAULT_PROFILE_LIMITS = {
   maxOrigins: 1000,
 } as const;
 
-/**
- * Enforce limits on a profile before persisting. Mutates a *copy* — input is
- * untouched. Caller persists `result.profile` and uses `result.bytes`,
- * `result.refused`, `result.softWarn`, `result.evictedOrigins` for logging.
- */
+/** Enforces size and origin-count caps on a profile. Returns a new profile; input untouched. */
 export function enforceProfileLimits(
   profile: CapturedProfile,
   limits: ProfileLimits = {},
@@ -68,10 +40,8 @@ export function enforceProfileLimits(
   const maxOrigins = limits.maxOrigins ?? DEFAULT_PROFILE_LIMITS.maxOrigins;
 
   const evicted: string[] = [];
-  // Work on a shallow clone — storage gets mutated.
   let storage = { ...profile.storage };
 
-  // Step 1: maxOrigins cap. Drop oldest by lastVisitedAt.
   const originEntries = Object.entries(storage);
   if (originEntries.length > maxOrigins) {
     const ranked = originEntries
@@ -91,8 +61,6 @@ export function enforceProfileLimits(
   const current = { ...profile, storage };
   let bytes = serializedSize(current);
 
-  // Step 2: if still over the hard cap, evict oldest one at a time until we
-  // fit OR we run out of origins to evict.
   while (bytes > hardCapBytes && Object.keys(current.storage).length > 0) {
     const oldest = pickOldestOrigin(current.storage);
     if (!oldest) break;
@@ -101,7 +69,6 @@ export function enforceProfileLimits(
     bytes = serializedSize(current);
   }
 
-  // Step 3: if even the cookie-only path is too big, refuse.
   if (bytes > hardCapBytes) {
     return {
       profile,
@@ -122,7 +89,6 @@ export function enforceProfileLimits(
   };
 }
 
-/** JSON-stringify + measure (utf-8 byte length). Encoding matches what we'd write to disk before AES-GCM. */
 function serializedSize(profile: CapturedProfile): number {
   return Buffer.byteLength(JSON.stringify(profile), "utf-8");
 }

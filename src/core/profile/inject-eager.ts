@@ -1,17 +1,3 @@
-/**
- * Optimized "eager top-K" localStorage inject using Playwright's
- * Fetch.fulfillRequest pattern.
- *
- * Background: there is no CDP method that bulk-writes localStorage without
- * a navigated frame (see planning/research/v0.3.0-PROFILE-INJECT-OPTIMIZATION.md).
- * The cheapest known approach is to navigate Chrome to each origin while
- * intercepting all network requests and returning empty `<html></html>` — no
- * real network, no subresources, no parser work. Per-origin cost drops from
- * 200-500 ms to 30-80 ms.
- *
- * We open one transient WS to the provider, create N helper page targets, and
- * dispatch origins round-robin across them.
- */
 import type { CdpCookie } from "./cdp.js";
 import { WsCDPClient } from "./cdp-client.js";
 import { prepareCookieForInject } from "./cookie-helpers.js";
@@ -49,12 +35,7 @@ export interface EagerInjectResult {
   durationMs: number;
 }
 
-/**
- * Eager inject. Opens its own transient CDP WebSocket; closes it on return.
- *
- * Caller hands us the provider WS URL (browser-level CDP endpoint) and the
- * decoded profile. We do cookies (one CDP call) + top-K origins in parallel.
- */
+/** Eagerly injects cookies and the top-K origins' localStorage over a transient CDP WS. */
 export async function injectStateEagerViaTransient(
   providerWsUrl: string,
   profile: CapturedProfile,
@@ -164,10 +145,7 @@ async function injectEagerOrigins(
   return { injected, skipped };
 }
 
-/**
- * Build the JS expression that writes localStorage. We skip sessionStorage
- * (per-session memory, doesn't persist across browsers anyway).
- */
+/** Returns a JS expression that writes the origin's localStorage entries. */
 export function buildLocalStorageWriteExpression(data: OriginStorage): string {
   const local = JSON.stringify(data.localStorage ?? {});
   return `
@@ -185,7 +163,7 @@ export function buildLocalStorageWriteExpression(data: OriginStorage): string {
   `;
 }
 
-/** Sort origins by lastVisitedAt descending. Missing field → rank 0. */
+/** Returns origins sorted by lastVisitedAt descending. */
 export function rankOrigins(storage: Record<string, OriginStorage>): string[] {
   return Object.entries(storage)
     .map(([origin, data]) => ({

@@ -1,19 +1,3 @@
-/**
- * Minimal raw-WebSocket CDP client for the live-view feature.
- *
- * NOT a puppeteer replacement. The set of CDP methods we send is small (≈5),
- * and we don't want to pay the puppeteer-core install cost just to bridge a
- * screencast. This is the smallest correct flat-mode client we can ship.
- *
- * Flat mode (`Target.attachToTarget({ flatten: true })`): subsequent commands
- * include a top-level `sessionId: <string>` on the JSON envelope; responses
- * and events for that target carry the same `sessionId`. See spec §1.5.
- *
- * Critical detail: the `sessionId` returned by `attachToTarget` is a **string**
- * used to tag the envelope. The `sessionId` on `Page.screencastFrame` events
- * is a **number** (frame counter). They are different fields with the same
- * name. See spec §0 and the anti-list in §8.
- */
 import WebSocket from "ws";
 
 interface CdpEnvelope {
@@ -27,7 +11,6 @@ interface CdpEnvelope {
 
 export interface CdpEvent {
   method: string;
-  /** The flat-mode envelope sessionId (string), if present. */
   sessionId?: string;
   params: Record<string, unknown>;
 }
@@ -50,7 +33,7 @@ export class CdpClient {
   private readonly closeListeners = new Set<CloseListener>();
   private closed = false;
 
-  /** Open WS to `wsUrl`. Rejects on connect failure / timeout. */
+  /** Opens the WS to `wsUrl`. Rejects on connect failure or timeout. */
   async connect(wsUrl: string, timeoutMs = 10_000): Promise<void> {
     if (this.ws) throw new Error("CdpClient already connected");
     return new Promise<void>((resolve, reject) => {
@@ -74,7 +57,6 @@ export class CdpClient {
           this.handleClose(code, reason);
         });
         ws.on("error", (err) => {
-          // After connect, errors aren't fatal here — close handles teardown.
           this.handleError(err);
         });
         resolve();
@@ -89,10 +71,7 @@ export class CdpClient {
     });
   }
 
-  /**
-   * Send a CDP command, optionally scoped to a flat-mode session. Resolves
-   * with `result`. Rejects with `CdpError` if the peer returns an error.
-   */
+  /** Sends a CDP command. Resolves with `result`. Rejects with `CdpError` on peer error. */
   send<T = unknown>(
     method: string,
     params: Record<string, unknown> = {},
@@ -134,24 +113,16 @@ export class CdpClient {
     });
   }
 
-  /**
-   * Best-effort send that ignores its result. For acks / cleanup commands
-   * where the caller doesn't care if the peer is already gone. Inspired by
-   * Playwright's `_sendMayFail` (used for `Page.screencastFrameAck`).
-   *
-   * IMPORTANT: this MUST stay synchronous-with-respect-to-ordering — the
-   * screencast ack flow stalls if acks land out of order with frame events.
-   */
+  /** Fire-and-forget send. Used for screencast acks and cleanup commands. */
   sendMayFail(method: string, params: Record<string, unknown> = {}, sessionId?: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     const id = this.nextId++;
     const envelope: CdpEnvelope = { id, method, params };
     if (sessionId) envelope.sessionId = sessionId;
     try {
-      // No pending entry, no promise — we discard the response by id mismatch.
       this.ws.send(JSON.stringify(envelope));
     } catch {
-      // ignore — peer can be gone
+      // ignore
     }
   }
 
@@ -165,12 +136,12 @@ export class CdpClient {
     return () => this.closeListeners.delete(handler);
   }
 
-  /** Has the underlying WS been closed (by either side)? */
+  /** Returns true once the underlying WS is closed by either side. */
   isClosed(): boolean {
     return this.closed || this.ws === null || this.ws.readyState !== WebSocket.OPEN;
   }
 
-  /** Initiate close. Idempotent. */
+  /** Idempotently initiates close. */
   close(): void {
     if (this.closed) return;
     this.closed = true;
@@ -185,10 +156,9 @@ export class CdpClient {
       return;
     }
 
-    // Response to a previous send (must have an id).
     if (typeof msg.id === "number") {
       const pending = this.pending.get(msg.id);
-      if (!pending) return; // sendMayFail leaves no entry — discard
+      if (!pending) return;
       this.pending.delete(msg.id);
       if (msg.error) {
         pending.reject(new CdpError(msg.error.code, msg.error.message));
@@ -198,7 +168,6 @@ export class CdpClient {
       return;
     }
 
-    // CDP event.
     if (msg.method) {
       const event: CdpEvent = {
         method: msg.method,
@@ -209,7 +178,7 @@ export class CdpClient {
         try {
           l(event);
         } catch {
-          // listener exceptions don't kill the loop
+          // ignore
         }
       }
     }
@@ -218,7 +187,6 @@ export class CdpClient {
   private handleClose(code: number, reason: string): void {
     if (this.closed) return;
     this.closed = true;
-    // Reject every outstanding command.
     const err = new Error(`CDP connection closed (${code}${reason ? `: ${reason}` : ""})`);
     for (const [, p] of this.pending) p.reject(err);
     this.pending.clear();
@@ -226,14 +194,13 @@ export class CdpClient {
       try {
         l({ code, reason });
       } catch {
-        // swallow
+        // ignore
       }
     }
     this.ws = null;
   }
 
   private handleError(_err: Error): void {
-    // Errors are surfaced through the close event that follows. We could
-    // stash for debugging if needed — not required for the spec's behavior.
+    // surfaced via close event
   }
 }

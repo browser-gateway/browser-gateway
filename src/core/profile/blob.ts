@@ -2,12 +2,6 @@ import { gzipSync, gunzipSync } from "node:zlib";
 import { aeadDecrypt, aeadEncrypt } from "./encryption.js";
 
 export const MAGIC = Buffer.from("BGP1");
-/**
- * Blob version. v1 = uncompressed plaintext, v2 = plaintext is gzipped before
- * AES-GCM. Header byte 7 carries the compression alg when version === 2.
- * Bumping the version lets old code refuse v2 cleanly instead of silently
- * mis-parsing gzip bytes as JSON.
- */
 export const BLOB_VERSION = 2;
 export const BLOB_VERSION_V1 = 1;
 export const ALG_AES_256_GCM = 0x01;
@@ -24,7 +18,7 @@ export interface DecodedHeader {
   version: number;
   alg: number;
   dekVersion: number;
-  /** Byte 7. For v2 = compression algorithm (COMPRESS_NONE / COMPRESS_GZIP). For v1 = unused (always 0). */
+  /** Compression alg (`COMPRESS_NONE` or `COMPRESS_GZIP`). Always 0 in v1 blobs. */
   compression: number;
   iv: Buffer;
   authTag: Buffer;
@@ -33,10 +27,7 @@ export interface DecodedHeader {
 }
 
 export interface EncodeBlobOptions {
-  /**
-   * Compress plaintext with gzip before AES-GCM. Default true (the v2 norm).
-   * Pass false to write a v1-compatible uncompressed blob.
-   */
+  /** Compress plaintext with gzip before AES-GCM. Default true. */
   compress?: boolean;
 }
 
@@ -92,7 +83,6 @@ export function decodeBlobHeader(blob: Buffer): DecodedHeader {
   if (dekVersion < 1) {
     throw new Error(`invalid dekVersion: ${dekVersion}`);
   }
-  // v2 stores compression byte at position 7; v1 always wrote 0 here.
   const compression = version === BLOB_VERSION ? blob.readUInt8(7) : COMPRESS_NONE;
   if (compression !== COMPRESS_NONE && compression !== COMPRESS_GZIP) {
     throw new Error(`unsupported compression: 0x${compression.toString(16)}`);
@@ -121,7 +111,5 @@ export function decodeBlob(blob: Buffer, dek: Buffer, expectedProfileId: string)
     );
   }
   const decrypted = aeadDecrypt(dek, header.iv, header.ciphertext, header.authTag, header.aad);
-  // v1 blobs and v2-with-COMPRESS_NONE are returned as-is. v2-with-gzip
-  // gets decompressed transparently. Older callers don't need to change.
   return header.compression === COMPRESS_GZIP ? gunzipSync(decrypted) : decrypted;
 }

@@ -1,17 +1,3 @@
-/**
- * Wire protocol for the live-view feature. The client (dashboard) sends
- * discriminated-union JSON messages; the server validates with Zod before
- * forwarding any of it as CDP commands.
- *
- * We intentionally use plain-English event names (`kind: "press"`) in our
- * public protocol instead of the CDP names (`mousePressed`). The server-side
- * mapping happens in `screencast-bridge.ts`. Reasons:
- *   1. Our protocol is for dashboards, not CDP wrappers — leaking CDP names
- *      ties our public surface to Chromium's wire format
- *   2. Whitelisting fixed enum strings is easier to validate than any string
- *
- * See `planning/research/v0.3.0-LIVE-VIEW-IMPL-SPEC.md` §5.3.
- */
 import { z } from "zod";
 
 const MouseEventSchema = z.object({
@@ -54,8 +40,6 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     deviceScaleFactor: z.number().min(0.5).max(4).optional(),
     mobile: z.boolean().optional(),
   }),
-  // Paste: maps to Input.insertText on the remote browser. Text is capped
-  // server-side to avoid pathological megabyte-sized payloads.
   z.object({
     type: z.literal("paste"),
     text: z.string().max(64_000),
