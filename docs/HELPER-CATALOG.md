@@ -33,15 +33,19 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface PoolStatus` (line 36)
 ### `src/core/profile/blob.ts`
 
-- **const** `const MAGIC` (line 3)
-- **const** `const BLOB_VERSION` (line 4)
-- **const** `const ALG_AES_256_GCM` (line 5)
-- **const** `const HEADER_LEN` (line 6)
-- **interface** `interface EncodedBlob` (line 8)
-- **interface** `interface DecodedHeader` (line 13)
-- **fn** `encodeBlob(dek: Buffer, dekVersion: number, plaintext: Buffer, profileId: string) → EncodedBlob` (line 23)
-- **fn** `decodeBlobHeader(blob: Buffer) → DecodedHeader` (line 50)
-- **fn** `decodeBlob(blob: Buffer, dek: Buffer, expectedProfileId: string) → Buffer` (line 84)
+- **const** `const MAGIC` (line 4)
+- **const** `const BLOB_VERSION` (line 11) — Blob version. v1 = uncompressed plaintext, v2 = plaintext is gzipped before
+- **const** `const BLOB_VERSION_V1` (line 12)
+- **const** `const ALG_AES_256_GCM` (line 13)
+- **const** `const HEADER_LEN` (line 14)
+- **const** `const COMPRESS_NONE` (line 15)
+- **const** `const COMPRESS_GZIP` (line 16)
+- **interface** `interface EncodedBlob` (line 18)
+- **interface** `interface DecodedHeader` (line 23)
+- **interface** `interface EncodeBlobOptions` (line 35)
+- **fn** `encodeBlob(dek: Buffer, dekVersion: number, plaintext: Buffer, profileId: string, opts: EncodeBlobOptions = {}) → EncodedBlob` (line 43)
+- **fn** `decodeBlobHeader(blob: Buffer) → DecodedHeader` (line 76)
+- **fn** `decodeBlob(blob: Buffer, dek: Buffer, expectedProfileId: string) → Buffer` (line 115)
 ### `src/core/profile/capture-full.ts`
 
 - **interface** `interface CaptureFullOptions` (line 33)

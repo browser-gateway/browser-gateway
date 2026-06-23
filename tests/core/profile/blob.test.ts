@@ -9,7 +9,7 @@ import {
 import { newDek } from "../../../src/core/profile/envelope.js";
 
 describe("blob (BGP1 binary format)", () => {
-  it("round-trips a plaintext through encode/decode", () => {
+  it("round-trips a plaintext through encode/decode (v2 with gzip)", () => {
     const dek = newDek();
     const plain = Buffer.from(JSON.stringify({ cookies: [{ name: "session", value: "abc" }] }));
     const { bytes } = encodeBlob(dek, 1, plain, "acme-prod");
@@ -17,14 +17,41 @@ describe("blob (BGP1 binary format)", () => {
     expect(back.equals(plain)).toBe(true);
   });
 
+  it("backward-compat: decodes v1 (uncompressed) blobs written by older code", () => {
+    const dek = newDek();
+    const plain = Buffer.from(JSON.stringify({ cookies: [{ name: "x", value: "y" }] }));
+    const { bytes } = encodeBlob(dek, 1, plain, "older-profile", { compress: false });
+    expect(decodeBlobHeader(bytes).version).toBe(1);
+    const back = decodeBlob(bytes, dek, "older-profile");
+    expect(back.equals(plain)).toBe(true);
+  });
+
+  it("gzip meaningfully shrinks profile-sized JSON payloads", () => {
+    // Simulate a real profile: 50 origins × 1 KB of localStorage each.
+    const dek = newDek();
+    const storage: Record<string, { localStorage: Record<string, string>; sessionStorage: Record<string, string> }> = {};
+    for (let i = 0; i < 50; i++) {
+      storage[`https://o${i}.example.com`] = {
+        localStorage: { token: "abcdef".repeat(170), state: "common-shared-prefix" + String(i) },
+        sessionStorage: {},
+      };
+    }
+    const plain = Buffer.from(JSON.stringify({ version: 2, cookies: [], storage }));
+    const uncompressed = encodeBlob(dek, 1, plain, "p1", { compress: false }).bytes.length;
+    const gz = encodeBlob(dek, 1, plain, "p1", { compress: true }).bytes.length;
+    // We expect at least 50% reduction for repetitive JSON like this.
+    expect(gz).toBeLessThan(uncompressed / 2);
+  });
+
   it("encodes header with correct magic, version, alg, dekVersion", () => {
     const dek = newDek();
     const { bytes } = encodeBlob(dek, 3, Buffer.from("x"), "p1");
     expect(bytes.subarray(0, 4).equals(MAGIC)).toBe(true);
     const header = decodeBlobHeader(bytes);
-    expect(header.version).toBe(1);
+    expect(header.version).toBe(2);
     expect(header.alg).toBe(0x01);
     expect(header.dekVersion).toBe(3);
+    expect(header.compression).toBe(0x01);
     expect(header.iv.length).toBe(12);
     expect(header.authTag.length).toBe(16);
   });
