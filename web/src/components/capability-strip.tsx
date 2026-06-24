@@ -35,20 +35,20 @@ function FeatureChip({
   state: CapabilityState | "unknown";
   title: string;
 }) {
-  const stateLabel = state === "supported" ? "✓" : state === "unsupported" ? "✕" : "—";
-  const stateColor =
+  const stateLabel = state === "supported" ? "ok" : state === "unsupported" ? "no" : "?";
+  const chipClass =
     state === "supported"
-      ? "text-foreground"
+      ? "bg-muted/40 text-foreground/80"
       : state === "unsupported"
-      ? "text-destructive"
-      : "text-muted-foreground/60";
+      ? "bg-destructive/10 text-destructive"
+      : "bg-muted/40 text-muted-foreground/60";
   return (
     <span
       title={title}
-      className="inline-flex items-center gap-1 rounded-sm bg-muted/40 px-1.5 py-0.5 text-[10.5px] font-mono"
+      className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10.5px] font-mono ${chipClass}`}
     >
-      <span className="text-foreground/80">{label}</span>
-      <span className={`tabular-nums ${stateColor}`}>{stateLabel}</span>
+      <span>{label}</span>
+      <span className="opacity-70 uppercase tracking-wider text-[9.5px]">{stateLabel}</span>
     </span>
   );
 }
