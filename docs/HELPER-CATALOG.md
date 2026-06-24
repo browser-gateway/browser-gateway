@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-06-23
+Generated: 2026-06-24
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -115,8 +115,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/profile/inject-background.ts`
 
 - **interface** `interface BackgroundInjectOptions` (line 12)
-- **interface** `interface BackgroundInjectResult` (line 35)
-- **fn** `runBackgroundInject(opts: BackgroundInjectOptions) → Promise<BackgroundInjectResult>` (line 42) — Injects deferred origins in the background. Returns when every origin is settled or aborted.
+- **interface** `interface BackgroundInjectResult` (line 42)
+- **fn** `runBackgroundInject(opts: BackgroundInjectOptions) → Promise<BackgroundInjectResult>` (line 49) — Injects deferred origins in the background. Returns when every origin is settled or aborted.
 ### `src/core/profile/inject-eager.ts`
 
 - **interface** `interface EagerInjectOptions` (line 15)

@@ -171,6 +171,39 @@ describe("runBackgroundInject", () => {
     expect(r.skipped.length).toBe(1);
   });
 
+  it("startDelayMs delays the WS connection by at least the configured amount", async () => {
+    const origins = ["https://a.com"];
+    const t0 = Date.now();
+    await runBackgroundInject({
+      origins,
+      storage: makeStorage(origins),
+      providerWsUrl: mock.url,
+      alreadyInjected: new Set(),
+      helperPages: 1,
+      startDelayMs: 200,
+    });
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(200);
+  });
+
+  it("startDelayMs is bypassed when the signal aborts during the delay", async () => {
+    const origins = ["https://a.com", "https://b.com"];
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 50);
+    const t0 = Date.now();
+    const r = await runBackgroundInject({
+      origins,
+      storage: makeStorage(origins),
+      providerWsUrl: mock.url,
+      alreadyInjected: new Set(),
+      helperPages: 1,
+      startDelayMs: 5_000,
+      signal: ctrl.signal,
+    });
+    // Returns shortly after abort, not after the full 5_000 ms delay.
+    expect(Date.now() - t0).toBeLessThan(1_000);
+    expect(r.injected.length).toBe(0);
+  });
+
   it("abort signal stops the loop", async () => {
     const origins = ["https://a.com", "https://b.com", "https://c.com"];
     const ctrl = new AbortController();

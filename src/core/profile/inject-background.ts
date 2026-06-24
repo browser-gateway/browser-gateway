@@ -24,6 +24,13 @@ export interface BackgroundInjectOptions {
   perOriginTimeoutMs?: number;
   /** Total budget (ms). Default 60_000. */
   totalTimeoutMs?: number;
+  /**
+   * Delay before opening the background WS, in ms. Default 0. Some hosted
+   * providers cap concurrent WS connections per session token and reject the
+   * second one with a 502 if it opens before the eager-phase WS is fully
+   * torn down server-side. A short delay gives that teardown time to complete.
+   */
+  startDelayMs?: number;
   /** Optional callback when an origin is injected (useful for telemetry). */
   onInjected?: (origin: string) => void;
   /** Optional callback when an origin fails. */
@@ -58,6 +65,23 @@ export async function runBackgroundInject(
 
   if (queue.length === 0) {
     return { injected, skipped, durationMs: Date.now() - started };
+  }
+
+  if (opts.startDelayMs && opts.startDelayMs > 0) {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        opts.signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, opts.startDelayMs);
+      const onAbort = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      opts.signal?.addEventListener("abort", onAbort, { once: true });
+    });
+    if (opts.signal?.aborted) {
+      return { injected, skipped, durationMs: Date.now() - started };
+    }
   }
 
   const client = new WsCDPClient();
