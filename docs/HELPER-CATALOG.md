@@ -50,8 +50,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface CaptureFullOptions` (line 14)
 - **interface** `interface CaptureFullResult` (line 27)
-- **fn** `captureFullStateViaTransient(providerWsUrl: string, originsToCapture: string[], opts: CaptureFullOptions = {}) → Promise<CaptureFullResult>` (line 50) — Captures cookies and per-origin localStorage over a transient CDP WS.
-- **fn** `originsFromCookies(cookies: CdpCookie[]) → string[]` (line 163) — Returns https origin candidates derived from a cookie list.
+- **fn** `captureFullStateOnClient(client: WsCDPClient, originsToCapture: string[], opts: Omit<CaptureFullOptions, "totalTimeoutMs"> = {}) → Promise<CaptureFullResult>` (line 50) — Captures cookies and per-origin localStorage on an already-connected client.
+- **fn** `captureFullStateViaTransient(providerWsUrl: string, originsToCapture: string[], opts: CaptureFullOptions = {}) → Promise<CaptureFullResult>` (line 83) — Opens its own WS to the provider, captures, then closes the WS.
+- **fn** `originsFromCookies(cookies: CdpCookie[]) → string[]` (line 164) — Returns https origin candidates derived from a cookie list.
 ### `src/core/profile/capture.ts`
 
 - **interface** `interface CaptureOptions` (line 14)
@@ -114,16 +115,18 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 }) → Promise<void>` (line 150) — Round-robin work over `origins` across `helpers`. Per-origin errors go to `onError`.
 ### `src/core/profile/inject-background.ts`
 
-- **interface** `interface BackgroundInjectOptions` (line 12)
-- **interface** `interface BackgroundInjectResult` (line 42)
-- **fn** `runBackgroundInject(opts: BackgroundInjectOptions) → Promise<BackgroundInjectResult>` (line 49) — Injects deferred origins in the background. Returns when every origin is settled or aborted.
+- **interface** `interface BackgroundInjectOptions` (line 40)
+- **interface** `interface BackgroundInjectResult` (line 47)
+- **fn** `runBackgroundInjectOnClient(client: WsCDPClient, opts: BackgroundCommonOptions) → Promise<BackgroundInjectResult>` (line 54) — Runs the background phase on an already-connected client. Caller owns the WS lifecycle.
+- **fn** `runBackgroundInject(opts: BackgroundInjectOptions) → Promise<BackgroundInjectResult>` (line 120) — Opens its own WS to the provider, runs the background phase, then closes the WS.
 ### `src/core/profile/inject-eager.ts`
 
 - **interface** `interface EagerInjectOptions` (line 15)
 - **interface** `interface EagerInjectResult` (line 28)
-- **fn** `injectStateEagerViaTransient(providerWsUrl: string, profile: CapturedProfile, opts: EagerInjectOptions = {}) → Promise<EagerInjectResult>` (line 39) — Eagerly injects cookies and the top-K origins' localStorage over a transient CDP WS.
-- **fn** `buildLocalStorageWriteExpression(data: OriginStorage) → string` (line 149) — Returns a JS expression that writes the origin's localStorage entries.
-- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 167) — Returns origins sorted by lastVisitedAt descending.
+- **fn** `injectStateEager(client: WsCDPClient, profile: CapturedProfile, opts: Omit<EagerInjectOptions, "totalTimeoutMs"> = {}) → Promise<EagerInjectResult>` (line 39) — Eagerly injects cookies and the top-K origins' localStorage on an already-connected client.
+- **fn** `injectStateEagerViaTransient(providerWsUrl: string, profile: CapturedProfile, opts: EagerInjectOptions = {}) → Promise<EagerInjectResult>` (line 83) — Opens a fresh WS to the provider, runs the eager inject, then closes the WS.
+- **fn** `buildLocalStorageWriteExpression(data: OriginStorage) → string` (line 151) — Returns a JS expression that writes the origin's localStorage entries.
+- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 169) — Returns origins sorted by lastVisitedAt descending.
 ### `src/core/profile/inject.ts`
 
 - **interface** `interface InjectOptions` (line 6)
@@ -248,8 +251,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type ServerControlMessage` (line 73)
 ### `src/server/live/upgrade.ts`
 
-- **interface** `interface CreateLiveHandlerDeps` (line 35)
-- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 44)
+- **interface** `interface CreateLiveHandlerDeps` (line 36)
+- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 45)
 ### `src/server/mcp/ax-tree.ts`
 
 - **fn** `clearRefs() → void` (line 28)
@@ -304,11 +307,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `rewrapKeycheck(storePath: string, oldPassword: string, newPassword: string) → Promise<void>` (line 107)
 ### `src/server/profile/lifecycle.ts`
 
-- **interface** `interface LifecycleOptions` (line 18)
-- **interface** `interface AcquiredProfile` (line 33)
-- **type** `type LifecycleFailureReason` (line 44)
-- **class** `class LifecycleError` (line 51)
-- **class** `class ProfileLifecycle` (line 62) — Orchestrates acquire/inject/commit/release for a profile around one session.
+- **interface** `interface LifecycleOptions` (line 21)
+- **interface** `interface AcquiredProfile` (line 36)
+- **type** `type LifecycleFailureReason` (line 47)
+- **class** `class LifecycleError` (line 54)
+- **class** `class ProfileLifecycle` (line 65) — Orchestrates acquire/inject/commit/release for a profile around one session.
 ### `src/server/rest/content.ts`
 
 - **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 17)

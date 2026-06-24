@@ -9,26 +9,24 @@ import {
 import { buildLocalStorageWriteExpression } from "./inject-eager.js";
 import type { OriginStorage, SkippedOrigin } from "./types.js";
 
-export interface BackgroundInjectOptions {
+interface BackgroundCommonOptions {
   /** Origins still to inject (from the eager-phase deferred list). */
   origins: string[];
   /** Origin → localStorage data from the profile. */
   storage: Record<string, OriginStorage>;
-  /** Provider WS URL. */
-  providerWsUrl: string;
   /** Shared with lazy hydration to prevent double-injection. */
   alreadyInjected: Set<string>;
   /** Number of helper pages. Default 2 (lower than eager so it doesn't crowd the user). */
   helperPages?: number;
   /** Per-origin timeout. Default 5_000. */
   perOriginTimeoutMs?: number;
-  /** Total budget (ms). Default 60_000. */
-  totalTimeoutMs?: number;
   /**
    * Delay before opening the background WS, in ms. Default 0. Some hosted
    * providers cap concurrent WS connections per session token and reject the
    * second one with a 502 if it opens before the eager-phase WS is fully
    * torn down server-side. A short delay gives that teardown time to complete.
+   * Not applied when using `runBackgroundInjectOnClient` (the client is already
+   * connected — sharing makes the delay unnecessary).
    */
   startDelayMs?: number;
   /** Optional callback when an origin is injected (useful for telemetry). */
@@ -39,20 +37,27 @@ export interface BackgroundInjectOptions {
   signal?: AbortSignal;
 }
 
+export interface BackgroundInjectOptions extends BackgroundCommonOptions {
+  /** Provider WS URL. */
+  providerWsUrl: string;
+  /** Total budget (ms). Default 60_000. */
+  totalTimeoutMs?: number;
+}
+
 export interface BackgroundInjectResult {
   injected: string[];
   skipped: SkippedOrigin[];
   durationMs: number;
 }
 
-/** Injects deferred origins in the background. Returns when every origin is settled or aborted. */
-export async function runBackgroundInject(
-  opts: BackgroundInjectOptions,
+/** Runs the background phase on an already-connected client. Caller owns the WS lifecycle. */
+export async function runBackgroundInjectOnClient(
+  client: WsCDPClient,
+  opts: BackgroundCommonOptions,
 ): Promise<BackgroundInjectResult> {
   const started = Date.now();
   const helperCount = Math.max(1, opts.helperPages ?? 2);
   const perOriginTimeout = opts.perOriginTimeoutMs ?? 5_000;
-  const totalTimeout = opts.totalTimeoutMs ?? 60_000;
 
   const injected: string[] = [];
   const skipped: SkippedOrigin[] = [];
@@ -67,30 +72,11 @@ export async function runBackgroundInject(
     return { injected, skipped, durationMs: Date.now() - started };
   }
 
-  if (opts.startDelayMs && opts.startDelayMs > 0) {
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        opts.signal?.removeEventListener("abort", onAbort);
-        resolve();
-      }, opts.startDelayMs);
-      const onAbort = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-      opts.signal?.addEventListener("abort", onAbort, { once: true });
-    });
-    if (opts.signal?.aborted) {
-      return { injected, skipped, durationMs: Date.now() - started };
-    }
-  }
-
-  const client = new WsCDPClient();
   let detachFulfill: (() => void) | null = null;
   const helperSessionIds = new Set<string>();
   let helpers: { targetId: string; sessionId: string }[] = [];
 
   try {
-    await client.connect(opts.providerWsUrl, totalTimeout);
     detachFulfill = installFetchFulfill(client, helperSessionIds);
     helpers = await openHelperPool(client, Math.min(helperCount, queue.length));
     for (const h of helpers) helperSessionIds.add(h.sessionId);
@@ -125,9 +111,41 @@ export async function runBackgroundInject(
   } finally {
     if (detachFulfill) detachFulfill();
     await closeHelperPages(client, helpers);
-    await client.close().catch(() => undefined);
   }
 
   return { injected, skipped, durationMs: Date.now() - started };
+}
+
+/** Opens its own WS to the provider, runs the background phase, then closes the WS. */
+export async function runBackgroundInject(
+  opts: BackgroundInjectOptions,
+): Promise<BackgroundInjectResult> {
+  const started = Date.now();
+  const totalTimeout = opts.totalTimeoutMs ?? 60_000;
+
+  if (opts.startDelayMs && opts.startDelayMs > 0) {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        opts.signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, opts.startDelayMs);
+      const onAbort = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      opts.signal?.addEventListener("abort", onAbort, { once: true });
+    });
+    if (opts.signal?.aborted) {
+      return { injected: [], skipped: [], durationMs: Date.now() - started };
+    }
+  }
+
+  const client = new WsCDPClient();
+  try {
+    await client.connect(opts.providerWsUrl, totalTimeout);
+    return await runBackgroundInjectOnClient(client, opts);
+  } finally {
+    await client.close().catch(() => undefined);
+  }
 }
 

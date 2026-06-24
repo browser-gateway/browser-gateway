@@ -35,68 +35,70 @@ export interface EagerInjectResult {
   durationMs: number;
 }
 
-/** Eagerly injects cookies and the top-K origins' localStorage over a transient CDP WS. */
-export async function injectStateEagerViaTransient(
-  providerWsUrl: string,
+/** Eagerly injects cookies and the top-K origins' localStorage on an already-connected client. */
+export async function injectStateEager(
+  client: WsCDPClient,
   profile: CapturedProfile,
-  opts: EagerInjectOptions = {},
-): Promise<EagerInjectResult> {
-  return withDeadline(
-    injectStateEagerInner(providerWsUrl, profile, opts),
-    opts.totalTimeoutMs ?? 10_000,
-    "injectStateEagerViaTransient",
-  );
-}
-
-async function injectStateEagerInner(
-  providerWsUrl: string,
-  profile: CapturedProfile,
-  opts: EagerInjectOptions,
+  opts: Omit<EagerInjectOptions, "totalTimeoutMs"> = {},
 ): Promise<EagerInjectResult> {
   const started = Date.now();
   const helperCount = Math.max(1, opts.helperPages ?? 4);
   const limit = Math.max(0, opts.eagerOriginLimit ?? 20);
   const perOriginTimeout = opts.perOriginTimeoutMs ?? 5_000;
-  const totalTimeout = opts.totalTimeoutMs ?? 10_000;
   const signal = opts.signal;
 
-  const client = new WsCDPClient();
-  try {
-    await client.connect(providerWsUrl, totalTimeout);
+  const cookiesSet = await injectCookies(client, profile.cookies);
 
-    const cookiesSet = await injectCookies(client, profile.cookies);
+  const ranked = rankOrigins(profile.storage);
+  const eagerOrigins = ranked.slice(0, limit);
+  const deferred = ranked.slice(limit);
 
-    const ranked = rankOrigins(profile.storage);
-    const eagerOrigins = ranked.slice(0, limit);
-    const deferred = ranked.slice(limit);
-
-    if (eagerOrigins.length === 0) {
-      return {
-        cookiesSet,
-        originsInjected: [],
-        originsDeferred: deferred,
-        skippedOrigins: [],
-        durationMs: Date.now() - started,
-      };
-    }
-
-    const { injected, skipped } = await injectEagerOrigins(
-      client,
-      eagerOrigins,
-      profile.storage,
-      { helperCount, perOriginTimeout, signal },
-    );
-
+  if (eagerOrigins.length === 0) {
     return {
       cookiesSet,
-      originsInjected: injected,
+      originsInjected: [],
       originsDeferred: deferred,
-      skippedOrigins: skipped,
+      skippedOrigins: [],
       durationMs: Date.now() - started,
     };
-  } finally {
-    await client.close().catch(() => undefined);
   }
+
+  const { injected, skipped } = await injectEagerOrigins(
+    client,
+    eagerOrigins,
+    profile.storage,
+    { helperCount, perOriginTimeout, signal },
+  );
+
+  return {
+    cookiesSet,
+    originsInjected: injected,
+    originsDeferred: deferred,
+    skippedOrigins: skipped,
+    durationMs: Date.now() - started,
+  };
+}
+
+/** Opens a fresh WS to the provider, runs the eager inject, then closes the WS. */
+export async function injectStateEagerViaTransient(
+  providerWsUrl: string,
+  profile: CapturedProfile,
+  opts: EagerInjectOptions = {},
+): Promise<EagerInjectResult> {
+  const totalTimeout = opts.totalTimeoutMs ?? 10_000;
+  return withDeadline(
+    (async () => {
+      const client = new WsCDPClient();
+      try {
+        await client.connect(providerWsUrl, totalTimeout);
+        return await injectStateEager(client, profile, opts);
+      } finally {
+        await client.close().catch(() => undefined);
+      }
+    })(),
+    totalTimeout,
+    "injectStateEagerViaTransient",
+  );
 }
 
 async function injectCookies(client: WsCDPClient, cookies: CdpCookie[]): Promise<number> {

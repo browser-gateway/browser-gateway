@@ -1,11 +1,13 @@
 import type { Logger } from "pino";
 import {
   PROFILE_VERSION,
+  captureFullStateOnClient,
   captureFullStateViaTransient,
   decodeBlob,
   decodeBlobHeader,
   encodeBlob,
   enforceProfileLimits,
+  injectStateEager,
   injectStateEagerViaTransient,
   PROFILE_ID_REGEX,
   type CapturedProfile,
@@ -13,6 +15,7 @@ import {
   type OriginStorage,
   type ProfileLimits,
 } from "../../core/profile/index.js";
+import type { WsCDPClient } from "../../core/profile/cdp-client.js";
 import type { LockToken, ProfileStore } from "../../core/profile/store.js";
 
 export interface LifecycleOptions {
@@ -129,10 +132,17 @@ export class ProfileLifecycle {
     }
   }
 
-  /** Injects cookies plus eager top-K localStorage; deferred origins are returned to the caller. */
+  /**
+   * Injects cookies plus eager top-K localStorage; deferred origins are returned to the caller.
+   *
+   * If `client` is provided, the inject reuses that already-connected WS so the caller can
+   * also pass it to the background phase and to commit() — one WS for the whole session.
+   * Without `client`, a transient WS is opened and closed for this call only.
+   */
   async inject(
     acquired: AcquiredProfile,
     providerWsUrl: string,
+    client?: WsCDPClient,
   ): Promise<{ injected: number; originsInjected: string[]; originsDeferred: string[] }> {
     if (acquired.cookies.length === 0 && Object.keys(acquired.storage).length === 0) {
       return { injected: 0, originsInjected: [], originsDeferred: [] };
@@ -141,19 +151,23 @@ export class ProfileLifecycle {
     const eagerOriginLimit = this.opts.eagerOriginLimit ?? 20;
     const helperPages = this.opts.helperPages ?? 4;
 
+    const profile: CapturedProfile = {
+      version: PROFILE_VERSION,
+      capturedAt: new Date().toISOString(),
+      cookies: acquired.cookies,
+      storage: acquired.storage,
+      meta: { capturedOrigins: [], skippedOrigins: [], durationMs: 0 },
+    };
+
     let result;
     try {
-      result = await injectStateEagerViaTransient(
-        providerWsUrl,
-        {
-          version: PROFILE_VERSION,
-          capturedAt: new Date().toISOString(),
-          cookies: acquired.cookies,
-          storage: acquired.storage,
-          meta: { capturedOrigins: [], skippedOrigins: [], durationMs: 0 },
-        },
-        { eagerOriginLimit, helperPages, totalTimeoutMs: cdpTimeoutMs },
-      );
+      result = client
+        ? await injectStateEager(client, profile, { eagerOriginLimit, helperPages })
+        : await injectStateEagerViaTransient(providerWsUrl, profile, {
+            eagerOriginLimit,
+            helperPages,
+            totalTimeoutMs: cdpTimeoutMs,
+          });
     } catch (err) {
       throw new LifecycleError(
         "INJECT_FAILED",
@@ -178,24 +192,36 @@ export class ProfileLifecycle {
     };
   }
 
-  /** Captures latest state, encrypts, persists, and releases the lock. Errors are swallowed. */
-  async commit(acquired: AcquiredProfile, providerWsUrl: string): Promise<void> {
-    const promise = this.runCommit(acquired, providerWsUrl);
+  /**
+   * Captures latest state, encrypts, persists, and releases the lock. Errors are swallowed.
+   *
+   * If `client` is provided, capture reuses that already-connected WS — pair this with
+   * inject(acquired, url, client) and the background phase so the entire profile session
+   * runs on one WS connection per provider.
+   */
+  async commit(acquired: AcquiredProfile, providerWsUrl: string, client?: WsCDPClient): Promise<void> {
+    const promise = this.runCommit(acquired, providerWsUrl, client);
     this.pendingCommits.add(promise);
     promise.finally(() => this.pendingCommits.delete(promise));
     return promise;
   }
 
-  private async runCommit(acquired: AcquiredProfile, providerWsUrl: string): Promise<void> {
+  private async runCommit(acquired: AcquiredProfile, providerWsUrl: string, client?: WsCDPClient): Promise<void> {
     const commitTimeoutMs = this.opts.commitTimeoutMs ?? this.opts.cdpTimeoutMs ?? 10_000;
     const helperPages = this.opts.helperPages ?? 4;
 
     try {
-      const captureResult = await captureFullStateViaTransient(
-        providerWsUrl,
-        Object.keys(acquired.storage),
-        { helperPages, totalTimeoutMs: commitTimeoutMs, includeCookieDerivedOrigins: true },
-      );
+      const captureResult = client
+        ? await captureFullStateOnClient(
+            client,
+            Object.keys(acquired.storage),
+            { helperPages, includeCookieDerivedOrigins: true },
+          )
+        : await captureFullStateViaTransient(
+            providerWsUrl,
+            Object.keys(acquired.storage),
+            { helperPages, totalTimeoutMs: commitTimeoutMs, includeCookieDerivedOrigins: true },
+          );
 
       const cookies = captureResult.cookies;
 

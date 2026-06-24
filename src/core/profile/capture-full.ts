@@ -46,7 +46,40 @@ const STORAGE_DUMP_EXPR = `
   })()
 `;
 
-/** Captures cookies and per-origin localStorage over a transient CDP WS. */
+/** Captures cookies and per-origin localStorage on an already-connected client. */
+export async function captureFullStateOnClient(
+  client: WsCDPClient,
+  originsToCapture: string[],
+  opts: Omit<CaptureFullOptions, "totalTimeoutMs"> = {},
+): Promise<CaptureFullResult> {
+  const started = Date.now();
+  const helperCount = Math.max(1, opts.helperPages ?? 4);
+  const perOriginTimeout = opts.perOriginTimeoutMs ?? 5_000;
+  const signal = opts.signal;
+
+  const cookieResp = (await client.send("Storage.getCookies")) as GetAllCookiesResponse | null;
+  const cookies: CdpCookie[] = cookieResp?.cookies ?? [];
+
+  let originSet = originsToCapture;
+  if (opts.includeCookieDerivedOrigins) {
+    const cookieOrigins = originsFromCookies(cookies);
+    originSet = Array.from(new Set([...originsToCapture, ...cookieOrigins]));
+  }
+
+  if (originSet.length === 0) {
+    return { cookies, storage: {}, skippedOrigins: [], durationMs: Date.now() - started };
+  }
+
+  const { storage, skipped } = await captureOrigins(client, originSet, {
+    helperCount,
+    perOriginTimeout,
+    signal,
+  });
+
+  return { cookies, storage, skippedOrigins: skipped, durationMs: Date.now() - started };
+}
+
+/** Opens its own WS to the provider, captures, then closes the WS. */
 export async function captureFullStateViaTransient(
   providerWsUrl: string,
   originsToCapture: string[],
@@ -54,50 +87,18 @@ export async function captureFullStateViaTransient(
 ): Promise<CaptureFullResult> {
   const totalTimeout = opts.totalTimeoutMs ?? 30_000;
   return withDeadline(
-    captureFullStateInner(providerWsUrl, originsToCapture, opts),
+    (async () => {
+      const client = new WsCDPClient();
+      try {
+        await client.connect(providerWsUrl, totalTimeout);
+        return await captureFullStateOnClient(client, originsToCapture, opts);
+      } finally {
+        await client.close().catch(() => undefined);
+      }
+    })(),
     totalTimeout,
     "captureFullStateViaTransient",
   );
-}
-
-async function captureFullStateInner(
-  providerWsUrl: string,
-  originsToCapture: string[],
-  opts: CaptureFullOptions,
-): Promise<CaptureFullResult> {
-  const started = Date.now();
-  const helperCount = Math.max(1, opts.helperPages ?? 4);
-  const perOriginTimeout = opts.perOriginTimeoutMs ?? 5_000;
-  const totalTimeout = opts.totalTimeoutMs ?? 30_000;
-  const signal = opts.signal;
-
-  const client = new WsCDPClient();
-  try {
-    await client.connect(providerWsUrl, totalTimeout);
-
-    const cookieResp = (await client.send("Storage.getCookies")) as GetAllCookiesResponse | null;
-    const cookies: CdpCookie[] = cookieResp?.cookies ?? [];
-
-    let originSet = originsToCapture;
-    if (opts.includeCookieDerivedOrigins) {
-      const cookieOrigins = originsFromCookies(cookies);
-      originSet = Array.from(new Set([...originsToCapture, ...cookieOrigins]));
-    }
-
-    if (originSet.length === 0) {
-      return { cookies, storage: {}, skippedOrigins: [], durationMs: Date.now() - started };
-    }
-
-    const { storage, skipped } = await captureOrigins(client, originSet, {
-      helperCount,
-      perOriginTimeout,
-      signal,
-    });
-
-    return { cookies, storage, skippedOrigins: skipped, durationMs: Date.now() - started };
-  } finally {
-    await client.close().catch(() => undefined);
-  }
 }
 
 async function captureOrigins(

@@ -7,7 +7,8 @@ import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import { resolveWsUrl } from "../../core/providers/cdp.js";
 import { LifecycleError, type ProfileLifecycle, type AcquiredProfile } from "../profile/lifecycle.js";
-import { runBackgroundInject } from "../../core/profile/index.js";
+import { runBackgroundInjectOnClient } from "../../core/profile/index.js";
+import { WsCDPClient } from "../../core/profile/cdp-client.js";
 import { ScreencastBridge } from "./screencast-bridge.js";
 import { installLazyHydration } from "./lazy-hydration.js";
 
@@ -147,19 +148,35 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         logger,
       });
 
+      // Shared CDP client used by inject + background + commit. One WS per
+      // profile session keeps cost to a single billable slot on hosted providers
+      // and avoids re-opening on every phase.
+      let profileClient: WsCDPClient | null = null;
+      const ensureProfileClient = async (): Promise<WsCDPClient> => {
+        if (profileClient) return profileClient;
+        const c = new WsCDPClient();
+        await c.connect(providerWsUrl);
+        profileClient = c;
+        return c;
+      };
+
       let cleanupRan = false;
       const cleanup = async () => {
         if (cleanupRan) return;
         cleanupRan = true;
         if (acquired && profileLifecycle) {
           try {
-            await profileLifecycle.commit(acquired, providerWsUrl);
+            await profileLifecycle.commit(acquired, providerWsUrl, profileClient ?? undefined);
           } catch (err) {
             logger.warn(
               { profileId, error: err instanceof Error ? err.message : String(err) },
               "live: profile commit failed (state preserved)",
             );
           }
+        }
+        if (profileClient) {
+          await profileClient.close().catch(() => undefined);
+          profileClient = null;
         }
       };
       ws.on("close", () => { void cleanup(); });
@@ -171,7 +188,8 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       try {
         await bridge.setup();
         if (acquired && profileLifecycle) {
-          const result = await profileLifecycle.inject(acquired, providerWsUrl);
+          const sharedClient = await ensureProfileClient();
+          const result = await profileLifecycle.inject(acquired, providerWsUrl, sharedClient);
           for (const o of result.originsInjected) alreadyInjected.add(o);
 
           const session = bridge.getCdpAndSession();
@@ -184,10 +202,9 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
               logger,
             });
 
-            void runBackgroundInject({
+            void runBackgroundInjectOnClient(sharedClient, {
               origins: result.originsDeferred,
               storage: acquired.storage,
-              providerWsUrl,
               alreadyInjected,
               signal: backgroundAbort.signal,
             })
@@ -229,6 +246,11 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
           // ignore
         }
         bridge.close();
+        const pc = profileClient as WsCDPClient | null;
+        if (pc) {
+          await pc.close().catch(() => {});
+          profileClient = null;
+        }
         if (acquired && profileLifecycle) {
           await profileLifecycle.release(acquired).catch(() => {});
           acquired = null;
