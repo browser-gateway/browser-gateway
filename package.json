@@ -1,6 +1,6 @@
 {
   "name": "browser-gateway",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Reliable, scalable browser infrastructure for AI agents.",
   "mcpName": "io.github.browser-gateway/browser-gateway",
   "keywords": [
