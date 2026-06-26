@@ -18,6 +18,30 @@ Your app connects to `ws://gateway:9500/v1/connect`. The gateway picks the best 
 
 ---
 
+## Dashboard
+
+A full local dashboard ships with every install. Status, connection endpoint, REST tools, and a live remote-browser playground. Open `http://localhost:9500/web` after starting the gateway.
+
+**Overview.** Active sessions, queue depth, provider health, connection endpoint, and a copy-paste quickstart for Puppeteer, Playwright, Stagehand, browser-use, and raw CDP.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/overview.png" alt="Dashboard overview page showing active sessions, queue depth, provider health, masked connection endpoint, and a tabbed quickstart with Puppeteer code" width="860" />
+</p>
+
+**REST API.** Run screenshot, content extraction, and structured scraping endpoints from a form-driven UI, with profile selection and parameter reference inline.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/api.png" alt="REST API page in the dashboard with three tabs (screenshot, content, scrape) and a form to capture a screenshot of a target URL with format and profile options" width="860" />
+</p>
+
+**Playground.** Drive any provider live from the browser. Pick a provider and profile, type into the canvas as if it were a local browser, and watch the remote session in real time.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/playground.jpg" alt="Live playground page streaming a remote Chrome session showing yahoo.com loaded inside the dashboard canvas" width="860" />
+</p>
+
+---
+
 ## Core Features
 
 ### Routing & Reliability
