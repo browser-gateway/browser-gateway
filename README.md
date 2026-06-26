@@ -33,7 +33,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/routing.gif" alt="browser-gateway routes traffic across multiple browser providers, filling them by priority and failing over when one is saturated" width="720" />
+  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/routing.gif" alt="browser-gateway routes traffic across multiple browser providers, filling them by priority and failing over when one is saturated" width="480" />
 </p>
 
 ---
