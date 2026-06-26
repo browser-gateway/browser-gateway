@@ -1,0 +1,10 @@
+# hadolint configuration for the production Dockerfile.
+#
+# DL3008 — "pin versions in apt get install"
+# Intentionally ignored. Debian package versions drift between base-image
+# rebuilds (security patches, point releases), so pinning to a specific apt
+# version breaks the build every time upstream updates. n8n, Browserless,
+# and most Node OSS projects make the same call.
+
+ignored:
+  - DL3008
