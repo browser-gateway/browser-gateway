@@ -1,16 +1,44 @@
-# browser-gateway
+<p align="center">
+  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/logo.png" alt="browser-gateway" width="120" />
+</p>
 
-**Reliable, scalable browser infrastructure for AI agents and automation.**
+<h1 align="center">browser-gateway</h1>
 
-Route, pool, and failover across any browser provider. Built-in MCP server for AI agents.
+<p align="center">
+  <strong>Reliable browser infrastructure for AI agents and automation.</strong>
+  <br />
+  Route, pool, and failover across any provider. Built-in REST API, MCP server, and live dashboard.
+</p>
 
----
+<p align="center">
+  <a href="https://www.npmjs.com/package/browser-gateway"><img src="https://img.shields.io/npm/v/browser-gateway?color=111&labelColor=111&style=flat-square" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/browser-gateway"><img src="https://img.shields.io/npm/dm/browser-gateway?color=111&labelColor=111&style=flat-square&label=downloads" alt="npm downloads" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/npm/l/browser-gateway?color=111&labelColor=111&style=flat-square" alt="MIT license" /></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/browser-gateway?color=111&labelColor=111&style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js" /></a>
+  <a href="https://github.com/browser-gateway/browser-gateway"><img src="https://img.shields.io/github/stars/browser-gateway/browser-gateway?color=111&labelColor=111&style=flat-square&logo=github&logoColor=white" alt="GitHub stars" /></a>
+</p>
 
-## What It Does
+<p align="center">
+  <a href="https://browsergateway.com">Website</a>
+  &nbsp;·&nbsp;
+  <a href="./docs/getting-started.md">Quick start</a>
+  &nbsp;·&nbsp;
+  <a href="./docs/mcp.md">MCP</a>
+  &nbsp;·&nbsp;
+  <a href="./docs/profiles.md">Profiles</a>
+  &nbsp;·&nbsp;
+  <a href="./docs/rest-api.md">REST API</a>
+  &nbsp;·&nbsp;
+  <a href="./docs/dashboard.md">Dashboard</a>
+</p>
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/routing.gif" alt="browser-gateway routes traffic across multiple browser providers, filling them by priority and failing over when one is saturated" width="720" />
 </p>
+
+---
+
+## Overview
 
 One endpoint. Multiple providers. Automatic failover when one is saturated or goes down.
 
@@ -20,7 +48,7 @@ Your app connects to `ws://gateway:9500/v1/connect`. The gateway picks the best 
 
 ## Dashboard
 
-A full local dashboard ships with every install. Status, connection endpoint, REST tools, and a live remote-browser playground. Open `http://localhost:9500/web` after starting the gateway.
+A web dashboard ships with every install. Open `http://localhost:9500/web` after starting the gateway.
 
 **Overview.** Active sessions, queue depth, provider health, connection endpoint, and a copy-paste quickstart for Puppeteer, Playwright, Stagehand, browser-use, and raw CDP.
 
@@ -42,55 +70,55 @@ A full local dashboard ships with every install. Status, connection endpoint, RE
 
 ---
 
-## Core Features
+## Features
 
-### Routing & Reliability
+### Routing & reliability
 
-- **Automatic Failover** - Provider down? Next one picks up instantly. Zero client changes.
-- **5 Load Balancing Strategies** - Priority chain, round-robin, least-connections, latency-optimized, weighted
-- **Per-Provider Concurrency Limits** - Set `maxConcurrent` per provider, gateway enforces it
-- **Request Queue** - All providers busy? Connections wait instead of failing
-- **Cooldown System** - Skip failing providers automatically, recover after TTL
-- **Health Checks** - Periodic connectivity probes detect unhealthy providers
-- **Graceful Shutdown** - Active sessions drain cleanly on SIGTERM/SIGINT
-- **Session Reconnect** - If a client drops, reconnect with the same session ID and the gateway routes you back to the same provider. The browser there is still alive (as long as the provider keeps it running), so cookies, localStorage, and page state are intact. Works best with raw Chrome and providers that don't kill the browser on disconnect.
-- **Webhooks** - Get notified when providers go down, recover, or queue overflows
+- **Automatic failover** - the next provider takes over the instant one fails, no client changes
+- **Five load-balancing strategies** - priority chain, round-robin, least-connections, latency-optimized, weighted
+- **Per-provider concurrency limits** - the gateway enforces `maxConcurrent` on every backend
+- **Request queue** - connections wait when every provider is saturated instead of failing immediately
+- **Cooldown** - failing providers are skipped and recover automatically after a TTL
+- **Health checks** - periodic connectivity probes mark providers unhealthy before clients hit them
+- **Graceful shutdown** - active sessions drain cleanly on SIGTERM and SIGINT
+- **Session reconnect** - dropped clients resume against the same provider with cookies and page state intact
+- **Webhooks** - fire on provider down, recover, and queue-overflow events
 
 ### REST API
 
-- **Screenshot** - `POST /v1/screenshot` — capture any page as PNG or JPEG
-- **Content Extraction** - `POST /v1/content` — get page content as markdown, text, HTML, or cleaned article
-- **Scrape** - `POST /v1/scrape` — extract data with CSS selectors or get full-page content
-- **Session Pool** - Browser connections are reused across requests (like a database connection pool)
-- **Auto-Retry** - Failed requests automatically retry with a fresh browser page
+- **Screenshot** - `POST /v1/screenshot` returns any URL as PNG or JPEG, full-page or scoped to a selector
+- **Content extraction** - `POST /v1/content` returns markdown, plain text, HTML, or a cleaned article
+- **Scrape** - `POST /v1/scrape` extracts structured data via CSS selectors or full-page formats
+- **Pooled sessions** - browser connections are reused across requests, like a database pool
+- **Automatic retry** - failed requests retry against a fresh page
 
-### Profiles — Persistent Browser State
+### Profiles — persistent browser state
 
-- **Survive Across Sessions** - Cookies, `localStorage`, `sessionStorage`, `IndexedDB` saved on disconnect, replayed on the next connect with the same id
-- **One-Line Opt-In** - Add `?profile=acme` to the WebSocket URL — the rest is automatic
-- **Encrypted At Rest** - AES-256-GCM with envelope encryption, anti-swap binding, scrypt-derived KEK
-- **Provider-Agnostic** - Works across any CDP provider (raw Chrome, Browserless, Steel, Browserbase, etc.) since state is captured at the protocol level
-- **Per-Profile Locking** - Concurrent connects to the same id are rejected cleanly with HTTP 409 to prevent corruption
-- **Export / Import** - Encrypted `.bgp` blobs are portable between gateway installs
-- **One-Click Enable** - Dashboard wizard generates a strong key in your browser and writes the config for you
+- **Survive across sessions** - cookies, `localStorage`, `sessionStorage`, and `IndexedDB` are captured on disconnect and replayed on the next connect with the same id
+- **One-line opt-in** - add `?profile=acme` to the WebSocket URL, the rest is automatic
+- **Encrypted at rest** - AES-256-GCM with envelope encryption, anti-swap binding, and a scrypt-derived KEK
+- **Provider-agnostic** - state is captured at the CDP level, so it replays against any provider
+- **Per-profile locking** - concurrent connects to the same id return HTTP 409 to prevent corruption
+- **Export and import** - encrypted `.bgp` blobs are portable between gateway installs
+- **One-click enable** - the dashboard wizard generates a strong key in your browser and writes it to config
 
 See [docs/profiles.md](docs/profiles.md) for the full guide, security model, REST endpoints, and limitations.
 
-### MCP Server for AI Agents
+### MCP server for AI agents
 
-- **8 Browser Tools** - navigate, snapshot, screenshot, viewport, interact, evaluate, close, status
-- **Zero Config** - Auto-detects Chrome, launches on first tool use
-- **Concurrent Sessions** - Multiple agents get separate browsers, no conflicts
-- **Raw CDP** - Lightweight, no Playwright or Puppeteer dependency
-- **Works with** Claude Code, Cursor, and any MCP-compatible client
+- **Eight browser tools** - navigate, snapshot, screenshot, viewport, interact, evaluate, close, status
+- **Zero config** - auto-detects Chrome and launches it on first tool use
+- **Concurrent sessions** - every agent gets its own browser, no shared state
+- **Raw CDP** - no Playwright or Puppeteer dependency
+- **Compatible** - Claude Code, Cursor, and any MCP-compatible client
 
 ### Management
 
-- **Web Dashboard** - Manage providers, view sessions, edit config from the browser
-- **Provider CRUD** - Add, edit, delete, and test providers from the dashboard or API
-- **Config Editor** - Edit gateway.yml with syntax highlighting and validation
-- **Auth** - Token-based with secure HttpOnly cookie for the dashboard
-- **Protocol Agnostic** - Works with Playwright, Puppeteer, any WebSocket protocol
+- **Dashboard** - manage providers, watch sessions, and edit config from the browser
+- **Provider CRUD** - add, edit, delete, and test providers from the dashboard or API
+- **Config editor** - edit `gateway.yml` in-browser with syntax highlighting and validation
+- **Auth** - token-based, with a secure HttpOnly cookie for the dashboard
+- **Protocol-agnostic** - works with Playwright, Puppeteer, and any WebSocket protocol
 
 ---
 
@@ -166,26 +194,9 @@ Add to your Claude Code or Cursor config:
 }
 ```
 
-No config files needed. The agent can now browse websites, take screenshots, fill forms, and extract data.
+No config files needed. The agent gets navigate, snapshot, screenshot, click, type, and evaluate tools through the gateway's routing layer.
 
-See the [MCP documentation](docs/mcp.md) for all options.
-
----
-
-## Dashboard
-
-Built-in web dashboard at `http://localhost:9500/web`. Served from the same port as the gateway.
-
-| Page | What You Can Do |
-|------|----------------|
-| **Overview** | Gateway health at a glance: active sessions, provider status, connection endpoint |
-| **Providers** | Add, edit, delete, and test browser providers. Changes write to gateway.yml |
-| **Sessions** | Live table of every active connection: provider, duration, message count |
-| **Config** | Edit gateway.yml in the browser with validation and automatic backups |
-
-If `BG_TOKEN` is set, the dashboard requires authentication via a secure HttpOnly cookie.
-
-See [Dashboard Guide](./docs/dashboard.md) for details.
+See [docs/mcp.md](./docs/mcp.md) for all options.
 
 ---
 
