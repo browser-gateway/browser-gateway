@@ -109,7 +109,10 @@ jobs:
       - name: Export per-platform digest
         run: |
           mkdir -p /tmp/digests
-          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+          digest="${{ steps.build.outputs.digest }}"
+          # Strip the sha256: prefix so the filename has no colon
+          # (artifact uploader rejects colons for NTFS compatibility).
+          touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@v4
@@ -156,9 +159,11 @@ jobs:
       - name: Create manifest list
         working-directory: /tmp/digests
         run: |
+          # Filenames are the digest hex (sha256: prefix stripped at upload),
+          # so re-add the prefix when building the @digest reference.
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@%s ' *)
+            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
 
       - name: Inspect merged digest
         id: inspect
