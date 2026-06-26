@@ -260,12 +260,55 @@ browser-gateway help                     # Show help
 
 ## Docker
 
+Recommended: Docker Compose. The bundled `docker-compose.yml` mounts a named volume for state and a read-only `gateway.yml` from the host.
+
+```bash
+# Drop your gateway.yml next to docker-compose.yml, then:
+docker compose up -d
+```
+
+Plain `docker run`:
+
 ```bash
 docker run -d \
   -p 9500:9500 \
+  -v bg_data:/data \
   -v ./gateway.yml:/app/gateway.yml:ro \
   -e PROVIDER_TOKEN=xxx \
   ghcr.io/browser-gateway/server:latest
+```
+
+### Persistence
+
+Everything the gateway writes to disk lives under a single directory, `BG_DATA_DIR` (defaults to `/data` inside the image). Mount that as a named volume or a bind mount and all state survives container restarts and image upgrades. Today it contains:
+
+- `profiles/` — encrypted profile blobs (when profiles are enabled)
+
+Future versions may add more subdirectories under the same root (cooldown state, session snapshots, captures). Mounting `BG_DATA_DIR` as one volume keeps every subsystem persistent without follow-up config changes.
+
+### Upgrades
+
+State lives in the volume, code lives in the image. Pull the new image, recreate the container — no data lost:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+The container reads the same `BG_DATA_DIR` and the same `gateway.yml`. Profile blobs are versioned and the gateway reads older formats transparently.
+
+### Image tags
+
+| Tag | Updated on |
+|---|---|
+| `:0.3.0`, `:0.3`, `:latest` | every release |
+| `:edge` | every commit to `main` (preview builds, not for production) |
+
+Images are multi-arch (`linux/amd64`, `linux/arm64`), signed with [Sigstore](https://www.sigstore.dev/) build provenance, and ship an SBOM. Verify with the [GitHub CLI](https://cli.github.com/):
+
+```bash
+gh attestation verify oci://ghcr.io/browser-gateway/server:0.3.0 \
+  --repo browser-gateway/browser-gateway
 ```
 
 ---

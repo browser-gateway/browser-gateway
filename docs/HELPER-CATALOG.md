@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-06-24
+Generated: 2026-06-26
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -291,6 +291,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type ProfileBootstrapResult` (line 22)
 - **class** `class ProfileBootstrapError` (line 24)
 - **fn** `bootstrapProfiles(config: ProfilesConfig, logger: Logger) → Promise<ProfileBootstrapResult>` (line 42) — Bootstrap the profile subsystem from gateway config.
+- **fn** `resolveStorePath(configPath: string) → string` (line 119) — Resolve the profile store path with `BG_DATA_DIR` env override.
 ### `src/server/profile/filesystem-store.ts`
 
 - **interface** `interface FilesystemStoreOptions` (line 24)

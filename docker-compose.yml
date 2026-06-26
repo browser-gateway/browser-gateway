@@ -1,0 +1,39 @@
+# browser-gateway — canonical Docker Compose setup.
+#
+# Persists state to a named volume so `docker compose pull && docker compose up -d`
+# upgrades the gateway in place without losing profiles, config, or other state.
+#
+# Override defaults with a .env file in the same directory:
+#   BG_TOKEN=...           — gateway auth token (recommended)
+#   BG_ENCRYPTION_KEY=...  — required if profiles.enabled: true
+#   PROVIDER_TOKEN=...     — provider tokens referenced from gateway.yml
+
+services:
+  gateway:
+    image: ghcr.io/browser-gateway/server:latest
+    container_name: browser-gateway
+    restart: unless-stopped
+    ports:
+      - "9500:9500"
+    environment:
+      BG_TOKEN: ${BG_TOKEN:-}
+      BG_ENCRYPTION_KEY: ${BG_ENCRYPTION_KEY:-}
+      PROVIDER_TOKEN: ${PROVIDER_TOKEN:-}
+      # BG_DATA_DIR defaults to /data inside the image. Change here if you
+      # need to remap (e.g. some PaaS hosts force a specific mount path).
+      # BG_DATA_DIR: /data
+    volumes:
+      # Persistent state. Everything the gateway writes (profiles, future
+      # subsystems) lives under this single mount, so upgrades preserve it all.
+      - bg_data:/data
+      # Read-only config. Edit on the host, restart the container to apply.
+      - ./gateway.yml:/app/gateway.yml:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:9500/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  bg_data:

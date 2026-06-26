@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import type { Logger } from "pino";
 import type { ProfilesConfig } from "../../core/types.js";
 import { FilesystemProfileStore } from "./filesystem-store.js";
@@ -57,7 +57,7 @@ export async function bootstrapProfiles(
     );
   }
 
-  const storePath = resolve(config.filesystem.path);
+  const storePath = resolveStorePath(config.filesystem.path);
   if (!existsSync(storePath)) {
     mkdirSync(storePath, { recursive: true, mode: 0o700 });
   }
@@ -107,4 +107,17 @@ export async function bootstrapProfiles(
     dekByVersion: opened.dekByVersion,
     currentDekVersion: opened.currentDekVersion,
   };
+}
+
+/**
+ * Resolve the profile store path with `BG_DATA_DIR` env override.
+ *
+ * Absolute config paths win (operator knows what they want). Relative paths
+ * are joined under `BG_DATA_DIR` if set, otherwise resolved against CWD —
+ * preserves the v0.2.x behavior for non-Docker users.
+ */
+export function resolveStorePath(configPath: string): string {
+  if (isAbsolute(configPath)) return configPath;
+  const baseDir = process.env.BG_DATA_DIR;
+  return baseDir ? resolve(baseDir, configPath) : resolve(configPath);
 }
