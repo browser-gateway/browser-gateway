@@ -8,26 +8,11 @@ Route, pool, and failover across any browser provider. Built-in MCP server for A
 
 ## What It Does
 
-```
-                         ┌─────────────────────┐
-                         │   browser-gateway    │
-                         │                      │
-                         │  routing / failover  │
-                         │  load balancing      │
-                         │  health monitoring   │
-                         │  request queuing     │
-                         └──────────┬───────────┘
-                                    │
-                 ┌──────────────────┼──────────────────┐
-                 │                  │                   │
-          ┌──────┴──────┐   ┌──────┴──────┐   ┌───────┴──────┐
-          │ Provider A  │   │ Provider B  │   │ Provider C   │
-          │ Cloud CDP   │   │ Playwright  │   │ Local Chrome │
-          │ priority: 1 │   │ Docker :4000│   │ Docker :9222 │
-          └─────────────┘   └─────────────┘   └──────────────┘
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/routing.gif" alt="browser-gateway routes traffic across multiple browser providers, filling them by priority and failing over when one is saturated" width="720" />
+</p>
 
-One endpoint. Multiple providers. Automatic failover if one goes down.
+One endpoint. Multiple providers. Automatic failover when one is saturated or goes down.
 
 Your app connects to `ws://gateway:9500/v1/connect`. The gateway picks the best available provider based on health, capacity, and your routing strategy. Providers can be cloud CDP services, Docker containers, or local Chrome instances.
 
