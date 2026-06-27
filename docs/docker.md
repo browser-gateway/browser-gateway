@@ -64,8 +64,15 @@ Secrets in the config use `${ENV_VAR}` references. Pass the actual values as env
 | Variable | Description |
 |----------|-------------|
 | `BG_TOKEN` | Auth token for gateway access |
-| `BG_PORT` | Server port (default: 9500) |
-| `BG_CONFIG_PATH` | Path to config file (default: ./gateway.yml) |
+| `BG_ENCRYPTION_KEY` | Profile encryption key. Auto-generated and persisted at `/data/.encryption-key` if unset. Override for centralized key management (Vault, AWS Secrets Manager). |
+| `BG_DATA_DIR` | Where the gateway stores config, profiles, and the encryption key. Default `/data`. |
+| `BG_CONFIG_PATH` | Path to gateway.yml. Default `$BG_DATA_DIR/gateway.yml`. |
+| `BG_ALLOWED_ORIGINS` | Comma-separated CORS allowlist. Default: same-origin only. |
+| `PORT` | Server port. Default 9500. 12-factor convention used by Railway, Render, Fly, Heroku. |
+| `HOST` | Bind interface. Default `0.0.0.0`. |
+| `LOG_LEVEL` | `debug` / `info` / `warn` / `error`. Overrides `gateway.yml`. |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` | Outbound proxy. Honored by Node's built-in fetch. |
+| `TZ` | Timezone for log timestamps. |
 
 ## Networking
 

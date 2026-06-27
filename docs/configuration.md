@@ -138,7 +138,7 @@ Supports defaults with `${VAR:-default}`:
 
 ```yaml
 gateway:
-  port: ${BG_PORT:-9500}
+  port: ${PORT:-9500}
 ```
 
 Secrets should ALWAYS use env vars. Never put actual tokens in the config file.
@@ -149,9 +149,16 @@ These environment variables can be set alongside or instead of a config file:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `BG_PORT` | Server port | 9500 |
 | `BG_TOKEN` | Auth token (if set, all connections require it) | None (no auth) |
-| `BG_CONFIG_PATH` | Path to config file | `./gateway.yml` |
+| `BG_ENCRYPTION_KEY` | Profile encryption key (auto-generated under `$BG_DATA_DIR/.encryption-key` if unset) | Auto |
+| `BG_DATA_DIR` | Where the gateway stores config, profiles, and the encryption key | `/data` (Docker), `~/.browser-gateway` (otherwise) |
+| `BG_CONFIG_PATH` | Path to gateway.yml | `$BG_DATA_DIR/gateway.yml` |
+| `BG_ALLOWED_ORIGINS` | Cross-origin allowlist (comma-separated) | Same-origin only |
+| `PORT` | Server port (12-factor convention used by Railway, Render, Fly, Heroku) | 9500 |
+| `HOST` | Bind interface (set `127.0.0.1` for loopback-only) | `0.0.0.0` |
+| `LOG_LEVEL` | `debug` / `info` / `warn` / `error` (overrides `gateway.yml`) | `info` |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` | Outbound proxy (honored by Node's built-in fetch) | None |
+| `TZ` | Timezone for log timestamps | System default |
 
 ### .env File
 

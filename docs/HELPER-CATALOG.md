@@ -373,7 +373,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `resolveEncryptionKey(logger?: Logger) → ResolvedEncryptionKey` (line 34) — Resolve the gateway's profile-encryption key. Chain:
 ### `src/server/setup/port.ts`
 
-- **fn** `resolvePort(cliOverride: string | undefined) → number | undefined` (line 14) — Resolve the HTTP listen port from the available sources in precedence order:
+- **fn** `resolvePort(cliOverride: string | undefined) → number | undefined` (line 11) — Resolve the HTTP listen port. Precedence:
+- **fn** `resolveHost() → string` (line 23) — Resolve the bind interface. Default `0.0.0.0` (reachable on any iface).
 ### `src/server/setup/profiles-setup.ts`
 
 - **interface** `interface EnableProfilesInput` (line 10)

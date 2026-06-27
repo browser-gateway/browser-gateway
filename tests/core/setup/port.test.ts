@@ -1,36 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resolvePort } from "../../../src/server/setup/port.js";
+import { resolvePort, resolveHost } from "../../../src/server/setup/port.js";
 
-let prevBg: string | undefined;
 let prevPort: string | undefined;
+let prevHost: string | undefined;
 
 beforeEach(() => {
-  prevBg = process.env.BG_PORT;
   prevPort = process.env.PORT;
-  delete process.env.BG_PORT;
+  prevHost = process.env.HOST;
   delete process.env.PORT;
+  delete process.env.HOST;
 });
 afterEach(() => {
-  if (prevBg === undefined) delete process.env.BG_PORT;
-  else process.env.BG_PORT = prevBg;
   if (prevPort === undefined) delete process.env.PORT;
   else process.env.PORT = prevPort;
+  if (prevHost === undefined) delete process.env.HOST;
+  else process.env.HOST = prevHost;
 });
 
 describe("resolvePort", () => {
-  it("CLI --port wins over env vars", () => {
-    process.env.BG_PORT = "8001";
+  it("CLI --port wins over PORT env", () => {
     process.env.PORT = "8002";
     expect(resolvePort("9000")).toBe(9000);
   });
 
-  it("BG_PORT wins over PORT (gateway-native wins over 12-factor)", () => {
-    process.env.BG_PORT = "8001";
-    process.env.PORT = "8002";
-    expect(resolvePort(undefined)).toBe(8001);
-  });
-
-  it("falls back to PORT when BG_PORT is unset (Railway/Render/Fly path)", () => {
+  it("falls back to PORT (Railway/Render/Fly/Heroku convention)", () => {
     process.env.PORT = "8002";
     expect(resolvePort(undefined)).toBe(8002);
   });
@@ -41,5 +34,21 @@ describe("resolvePort", () => {
 
   it("returns undefined for non-numeric input", () => {
     expect(resolvePort("not-a-number")).toBeUndefined();
+  });
+});
+
+describe("resolveHost", () => {
+  it("defaults to 0.0.0.0 (bind all interfaces)", () => {
+    expect(resolveHost()).toBe("0.0.0.0");
+  });
+
+  it("honors HOST env var (loopback-only setup)", () => {
+    process.env.HOST = "127.0.0.1";
+    expect(resolveHost()).toBe("127.0.0.1");
+  });
+
+  it("honors HOST for IPv6 loopback", () => {
+    process.env.HOST = "::1";
+    expect(resolveHost()).toBe("::1");
   });
 });

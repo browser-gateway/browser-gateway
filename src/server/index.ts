@@ -39,7 +39,7 @@ import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
 import { bootstrapProfiles, ProfileBootstrapError } from "./profile/bootstrap.js";
 import { resolveEncryptionKey } from "./setup/encryption-key.js";
-import { resolvePort } from "./setup/port.js";
+import { resolvePort, resolveHost } from "./setup/port.js";
 import { createMcpServer, createSessionManager } from "./mcp/server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -96,9 +96,18 @@ Options:
   -h, --help              Show help
 
 Environment:
-  BG_TOKEN           Auth token for gateway access (optional)
-  BG_PORT            Server port (also accepts PORT for Railway/Render/Fly/Heroku compatibility)
-  BG_CONFIG_PATH     Config file path
+  BG_TOKEN              Auth token for gateway access (optional)
+  BG_ENCRYPTION_KEY     Profile encryption key (auto-generated if unset)
+  BG_DATA_DIR           Data directory (default: /data in Docker, ~/.browser-gateway otherwise)
+  BG_CONFIG_PATH        gateway.yml location (default: $BG_DATA_DIR/gateway.yml)
+  BG_ALLOWED_ORIGINS    CORS allowlist (comma-separated; default: same-origin only)
+  PORT                  Server port (default: 9500). 12-factor convention.
+  HOST                  Bind interface (default: 0.0.0.0).
+  LOG_LEVEL             debug | info | warn | error (overrides gateway.yml)
+  HTTP_PROXY,
+  HTTPS_PROXY,
+  NO_PROXY              Honored by Node's built-in fetch for outbound calls
+  TZ                    Timezone for log timestamps (Node default)
 
 Examples:
   browser-gateway serve
@@ -134,7 +143,9 @@ async function startServer() {
   if (resolvedPort !== undefined) config.gateway.port = resolvedPort;
 
   const logger = pino({
-    level: config.logging.level,
+    // LOG_LEVEL env var (12-factor / pino convention) overrides gateway.yml.
+    // Sane for ops who want temporary verbosity without editing the config.
+    level: process.env.LOG_LEVEL ?? config.logging.level,
     redact: {
       // Defense in depth — anything matching these JSON paths is replaced with
       // "[REDACTED]" before serialization. None of the gateway's first-party
@@ -360,10 +371,11 @@ async function startServer() {
   const startTime = Date.now();
   gateway.start();
 
-  server.listen(config.gateway.port, async () => {
+  const bindHost = resolveHost();
+  server.listen(config.gateway.port, bindHost, async () => {
     // Structured single-line log for log aggregators
     logger.info(
-      { port: config.gateway.port, providers: gateway.registry.size() },
+      { port: config.gateway.port, host: bindHost, providers: gateway.registry.size() },
       `browser-gateway running on http://localhost:${config.gateway.port}`,
     );
 

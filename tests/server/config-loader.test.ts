@@ -141,8 +141,8 @@ describe("Config Loader - No config fallback", () => {
     expect(config.gateway.port).toBe(9500);
   });
 
-  it("should use BG_PORT from env when no config file", () => {
-    vi.stubEnv("BG_PORT", "8080");
+  it("should use PORT from env when no config file (12-factor convention)", () => {
+    vi.stubEnv("PORT", "8080");
 
     const config = loadConfig("/tmp/nonexistent-config.yml");
     expect(config.gateway.port).toBe(8080);

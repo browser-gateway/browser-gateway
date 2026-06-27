@@ -75,7 +75,7 @@ export async function setupLocalChrome(stderrLog?: (msg: string) => void, option
     try { chrome.kill(); } catch {}
   });
 
-  let gatewayPort = parseInt(process.env.BG_PORT ?? "9500", 10);
+  let gatewayPort = parseInt(process.env.PORT ?? "9500", 10);
   if (Number.isNaN(gatewayPort) || gatewayPort < 1 || gatewayPort > 65535) {
     gatewayPort = 9500;
   }

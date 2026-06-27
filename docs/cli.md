@@ -86,8 +86,15 @@ npx browser-gateway serve --config ./gateway.yml
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `BG_TOKEN` | Auth token for all connections | None (no auth) |
-| `BG_PORT` | Server port | 9500 |
-| `BG_CONFIG_PATH` | Path to config file | `./gateway.yml` |
+| `BG_ENCRYPTION_KEY` | Profile encryption key | Auto-generated under `$BG_DATA_DIR/.encryption-key` |
+| `BG_DATA_DIR` | Where the gateway stores config, profiles, encryption key | `/data` (Docker), `~/.browser-gateway` (otherwise) |
+| `BG_CONFIG_PATH` | Path to gateway.yml | `$BG_DATA_DIR/gateway.yml` |
+| `BG_ALLOWED_ORIGINS` | Cross-origin allowlist (comma-separated) | Same-origin only |
+| `PORT` | Server port (12-factor convention) | 9500 |
+| `HOST` | Bind interface | `0.0.0.0` |
+| `LOG_LEVEL` | `debug` / `info` / `warn` / `error` | From `gateway.yml` (default `info`) |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` | Outbound proxy (honored by Node fetch) | None |
+| `TZ` | Timezone for log timestamps | System default |
 
 ## Graceful Shutdown
 
