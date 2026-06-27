@@ -7,8 +7,11 @@ name: Publish to MCP Registry
 # a developer laptop.
 #
 # Flow after every npm publish:
-#   GitHub → Actions → "Publish to MCP Registry" → Run workflow
-#   → enter version (e.g. 0.3.3, no leading v) → Run
+#   GitHub → Actions → "Publish to MCP Registry" → Run workflow → Run
+#
+# The version comes from package.json on the default branch — no input
+# needed. The optional `version` input is only for backfill / explicit
+# override when you want to publish something other than what's on main.
 #
 # Background: planning/infrastructure/mcp-registry.md
 
@@ -16,8 +19,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish (matches the npm version, no leading 'v')"
-        required: true
+        description: "Override (leave blank to use the version in package.json)"
+        required: false
         type: string
       force:
         description: "Publish even if the version is already on the MCP registry"
@@ -40,16 +43,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Validate version input
+      - name: Resolve target version
         id: version
         run: |
-          VERSION="${{ inputs.version }}"
+          INPUT="${{ inputs.version }}"
+          if [ -n "$INPUT" ]; then
+            VERSION="$INPUT"
+            SOURCE="workflow input"
+          else
+            VERSION=$(jq -r .version package.json)
+            SOURCE="package.json"
+          fi
           if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
-            echo "::error::Version must be semver (X.Y.Z[-prerelease]); got: $VERSION"
+            echo "::error::Version must be semver (X.Y.Z[-prerelease]); got: $VERSION (from $SOURCE)"
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Publishing version: $VERSION"
+          echo "::notice::Publishing version $VERSION (resolved from $SOURCE)"
 
       - name: Version check — skip if already on registry
         id: skip_check
