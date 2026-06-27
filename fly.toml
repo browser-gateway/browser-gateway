@@ -1,0 +1,51 @@
+# Fly.io app configuration — https://fly.io/docs/reference/configuration/
+#
+# Deploy in three commands:
+#
+#   fly launch --copy-config --image ghcr.io/browser-gateway/server:latest
+#   fly volumes create bg_data --size 1 --region <your-region>
+#   fly secrets set \
+#     BG_TOKEN="$(openssl rand -base64 32)" \
+#     BG_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+#
+# `fly launch` auto-detects this file. The volume and secrets steps are
+# Fly-specific — secrets live in an encrypted vault and cannot be declared
+# inline in fly.toml.
+
+app = "browser-gateway"
+primary_region = "iad"
+
+[build]
+  image = "ghcr.io/browser-gateway/server:latest"
+
+[env]
+  BG_DATA_DIR = "/data"
+
+[http_service]
+  internal_port = 9500
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 200
+    soft_limit = 100
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "get"
+    path = "/health"
+    protocol = "http"
+    timeout = "5s"
+
+[[mounts]]
+  source = "bg_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

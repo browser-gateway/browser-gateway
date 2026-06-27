@@ -1,0 +1,36 @@
+# DigitalOcean App Platform — https://docs.digitalocean.com/products/app-platform/reference/app-spec/
+#
+# One-click deploy:
+#   https://cloud.digitalocean.com/apps/new?repo=https://github.com/browser-gateway/browser-gateway/tree/main
+#
+# IMPORTANT: App Platform has no persistent volumes (filesystem is wiped on
+# every redeploy). The gateway works fine for routing, REST API, MCP, and the
+# dashboard, but profiles will not persist across deploys on this platform.
+# Disable profiles in the dashboard (or leave them off in gateway.yml).
+
+spec:
+  name: browser-gateway
+  region: nyc
+  services:
+    - name: gateway
+      image:
+        registry_type: GHCR
+        registry: ghcr.io
+        repository: browser-gateway/server
+        tag: latest
+      http_port: 9500
+      instance_count: 1
+      instance_size_slug: apps-s-1vcpu-1gb
+      health_check:
+        http_path: /health
+        initial_delay_seconds: 10
+        period_seconds: 30
+        timeout_seconds: 5
+        failure_threshold: 3
+      envs:
+        - key: BG_TOKEN
+          scope: RUN_TIME
+          type: SECRET
+        - key: BG_ENCRYPTION_KEY
+          scope: RUN_TIME
+          type: SECRET

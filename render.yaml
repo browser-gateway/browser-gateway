@@ -1,0 +1,37 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# One-click deploy:
+#   https://render.com/deploy?repo=https://github.com/browser-gateway/browser-gateway
+#
+# Render reads this file on first deploy, pulls the signed image from GHCR,
+# provisions a 1 GB persistent disk at /data, auto-generates BG_ENCRYPTION_KEY,
+# and prompts you for BG_TOKEN. No CLI step needed.
+
+services:
+  - type: web
+    name: browser-gateway
+    runtime: image
+    plan: standard
+    region: oregon
+    autoDeploy: false
+    image:
+      url: ghcr.io/browser-gateway/server:latest
+    healthCheckPath: /health
+    envVars:
+      # Auth token for the gateway + dashboard. You'll be prompted for this
+      # on first deploy. Generate locally with: openssl rand -base64 32
+      - key: BG_TOKEN
+        sync: false
+      # 256-bit profile encryption key. Render auto-mints this — you never
+      # see it, it never leaves the platform. Required if you want to use
+      # profiles; ignored otherwise.
+      - key: BG_ENCRYPTION_KEY
+        generateValue: true
+      # Persistent data directory. Profiles and any future stateful subsystem
+      # live under this single path.
+      - key: BG_DATA_DIR
+        value: /data
+    disk:
+      name: bg-data
+      mountPath: /data
+      sizeGB: 1
