@@ -19,6 +19,16 @@
 </p>
 
 <p align="center">
+  <a href="https://railway.com/new/template/browser-gateway?utm_medium=integration&amp;utm_source=button&amp;utm_campaign=browser-gateway"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a>
+  &nbsp;
+  <a href="https://render.com/deploy?repo=https://github.com/browser-gateway/browser-gateway"><img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy to Render" height="32" /></a>
+  &nbsp;
+  <a href="https://cloud.digitalocean.com/apps/new?repo=https://github.com/browser-gateway/browser-gateway/tree/main"><img src="https://www.deploytodo.com/do-btn-blue.svg" alt="Deploy to DigitalOcean" height="32" /></a>
+  &nbsp;
+  <a href="https://app.koyeb.com/deploy?type=docker&amp;name=browser-gateway&amp;image=ghcr.io/browser-gateway/server:latest&amp;ports=9500;http;/&amp;env%5BBG_DATA_DIR%5D=/data"><img src="https://www.koyeb.com/static/images/deploy/button.svg" alt="Deploy to Koyeb" height="32" /></a>
+</p>
+
+<p align="center">
   <a href="https://browsergateway.com">Website</a>
   &nbsp;·&nbsp;
   <a href="./docs/getting-started.md">Quick start</a>
@@ -310,28 +320,6 @@ Images are multi-arch (`linux/amd64`, `linux/arm64`), signed with [Sigstore](htt
 gh attestation verify oci://ghcr.io/browser-gateway/server:0.3.0 \
   --repo browser-gateway/browser-gateway
 ```
-
----
-
-## Deploy
-
-One-click and CLI templates for the major hosts. All use the signed multi-arch image at `ghcr.io/browser-gateway/server:latest`.
-
-| Host | Click | Persistent profiles | Setup time |
-|---|---|---|---|
-| **Render** | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/browser-gateway/browser-gateway) | Yes (1 GB disk) | 1 click — auto-generates the encryption key, prompts for `BG_TOKEN` |
-| **DigitalOcean** | [![Deploy to DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/browser-gateway/browser-gateway/tree/main) | No (App Platform has no persistent storage) | 1 click — works for routing, REST, dashboard. Profiles disabled. |
-| **Fly.io** | `fly launch --copy-config --image ghcr.io/browser-gateway/server:latest` | Yes (Fly Volumes) | 3 commands — `launch`, `volumes create`, `secrets set` |
-| **Koyeb** | [![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=docker&image=ghcr.io/browser-gateway/server:latest&ports=9500;http&routes=/;9500&env[BG_DATA_DIR]=/data&name=browser-gateway) | Yes (Koyeb Volumes) | 1 click — add a volume mount at `/data` in the UI after deploy |
-| **Railway** | [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/browser-gateway) | Yes (Railway Volumes) | 1 click via the published template |
-| **Self-hosted (any Docker host)** | [`docker compose up -d`](#docker) | Yes | See the Docker section above |
-
-### Hosting notes
-
-- **Render** auto-mints `BG_ENCRYPTION_KEY` as a base64 256-bit value the platform never reveals. Best choice if you want zero-config profiles.
-- **DigitalOcean App Platform** has no persistent volumes by design — the filesystem wipes on every redeploy. The gateway runs cleanly for routing, MCP, and REST, but profiles can't survive a deploy. Pick Render or Fly if you want profiles.
-- **Fly** is a 30-second CLI flow rather than a button — Fly's secrets system is CLI-only by design. The `fly.toml` in the repo handles everything except the secrets and volume.
-- **Railway** templates are composed in Railway's dashboard, not from a repo file. The "Deploy on Railway" button links to our published template at `railway.com/deploy/browser-gateway`. It auto-generates `BG_TOKEN` and `BG_ENCRYPTION_KEY` and provisions a 1 GB volume mounted at `/data`.
 
 ---
 
