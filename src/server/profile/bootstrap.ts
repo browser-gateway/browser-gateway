@@ -5,6 +5,8 @@ import type { ProfilesConfig } from "../../core/types.js";
 import { FilesystemProfileStore } from "./filesystem-store.js";
 import { KEYCHECK_FILE, initStore, openStore } from "./keycheck.js";
 import { ProfileLifecycle } from "./lifecycle.js";
+import { resolveDataDir } from "../setup/data-dir.js";
+import { resolveEncryptionKey } from "../setup/encryption-key.js";
 
 export interface ProfileBootstrap {
   enabled: true;
@@ -48,14 +50,8 @@ export async function bootstrapProfiles(
     return { enabled: false };
   }
 
-  const keyEnv = config.encryption.keyEnv;
-  const password = process.env[keyEnv];
-  if (!password) {
-    throw new ProfileBootstrapError(
-      `profiles.enabled is true but ${keyEnv} is not set in the environment`,
-      `Generate a strong key with: openssl rand -base64 32\nThen set ${keyEnv}=<value> in your environment.`,
-    );
-  }
+  const resolved = resolveEncryptionKey(logger);
+  const password = resolved.value;
 
   const storePath = resolveStorePath(config.filesystem.path);
   if (!existsSync(storePath)) {
@@ -67,7 +63,7 @@ export async function bootstrapProfiles(
     ? await openStore(storePath, password).catch((err) => {
         throw new ProfileBootstrapError(
           err instanceof Error ? err.message : String(err),
-          `If you intentionally changed ${keyEnv}, run "browser-gateway profile key rewrap" to migrate.\n` +
+          `If you intentionally changed the encryption key (env or ${resolved.path ?? "data dir"}), run "browser-gateway profile key rewrap" to migrate.\n` +
             `If you want to start over (DESTROYS PROFILES), delete ${keycheckPath}.`,
         );
       })
@@ -113,11 +109,10 @@ export async function bootstrapProfiles(
  * Resolve the profile store path with `BG_DATA_DIR` env override.
  *
  * Absolute config paths win (operator knows what they want). Relative paths
- * are joined under `BG_DATA_DIR` if set, otherwise resolved against CWD —
- * preserves the v0.2.x behavior for non-Docker users.
+ * are joined under the resolved data directory — `/data` in Docker,
+ * `~/.browser-gateway` outside, or whatever `BG_DATA_DIR` points to.
  */
 export function resolveStorePath(configPath: string): string {
   if (isAbsolute(configPath)) return configPath;
-  const baseDir = process.env.BG_DATA_DIR;
-  return baseDir ? resolve(baseDir, configPath) : resolve(configPath);
+  return resolve(resolveDataDir(), configPath);
 }

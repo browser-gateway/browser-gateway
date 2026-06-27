@@ -223,8 +223,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps) → unknown` (line 116)
 ### `src/server/config/loader.ts`
 
-- **const** `const loadedConfigPath: string | null` (line 25)
-- **fn** `loadConfig(configPath?: string) → GatewayConfig` (line 27)
+- **const** `const loadedConfigPath: string | null` (line 26)
+- **fn** `loadConfig(configPath?: string) → GatewayConfig` (line 39)
 ### `src/server/config/writer.ts`
 
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
@@ -286,15 +286,15 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `registerTools(server: McpServer, gateway: Gateway, sessionManager: McpSessionManager, _logger: Logger) → void` (line 27)
 ### `src/server/middleware/security-headers.ts`
 
-- **fn** `securityHeaders() → MiddlewareHandler` (line 13) — Production security headers — HSTS, nosniff, frame-ancestors, Referrer-Policy.
+- **fn** `securityHeaders() → MiddlewareHandler` (line 21) — Production security headers — HSTS, nosniff, frame-ancestors, Referrer-Policy.
 ### `src/server/profile/bootstrap.ts`
 
-- **interface** `interface ProfileBootstrap` (line 9)
-- **interface** `interface ProfileBootstrapDisabled` (line 18)
-- **type** `type ProfileBootstrapResult` (line 22)
-- **class** `class ProfileBootstrapError` (line 24)
-- **fn** `bootstrapProfiles(config: ProfilesConfig, logger: Logger) → Promise<ProfileBootstrapResult>` (line 42) — Bootstrap the profile subsystem from gateway config.
-- **fn** `resolveStorePath(configPath: string) → string` (line 119) — Resolve the profile store path with `BG_DATA_DIR` env override.
+- **interface** `interface ProfileBootstrap` (line 11)
+- **interface** `interface ProfileBootstrapDisabled` (line 20)
+- **type** `type ProfileBootstrapResult` (line 24)
+- **class** `class ProfileBootstrapError` (line 26)
+- **fn** `bootstrapProfiles(config: ProfilesConfig, logger: Logger) → Promise<ProfileBootstrapResult>` (line 44) — Bootstrap the profile subsystem from gateway config.
+- **fn** `resolveStorePath(configPath: string) → string` (line 115) — Resolve the profile store path with `BG_DATA_DIR` env override.
 ### `src/server/profile/filesystem-store.ts`
 
 - **interface** `interface FilesystemStoreOptions` (line 24)
@@ -341,7 +341,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface ProfileRestDeps` (line 15)
 - **fn** `createDisabledProfileRoutes() → Hono` (line 36) — Profile routes that respond gracefully when the profiles feature is OFF.
-- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 102) — Profile management REST routes.
+- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 91) — Profile management REST routes.
 ### `src/server/rest/rest-helpers.ts`
 
 - **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body
@@ -364,11 +364,18 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/rest/screenshot.ts`
 
 - **fn** `handleScreenshot(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 12)
+### `src/server/setup/data-dir.ts`
+
+- **fn** `resolveDataDir() → string` (line 15) — Resolve `BG_DATA_DIR` to an absolute path. Chain (highest precedence first):
+### `src/server/setup/encryption-key.ts`
+
+- **interface** `interface ResolvedEncryptionKey` (line 13)
+- **fn** `resolveEncryptionKey(logger?: Logger) → ResolvedEncryptionKey` (line 34) — Resolve the gateway's profile-encryption key. Chain:
 ### `src/server/setup/profiles-setup.ts`
 
-- **interface** `interface EnableProfilesInput` (line 17)
-- **interface** `interface EnableProfilesResult` (line 26)
-- **fn** `enableProfilesFlow(input: EnableProfilesInput) → EnableProfilesResult` (line 47)
+- **interface** `interface EnableProfilesInput` (line 10)
+- **interface** `interface EnableProfilesResult` (line 15)
+- **fn** `enableProfilesFlow(input: EnableProfilesInput) → EnableProfilesResult` (line 36)
 ### `src/server/startup/banner.ts`
 
 - **interface** `interface BannerOptions` (line 53)

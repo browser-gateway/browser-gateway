@@ -38,6 +38,7 @@ import { loadConfig } from "./config/loader.js";
 import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
 import { bootstrapProfiles, ProfileBootstrapError } from "./profile/bootstrap.js";
+import { resolveEncryptionKey } from "./setup/encryption-key.js";
 import { createMcpServer, createSessionManager } from "./mcp/server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -176,6 +177,12 @@ async function startServer() {
   }
 
   const pool = new SessionPool(config.gateway.port, logger, config.pool, token);
+
+  // Materialize the encryption key eagerly so the "Enable Profiles" toggle in
+  // the dashboard is a true one-click — the key file exists from the very
+  // first boot, regardless of whether profiles end up being used. The
+  // resolver is idempotent on the file path so subsequent boots reuse it.
+  resolveEncryptionKey(logger);
 
   let profileBootstrap;
   try {

@@ -55,26 +55,15 @@ export function createDisabledProfileRoutes(): Hono {
   );
 
   /**
-   * Enable-Profiles wizard — writes BG_ENCRYPTION_KEY to .env and appends a
-   * profiles block to gateway.yml. The gateway still needs a manual restart
-   * after this (it can't relaunch itself).
+   * Enable-Profiles wizard — appends a profiles block to gateway.yml. The
+   * encryption key is auto-resolved on next boot (env → data-dir file →
+   * generated). The gateway still needs a manual restart after this — it
+   * can't relaunch itself in process.
    */
   app.post("/profiles/setup", async (c) => {
-    let body: { encryptionKey?: unknown };
-    try {
-      body = await c.req.json();
-    } catch {
-      return c.json({ error: "Body must be valid JSON" }, 400);
-    }
-    const key = body.encryptionKey;
-    if (typeof key !== "string") {
-      return c.json({ error: "encryptionKey (string) is required" }, 400);
-    }
     try {
       const result = enableProfilesFlow({
-        encryptionKey: key,
         configPath: loadedConfigPath ?? resolve(process.cwd(), "gateway.yml"),
-        envPath: resolve(process.cwd(), ".env"),
       });
       return c.json(result);
     } catch (err) {

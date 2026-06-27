@@ -279,8 +279,17 @@ export function createApp(
 
     try {
       writeConfig(gateway.config);
-    } catch {
-      return c.json({ error: "Provider added but failed to save config file" }, 500);
+    } catch (err) {
+      // Roll back the in-memory add so the API call is atomic — otherwise a
+      // failed disk write leaves the gateway with a provider that won't
+      // survive restart, and the dashboard's success-vs-error path forks.
+      delete gateway.config.providers[id];
+      gateway.registry.remove(id);
+      const reason = err instanceof Error ? err.message : String(err);
+      return c.json({
+        error: "Cannot persist provider to disk",
+        details: [reason, "Set BG_DATA_DIR to a writable path (e.g. /data) or mount gateway.yml with write permission."],
+      }, 500);
     }
 
     return c.json({ ok: true, id }, 201);

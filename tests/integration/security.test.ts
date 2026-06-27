@@ -64,9 +64,9 @@ function build() {
 }
 
 describe("security headers", () => {
-  it("emits nosniff, X-Frame-Options, Referrer-Policy on /health", async () => {
+  it("emits nosniff, X-Frame-Options, Referrer-Policy on /json/version", async () => {
     const app = build();
-    const res = await app.request("/health");
+    const res = await app.request("/json/version");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("x-frame-options")).toBe("DENY");
     expect(res.headers.get("referrer-policy")).toBe("no-referrer");
@@ -75,10 +75,19 @@ describe("security headers", () => {
 
   it("only emits HSTS when behind X-Forwarded-Proto=https", async () => {
     const app = build();
-    const plain = await app.request("/health");
+    const plain = await app.request("/json/version");
     expect(plain.headers.get("strict-transport-security")).toBeNull();
-    const tls = await app.request("/health", { headers: { "X-Forwarded-Proto": "https" } });
+    const tls = await app.request("/json/version", { headers: { "X-Forwarded-Proto": "https" } });
     expect(tls.headers.get("strict-transport-security")).toMatch(/max-age=\d+/);
+  });
+
+  it("skips ALL security headers on /health so infra probes (Railway/k8s) aren't confused", async () => {
+    const app = build();
+    const res = await app.request("/health", { headers: { "X-Forwarded-Proto": "https" } });
+    expect(res.headers.get("x-content-type-options")).toBeNull();
+    expect(res.headers.get("x-frame-options")).toBeNull();
+    expect(res.headers.get("content-security-policy")).toBeNull();
+    expect(res.headers.get("strict-transport-security")).toBeNull();
   });
 });
 

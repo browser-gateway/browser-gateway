@@ -1,6 +1,7 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { parse } from "yaml";
 import { GatewayConfigSchema, type GatewayConfig } from "../../core/types.js";
+import { resolveDataDir } from "../setup/data-dir.js";
 
 function interpolateEnvVars(value: string): string {
   return value.replace(/\$\{([^}]+)\}/g, (_, envVar) => {
@@ -24,10 +25,23 @@ function deepInterpolate(obj: unknown): unknown {
 
 export let loadedConfigPath: string | null = null;
 
+/**
+ * The dashboard's config editor and the add-provider flow both read and
+ * write this file, so it must live somewhere writable. `BG_DATA_DIR` is
+ * pinned to `/data` in Docker, `~/.browser-gateway` outside, so the file
+ * follows the data volume by default. Operators with custom layouts can
+ * override via `BG_CONFIG_PATH` or the first CLI arg.
+ */
+function defaultWritableConfigPath(): string {
+  return `${resolveDataDir()}/gateway.yml`;
+}
+
 export function loadConfig(configPath?: string): GatewayConfig {
+  const writable = defaultWritableConfigPath();
   const paths = [
     configPath,
     process.env.BG_CONFIG_PATH,
+    writable,
     "./gateway.yml",
     "./gateway.yaml",
   ].filter(Boolean) as string[];
@@ -44,8 +58,19 @@ export function loadConfig(configPath?: string): GatewayConfig {
   }
 
   if (!raw) {
+    // First run on a fresh data directory — seed a minimal yaml so the
+    // dashboard config editor has something to load and edit, instead of
+    // showing the user an empty page on a green-field deploy.
     raw = buildConfigFromEnv();
-    loadedConfigPath = configPath ?? "./gateway.yml";
+    loadedConfigPath = configPath ?? writable;
+    if (loadedConfigPath === writable && !existsSync(writable)) {
+      try {
+        writeFileSync(writable, "version: 1\nproviders: {}\n");
+      } catch {
+        // read-only filesystem — the in-memory default still works, dashboard
+        // edits will surface the underlying write error to the user.
+      }
+    }
   }
 
   const interpolated = deepInterpolate(raw) as Record<string, unknown>;
