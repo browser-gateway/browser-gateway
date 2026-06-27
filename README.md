@@ -323,7 +323,7 @@ One-click and CLI templates for the major hosts. All use the signed multi-arch i
 | **DigitalOcean** | [![Deploy to DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new?repo=https://github.com/browser-gateway/browser-gateway/tree/main) | No (App Platform has no persistent storage) | 1 click — works for routing, REST, dashboard. Profiles disabled. |
 | **Fly.io** | `fly launch --copy-config --image ghcr.io/browser-gateway/server:latest` | Yes (Fly Volumes) | 3 commands — `launch`, `volumes create`, `secrets set` |
 | **Koyeb** | [![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=docker&image=ghcr.io/browser-gateway/server:latest&ports=9500;http&routes=/;9500&env[BG_DATA_DIR]=/data&name=browser-gateway) | Yes (Koyeb Volumes) | 1 click — add a volume mount at `/data` in the UI after deploy |
-| **Railway** | Use the template in [Railway's gallery](https://railway.app/new) (search "browser-gateway") | Yes (Railway Volumes) | 1 click via the published template |
+| **Railway** | [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/browser-gateway) | Yes (Railway Volumes) | 1 click via the published template |
 | **Self-hosted (any Docker host)** | [`docker compose up -d`](#docker) | Yes | See the Docker section above |
 
 ### Hosting notes
@@ -331,7 +331,7 @@ One-click and CLI templates for the major hosts. All use the signed multi-arch i
 - **Render** auto-mints `BG_ENCRYPTION_KEY` as a base64 256-bit value the platform never reveals. Best choice if you want zero-config profiles.
 - **DigitalOcean App Platform** has no persistent volumes by design — the filesystem wipes on every redeploy. The gateway runs cleanly for routing, MCP, and REST, but profiles can't survive a deploy. Pick Render or Fly if you want profiles.
 - **Fly** is a 30-second CLI flow rather than a button — Fly's secrets system is CLI-only by design. The `fly.toml` in the repo handles everything except the secrets and volume.
-- **Railway** can't carry a one-click template in a repo file — Railway templates are composed in their dashboard. We publish a template there and link to it; the repo has no `railway.json` because it can't do anything useful for prebuilt images.
+- **Railway** templates are composed in Railway's dashboard, not from a repo file. The "Deploy on Railway" button links to our published template at `railway.com/deploy/browser-gateway`. It auto-generates `BG_TOKEN` and `BG_ENCRYPTION_KEY` and provisions a 1 GB volume mounted at `/data`.
 
 ---
 
