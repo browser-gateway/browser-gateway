@@ -199,12 +199,18 @@ async function startServer() {
   try {
     profileBootstrap = await bootstrapProfiles(config.profiles, logger);
   } catch (err) {
-    if (err instanceof ProfileBootstrapError) {
-      logger.fatal({ error: err.message }, "profile bootstrap failed");
-    } else {
-      logger.fatal({ error: err instanceof Error ? err.message : String(err) }, "profile bootstrap failed");
-    }
-    process.exit(1);
+    // Profile bootstrap failure is non-fatal — the rest of the gateway (routing,
+    // REST, dashboard, MCP) is fully functional without profiles. Surface a
+    // loud error so the operator can fix the underlying problem (corrupt
+    // keycheck, wrong key, unreadable store) without losing access to the
+    // dashboard's config editor in the meantime.
+    const detail = err instanceof ProfileBootstrapError
+      ? err.message + (err.hint ? `\n  hint: ${err.hint}` : "")
+      : err instanceof Error
+      ? err.message
+      : String(err);
+    logger.error({ error: detail }, "profile bootstrap failed — gateway will continue with profiles disabled");
+    profileBootstrap = { enabled: false as const };
   }
 
   const webDir = findWebDir();
