@@ -223,8 +223,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps) → unknown` (line 116)
 ### `src/server/config/loader.ts`
 
-- **const** `const loadedConfigPath: string | null` (line 26)
-- **fn** `loadConfig(configPath?: string) → GatewayConfig` (line 39)
+- **const** `const loadedConfigPath: string | null` (line 27)
+- **fn** `loadConfig(configPath?: string) → GatewayConfig` (line 40)
 ### `src/server/config/writer.ts`
 
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
@@ -371,6 +371,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface ResolvedEncryptionKey` (line 13)
 - **fn** `resolveEncryptionKey(logger?: Logger) → ResolvedEncryptionKey` (line 34) — Resolve the gateway's profile-encryption key. Chain:
+### `src/server/setup/port.ts`
+
+- **fn** `resolvePort(cliOverride: string | undefined) → number | undefined` (line 14) — Resolve the HTTP listen port from the available sources in precedence order:
 ### `src/server/setup/profiles-setup.ts`
 
 - **interface** `interface EnableProfilesInput` (line 10)

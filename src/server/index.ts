@@ -39,6 +39,7 @@ import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
 import { bootstrapProfiles, ProfileBootstrapError } from "./profile/bootstrap.js";
 import { resolveEncryptionKey } from "./setup/encryption-key.js";
+import { resolvePort } from "./setup/port.js";
 import { createMcpServer, createSessionManager } from "./mcp/server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -96,7 +97,7 @@ Options:
 
 Environment:
   BG_TOKEN           Auth token for gateway access (optional)
-  BG_PORT            Server port
+  BG_PORT            Server port (also accepts PORT for Railway/Render/Fly/Heroku compatibility)
   BG_CONFIG_PATH     Config file path
 
 Examples:
@@ -129,9 +130,8 @@ async function startServer() {
     process.exit(1);
   }
 
-  if (portOverride) {
-    config.gateway.port = parseInt(portOverride, 10);
-  }
+  const resolvedPort = resolvePort(portOverride);
+  if (resolvedPort !== undefined) config.gateway.port = resolvedPort;
 
   const logger = pino({
     level: config.logging.level,
@@ -430,7 +430,7 @@ async function startMcpStdio() {
       process.exit(1);
     }
   } else if (cdpEndpoint) {
-    const port = parseInt(portOverride ?? process.env.BG_PORT ?? "9500", 10);
+    const port = (resolvePort(portOverride) ?? 9500);
     config = buildMcpGatewayConfig(port, {
       "remote-cdp": {
         url: cdpEndpoint,
@@ -442,15 +442,14 @@ async function startMcpStdio() {
     log(`Using CDP endpoint: ${cdpEndpoint}`);
   } else {
     // Zero-config mode: defer Chrome launch until first tool call (same pattern as playwright-mcp)
-    const port = parseInt(portOverride ?? process.env.BG_PORT ?? "9500", 10);
+    const port = (resolvePort(portOverride) ?? 9500);
     config = buildMcpGatewayConfig(port, {});
     isZeroConfig = true;
     log("Zero-config mode - Chrome will launch on first browser tool use");
   }
 
-  if (portOverride) {
-    config.gateway.port = parseInt(portOverride, 10);
-  }
+  const resolvedPort = resolvePort(portOverride);
+  if (resolvedPort !== undefined) config.gateway.port = resolvedPort;
 
   const logger = pino({ level: "silent" });
   const gateway = new Gateway(config, logger);

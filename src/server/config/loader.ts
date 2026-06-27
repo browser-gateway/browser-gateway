@@ -2,6 +2,7 @@ import { readFileSync, existsSync, writeFileSync } from "node:fs";
 import { parse } from "yaml";
 import { GatewayConfigSchema, type GatewayConfig } from "../../core/types.js";
 import { resolveDataDir } from "../setup/data-dir.js";
+import { resolvePort } from "../setup/port.js";
 
 function interpolateEnvVars(value: string): string {
   return value.replace(/\$\{([^}]+)\}/g, (_, envVar) => {
@@ -90,7 +91,7 @@ function buildConfigFromEnv(): Record<string, unknown> {
   return {
     version: 1,
     gateway: {
-      port: parseInt(process.env.BG_PORT ?? "9500", 10),
+      port: resolvePort(undefined) ?? 9500,
     },
     providers: {},
   };
