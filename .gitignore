@@ -6,6 +6,7 @@ dist/
 .env
 .env.*
 !.env.example
+.mcpregistry_*
 .DS_Store
 coverage/
 gateway.dev.yml

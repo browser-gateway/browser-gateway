@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.browser-gateway/browser-gateway",
+  "description": "AI browser tools with Chrome CDP. Navigate, screenshot, interact. Multi-provider failover.",
+  "repository": {
+    "url": "https://github.com/browser-gateway/browser-gateway",
+    "source": "github"
+  },
+  "version": "0.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "browser-gateway",
+      "version": "0.0.0",
+      "transport": {
+        "type": "stdio",
+        "args": ["mcp"]
+      },
+      "environmentVariables": [
+        {
+          "description": "Authentication token for gateway access (optional, only needed with remote providers)",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "BG_TOKEN"
+        }
+      ]
+    }
+  ]
+}
