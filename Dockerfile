@@ -55,6 +55,9 @@ COPY LICENSE README.md ./
 # ephemeral. No VOLUME directive — persistence is the operator's choice,
 # matches n8n / Uptime Kuma convention.
 ENV BG_DATA_DIR=/data
+# Pin NODE_ENV so production-only middleware (strict CORS, etc.) activates
+# regardless of how the platform launches the container.
+ENV NODE_ENV=production
 RUN mkdir -p /data && chown bguser:bguser /data
 
 USER bguser

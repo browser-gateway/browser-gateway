@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { bodyLimit } from "hono/body-limit";
 import { timingSafeEqual, createHmac, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from "node:fs";
 import { join, extname } from "node:path";
@@ -17,6 +18,22 @@ import { createRestRoutes } from "./rest/index.js";
 import { createDisabledProfileRoutes, createProfileRoutes } from "./rest/profiles.js";
 import type { FilesystemProfileStore } from "./profile/filesystem-store.js";
 import type { ProfileLifecycle } from "./profile/lifecycle.js";
+import { getEffectiveHost, getEffectiveProtocol, parseAllowedOrigins } from "./util/request.js";
+import { securityHeaders } from "./middleware/security-headers.js";
+
+/** YAML config size cap — prevents oversize POST/PUT to /v1/config from DoS-ing the YAML parser. */
+const MAX_CONFIG_YAML_BYTES = 1024 * 1024;
+
+/**
+ * Mask query-string credentials inside provider URLs. Targets the param names
+ * that show up in real-world CDP / Playwright provider URLs (`token`, `apiKey`,
+ * `access_token`, `key`, `password`). Used by `GET /v1/config` so the YAML
+ * returned to non-cookie callers can't be used to harvest provider tokens.
+ */
+function redactProviderUrlsInYaml(yaml: string): string {
+  const PARAMS = /([?&](?:token|apikey|api_key|access_token|key|password|secret)=)([^&\s"']+)/gi;
+  return yaml.replace(PARAMS, "$1***");
+}
 
 export interface ProfileAppDeps {
   store: FilesystemProfileStore;
@@ -107,8 +124,18 @@ export function createApp(
   const app = new Hono();
   const sessionSecret = getSessionSecret(token);
 
-  if (process.env.NODE_ENV !== "production") {
-    app.use("*", cors({ origin: "*", credentials: true }));
+  // Security headers on every response (HSTS, nosniff, X-Frame-Options, etc.).
+  app.use("*", securityHeaders());
+
+  // CORS allowlist. Default: same-origin only (no Access-Control-Allow-Origin
+  // header). Set `BG_ALLOWED_ORIGINS=https://a.example,https://b.example` to
+  // enable cross-origin browsers explicitly. Never wildcard with credentials.
+  const allowedOrigins = parseAllowedOrigins(process.env.BG_ALLOWED_ORIGINS);
+  if (allowedOrigins.size > 0) {
+    app.use("*", cors({
+      origin: (origin) => (origin && allowedOrigins.has(origin.toLowerCase()) ? origin : null),
+      credentials: true,
+    }));
   }
 
   app.get("/health", (c) => {
@@ -116,8 +143,8 @@ export function createApp(
   });
 
   app.get("/json/version", (c) => {
-    const host = c.req.header("host") ?? "localhost:9500";
-    const protocol = c.req.url.startsWith("https") ? "wss" : "ws";
+    const host = getEffectiveHost(c);
+    const protocol = getEffectiveProtocol(c) === "https" ? "wss" : "ws";
     const tokenParam = c.req.query("token");
     const wsUrl = `${protocol}://${host}/v1/connect${tokenParam ? `?token=${tokenParam}` : ""}`;
 
@@ -139,14 +166,16 @@ export function createApp(
   });
 
   /**
-   * Returns the configured BG_TOKEN to authenticated callers so the dashboard
-   * can render real connect URLs (with the token masked on screen, real on
-   * copy). No privilege escalation — to reach this endpoint the caller must
-   * already have proven they know the token (via Bearer header or the cookie
-   * session HMAC'd against it).
+   * Returns the configured BG_TOKEN only to dashboard callers that present
+   * the `bg_session` cookie. Bearer callers get `authEnabled: true` without
+   * the token — they already know it, and refusing to echo it limits the
+   * blast radius of any future API leak (proxy logs, accidental forwarding).
    */
   app.get("/v1/auth/info", (c) => {
-    return c.json({ token: token ?? null, authEnabled: !!token });
+    if (!token) return c.json({ token: null, authEnabled: false });
+    const cookie = getCookie(c.req.header("cookie"), COOKIE_NAME);
+    const cookieAuth = !!(cookie && verifySession(cookie, sessionSecret));
+    return c.json({ token: cookieAuth ? token : null, authEnabled: true });
   });
 
   app.get("/v1/status", (c) => {
@@ -368,17 +397,26 @@ export function createApp(
     });
   });
 
-  // Config editor endpoints
+  // Config editor endpoints. Raw YAML reveals provider tokens, so the
+  // unredacted view is gated behind the dashboard cookie session — Bearer
+  // callers get a redacted copy with `token=`, `apikey=`, etc. masked.
   app.get("/v1/config", (c) => {
     const path = loadedConfigPath;
     if (!path || !existsSync(path)) {
       return c.json({ yaml: "", path: null, exists: false });
     }
     const yaml = readFileSync(path, "utf-8");
-    return c.json({ yaml, path, exists: true });
+    const cookie = getCookie(c.req.header("cookie"), COOKIE_NAME);
+    const cookieAuth = !!(token && cookie && verifySession(cookie, sessionSecret));
+    return c.json({
+      yaml: cookieAuth ? yaml : redactProviderUrlsInYaml(yaml),
+      path,
+      exists: true,
+      redacted: !cookieAuth,
+    });
   });
 
-  app.post("/v1/config/validate", async (c) => {
+  app.post("/v1/config/validate", bodyLimit({ maxSize: MAX_CONFIG_YAML_BYTES }), async (c) => {
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
     const yaml = body.yaml as string | undefined;
     if (!yaml) return c.json({ valid: false, errors: ["No YAML content provided"] });
@@ -393,7 +431,7 @@ export function createApp(
     return c.json({ valid: true, providerCount: Object.keys(result.data.providers).length });
   });
 
-  app.put("/v1/config", async (c) => {
+  app.put("/v1/config", bodyLimit({ maxSize: MAX_CONFIG_YAML_BYTES }), async (c) => {
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
     const yaml = body.yaml as string | undefined;
     if (!yaml) return c.json({ error: "No YAML content provided" }, 400);
@@ -429,7 +467,7 @@ export function createApp(
       }
 
       const sessionValue = signSession(sessionSecret);
-      const isSecure = c.req.header("x-forwarded-proto") === "https" || c.req.url.startsWith("https");
+      const isSecure = getEffectiveProtocol(c) === "https";
       const cookieParts = [
         `${COOKIE_NAME}=${sessionValue}`,
         `Path=/`,

@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-06-26
+Generated: 2026-06-27
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -219,8 +219,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 21)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps) → unknown` (line 99)
+- **interface** `interface ProfileAppDeps` (line 38)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps) → unknown` (line 116)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 25)
@@ -284,6 +284,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/mcp/tools.ts`
 
 - **fn** `registerTools(server: McpServer, gateway: Gateway, sessionManager: McpSessionManager, _logger: Logger) → void` (line 27)
+### `src/server/middleware/security-headers.ts`
+
+- **fn** `securityHeaders() → MiddlewareHandler` (line 13) — Production security headers — HSTS, nosniff, frame-ancestors, Referrer-Policy.
 ### `src/server/profile/bootstrap.ts`
 
 - **interface** `interface ProfileBootstrap` (line 9)
@@ -370,6 +373,12 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface BannerOptions` (line 53)
 - **fn** `printStartupBanner(opts: BannerOptions) → void` (line 69)
+### `src/server/util/request.ts`
+
+- **fn** `getEffectiveProtocol(c: { req: { header: (name: string) => string | undefined; url: string } }) → "http" | "https"` (line 9) — Return the effective protocol the client used to reach us, honoring
+- **fn** `getEffectiveProtocolNode(req: IncomingMessage) → "http" | "https"` (line 21) — Same as `getEffectiveProtocol` but operates on a raw Node `IncomingMessage`.
+- **fn** `getEffectiveHost(c: { req: { header: (name: string) => string | undefined } }) → string` (line 37) — Return the effective host the client used to reach us, honoring
+- **fn** `parseAllowedOrigins(value: string | undefined) → Set<string>` (line 45) — Parse `BG_ALLOWED_ORIGINS` (comma-separated). Empty / unset returns
 ### `src/server/validation.ts`
 
 - **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 14) — Format a Zod error into a human-readable list of "path: message" strings.
@@ -384,7 +393,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle) → unknown` (line 49)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle) → unknown` (line 85)
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 

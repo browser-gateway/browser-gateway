@@ -219,10 +219,15 @@ describe("Phase 4: profile REST API", () => {
     await getJson("/v1/profiles/dup-test", { method: "DELETE", headers: authHeaders });
   });
 
-  it("auth/info: returns the configured BG_TOKEN to authenticated callers", async () => {
+  it("auth/info: hides BG_TOKEN from Bearer callers; reports authEnabled=true", async () => {
+    // As of v0.3.1 /v1/auth/info only returns the token to dashboard cookie
+    // sessions — Bearer callers (who already know the token) get authEnabled
+    // without the token echoed back, so it can't leak via proxy logs or
+    // accidental forwarding. The cookie-auth path is exercised in
+    // tests/integration/security.test.ts.
     const r = await getJson("/v1/auth/info", { headers: authHeaders });
     expect(r.status).toBe(200);
-    expect((r.body as { token: string }).token).toBe(TOKEN);
+    expect((r.body as { token: string | null }).token).toBeNull();
     expect((r.body as { authEnabled: boolean }).authEnabled).toBe(true);
   });
 

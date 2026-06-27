@@ -134,6 +134,32 @@ async function startServer() {
 
   const logger = pino({
     level: config.logging.level,
+    redact: {
+      // Defense in depth — anything matching these JSON paths is replaced with
+      // "[REDACTED]" before serialization. None of the gateway's first-party
+      // log calls log these fields today, but third-party deps and future
+      // contributors might. The cost of one extra regex per log line is dwarfed
+      // by the cost of a token landing in a log aggregator.
+      paths: [
+        "BG_TOKEN",
+        "BG_ENCRYPTION_KEY",
+        "token",
+        "password",
+        "secret",
+        "apiKey",
+        "api_key",
+        "accessToken",
+        "access_token",
+        "authorization",
+        "Authorization",
+        "headers.authorization",
+        "headers.cookie",
+        "*.token",
+        "*.password",
+        "*.apiKey",
+      ],
+      remove: false,
+    },
     transport:
       process.stdout.isTTY
         ? { target: "pino-pretty", options: { colorize: true } }

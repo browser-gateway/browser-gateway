@@ -1,6 +1,6 @@
 {
   "name": "browser-gateway",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Reliable, scalable browser infrastructure for AI agents.",
   "mcpName": "io.github.browser-gateway/browser-gateway",
   "keywords": [
@@ -43,8 +43,8 @@
     "README.md"
   ],
   "scripts": {
-    "dev": "tsx watch src/server/index.ts -- serve --config gateway.dev.yml & cd web && npm run dev",
-    "dev:server": "tsx watch src/server/index.ts -- serve --config gateway.dev.yml",
+    "dev": "BG_ALLOWED_ORIGINS=http://localhost:9501 tsx watch src/server/index.ts -- serve --config gateway.dev.yml & cd web && npm run dev",
+    "dev:server": "BG_ALLOWED_ORIGINS=http://localhost:9501 tsx watch src/server/index.ts -- serve --config gateway.dev.yml",
     "dev:web": "cd web && npm run dev",
     "build": "tsc",
     "build:web": "cd web && npm run build",
