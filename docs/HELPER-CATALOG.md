@@ -16,7 +16,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/gateway.ts`
 
 - **interface** `interface GatewayEvents` (line 18) — Map of events emitted by the {@link Gateway} class. Useful for typing
-- **class** `class Gateway` (line 37)
+- **class** `class Gateway` (line 39)
 ### `src/core/notifications/webhooks.ts`
 
 - **class** `class WebhookNotifier` (line 18)
@@ -197,7 +197,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/router/selector.ts`
 
 - **type** `type Strategy` (line 5)
-- **class** `class ProviderSelector` (line 12)
+- **interface** `interface SelectOptions` (line 12)
+- **class** `class ProviderSelector` (line 24)
 ### `src/core/tracking/concurrency.ts`
 
 - **class** `class ConcurrencyTracker` (line 3)
@@ -322,13 +323,13 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/rest/dispatch.ts`
 
 - **interface** `interface DispatchDeps` (line 22)
-- **fn** `dispatchPageAction(deps: DispatchDeps, profileId: string | undefined, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 34) — If `profileId` is set, route through the profile-pinned executor; otherwise
+- **fn** `dispatchPageAction(deps: DispatchDeps, profileId: string | undefined, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 35) — If `profileId` is set, route through the profile-pinned executor; otherwise
 ### `src/server/rest/executor.ts`
 
 - **interface** `interface PageOptions` (line 7)
-- **interface** `interface PageResult` (line 20)
-- **fn** `withBrowserPage(pool: SessionPool, logger: Logger, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 45)
-- **fn** `scrollThroughPage(page: Page) → Promise<void>` (line 137)
+- **interface** `interface PageResult` (line 27)
+- **fn** `withBrowserPage(pool: SessionPool, logger: Logger, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 52)
+- **fn** `scrollThroughPage(page: Page) → Promise<void>` (line 144)
 ### `src/server/rest/page-runner.ts`
 
 - **interface** `interface PageRunResult` (line 18)
@@ -347,18 +348,18 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body
 - **fn** `pageOptionsFromBody(body: BaseRequestFields, c: Context) → PageOptions` (line 22) — Map a request body + Hono context to the executor's PageOptions shape.
-- **fn** `extractWithDefuddle(rawHtml: string, pageUrl: string, markdown: boolean) → unknown` (line 42) — Parse HTML with linkedom and extract content with Defuddle. Dynamic-imports
-- **fn** `metadataFromDefuddle(result: Awaited<ReturnType<typeof extractWithDefuddle>>) → Record<string, unknown>` (line 55) — Extract the standard set of metadata fields from a Defuddle result.
-- **fn** `extractFormats(rawHtml: string, pageUrl: string, innerText: () => Promise<string>, formats: ReadonlyArray<"html" | "text" | "markdown" | "readability">) → Promise<{ content: Record<string, string>; metadata: Record<string, unknown> | undefined }>` (line 76) — Run the standard format-extraction matrix used by `/v1/content` and
+- **fn** `extractWithDefuddle(rawHtml: string, pageUrl: string, markdown: boolean) → unknown` (line 43) — Parse HTML with linkedom and extract content with Defuddle. Dynamic-imports
+- **fn** `metadataFromDefuddle(result: Awaited<ReturnType<typeof extractWithDefuddle>>) → Record<string, unknown>` (line 56) — Extract the standard set of metadata fields from a Defuddle result.
+- **fn** `extractFormats(rawHtml: string, pageUrl: string, innerText: () => Promise<string>, formats: ReadonlyArray<"html" | "text" | "markdown" | "readability">) → Promise<{ content: Record<string, string>; metadata: Record<string, unknown> | undefined }>` (line 77) — Run the standard format-extraction matrix used by `/v1/content` and
 ### `src/server/rest/schemas.ts`
 
-- **const** `const ScreenshotRequestSchema` (line 39)
-- **type** `type ScreenshotRequest` (line 59) — Request body for `POST /v1/screenshot`. Inferred from {@link ScreenshotRequestSchema}.
-- **const** `const ContentRequestSchema` (line 63)
-- **type** `type ContentRequest` (line 70) — Request body for `POST /v1/content`. Inferred from {@link ContentRequestSchema}.
-- **const** `const ScrapeRequestSchema` (line 78)
-- **type** `type ScrapeRequest` (line 90) — Request body for `POST /v1/scrape`. Inferred from {@link ScrapeRequestSchema}.
-- **class** `class RestApiError` (line 92)
+- **const** `const ScreenshotRequestSchema` (line 51)
+- **type** `type ScreenshotRequest` (line 71) — Request body for `POST /v1/screenshot`. Inferred from {@link ScreenshotRequestSchema}.
+- **const** `const ContentRequestSchema` (line 75)
+- **type** `type ContentRequest` (line 82) — Request body for `POST /v1/content`. Inferred from {@link ContentRequestSchema}.
+- **const** `const ScrapeRequestSchema` (line 90)
+- **type** `type ScrapeRequest` (line 102) — Request body for `POST /v1/scrape`. Inferred from {@link ScrapeRequestSchema}.
+- **class** `class RestApiError` (line 104)
 ### `src/server/rest/scrape.ts`
 
 - **fn** `handleScrape(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 28)

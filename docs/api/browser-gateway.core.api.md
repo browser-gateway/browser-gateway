@@ -72,9 +72,9 @@ export class Gateway extends EventEmitter {
     // (undocumented)
     readonly selector: ProviderSelector;
     // (undocumented)
-    selectProvider(): ProviderState | null;
+    selectProvider(targetProviderId?: string): ProviderState | null;
     // (undocumented)
-    selectProviderWithFallbacks(): ProviderState[];
+    selectProviderWithFallbacks(targetProviderId?: string): ProviderState[];
     // (undocumented)
     readonly sessions: SessionTracker;
     // (undocumented)
@@ -86,7 +86,7 @@ export class Gateway extends EventEmitter {
     // (undocumented)
     stop(): void;
     // (undocumented)
-    waitForSlot(timeoutMs?: number): Promise<boolean>;
+    waitForSlot(timeoutMs?: number, targetProviderId?: string): Promise<boolean>;
 }
 
 // @public (undocumented)
@@ -269,8 +269,10 @@ export class ProviderRegistry {
 export class ProviderSelector {
     // Warning: (ae-forgotten-export) The symbol "Strategy" needs to be exported by the entry point index.d.ts
     constructor(registry: ProviderRegistry, cooldown: CooldownTracker, defaultStrategy: Strategy);
+    // Warning: (ae-forgotten-export) The symbol "SelectOptions" needs to be exported by the entry point index.d.ts
+    //
     // (undocumented)
-    getCandidates(strategy?: Strategy): ProviderState[];
+    getCandidates(opts?: SelectOptions): ProviderState[];
 }
 
 // @public (undocumented)
@@ -336,8 +338,9 @@ export interface Session {
 // @public (undocumented)
 export class SessionPool {
     constructor(gatewayPort: number, logger: Logger, config: PoolConfig, token?: string | undefined);
-    // (undocumented)
-    acquirePage(): Promise<PageHandle>;
+    acquirePage(opts?: {
+        targetProviderId?: string;
+    }): Promise<PageHandle>;
     // (undocumented)
     getStatus(): PoolStatus;
     // (undocumented)

@@ -15,6 +15,13 @@ export interface PageOptions {
   userAgent?: string;
   retries?: number;
   signal?: AbortSignal;
+  /**
+   * Pin this request to a specific provider id. When set, the gateway opens a
+   * one-shot CDP connection to that backend and the request will either run
+   * there or fail — no failover to other providers. Validated upstream by
+   * `dispatchPageAction`.
+   */
+  provider?: string;
 }
 
 export interface PageResult<T> {
@@ -62,7 +69,7 @@ export async function withBrowserPage<T>(
     let handle;
 
     try {
-      handle = await pool.acquirePage();
+      handle = await pool.acquirePage({ targetProviderId: options.provider });
     } catch {
       if (attempt < maxAttempts && !options.signal?.aborted) {
         logger.info({ attempt, maxAttempts }, "rest: pool acquire failed, retrying");

@@ -32,6 +32,8 @@ interface QueueEntry {
   resolve: (value: boolean) => void;
   enqueuedAt: number;
   timer: ReturnType<typeof setTimeout>;
+  /** When set, this entry only dequeues when THIS provider has a free slot. */
+  targetProviderId?: string;
 }
 
 export class Gateway extends EventEmitter {
@@ -91,13 +93,13 @@ export class Gateway extends EventEmitter {
     );
   }
 
-  selectProvider(): ProviderState | null {
-    const candidates = this.selector.getCandidates();
+  selectProvider(targetProviderId?: string): ProviderState | null {
+    const candidates = this.selector.getCandidates({ targetProviderId });
     return candidates[0] ?? null;
   }
 
-  selectProviderWithFallbacks(): ProviderState[] {
-    return this.selector.getCandidates();
+  selectProviderWithFallbacks(targetProviderId?: string): ProviderState[] {
+    return this.selector.getCandidates({ targetProviderId });
   }
 
   acquireSlot(providerId: string, sessionId: string): boolean {
@@ -151,11 +153,18 @@ export class Gateway extends EventEmitter {
 
   // --- Queue ---
 
-  async waitForSlot(timeoutMs?: number): Promise<boolean> {
+  async waitForSlot(timeoutMs?: number, targetProviderId?: string): Promise<boolean> {
     if (this._shuttingDown) return false;
 
-    const candidates = this.selector.getCandidates();
+    const candidates = this.selector.getCandidates({ targetProviderId });
     if (candidates.length > 0) return true;
+
+    // Pinned but provider doesn't exist OR is in cooldown — no point queuing,
+    // it'll never unblock. Bail fast so the caller can 503 with the right reason.
+    if (targetProviderId !== undefined) {
+      const pinned = this.registry.get(targetProviderId);
+      if (!pinned || this.cooldown.isInCooldown(pinned)) return false;
+    }
 
     const maxQueue = this.config.gateway.queue?.maxSize ?? 50;
     const queueTimeout = timeoutMs ?? this.config.gateway.queue?.timeoutMs ?? 30000;
@@ -169,15 +178,15 @@ export class Gateway extends EventEmitter {
       const timer = setTimeout(() => {
         const idx = this.queue.findIndex((e) => e.resolve === resolve);
         if (idx !== -1) this.queue.splice(idx, 1);
-        this.logger.debug({ waitMs: queueTimeout }, "queue timeout");
+        this.logger.debug({ waitMs: queueTimeout, targetProviderId }, "queue timeout");
         this.emit("queue.timeout", { waitMs: queueTimeout });
         resolve(false);
       }, queueTimeout);
 
-      this.queue.push({ resolve, enqueuedAt: Date.now(), timer });
+      this.queue.push({ resolve, enqueuedAt: Date.now(), timer, targetProviderId });
 
       this.logger.info(
-        { position: this.queue.length, total: this.queue.length },
+        { position: this.queue.length, total: this.queue.length, targetProviderId },
         "request queued"
       );
       this.emit("queue.added", { position: this.queue.length, total: this.queue.length });
@@ -187,16 +196,24 @@ export class Gateway extends EventEmitter {
   private dequeueNext(): void {
     if (this.queue.length === 0) return;
 
-    const candidates = this.selector.getCandidates();
-    if (candidates.length === 0) return;
+    // Walk the queue and resolve the first entry whose constraint is satisfied
+    // by current capacity. Pinned entries only resolve if THEIR provider has
+    // a slot; unpinned entries resolve if ANY provider does.
+    for (let i = 0; i < this.queue.length; i++) {
+      const entry = this.queue[i];
+      const candidates = this.selector.getCandidates({ targetProviderId: entry.targetProviderId });
+      if (candidates.length === 0) continue;
 
-    const entry = this.queue.shift();
-    if (!entry) return;
-
-    clearTimeout(entry.timer);
-    const waitMs = Date.now() - entry.enqueuedAt;
-    this.logger.info({ waitMs, remaining: this.queue.length }, "request dequeued");
-    entry.resolve(true);
+      this.queue.splice(i, 1);
+      clearTimeout(entry.timer);
+      const waitMs = Date.now() - entry.enqueuedAt;
+      this.logger.info(
+        { waitMs, remaining: this.queue.length, targetProviderId: entry.targetProviderId },
+        "request dequeued",
+      );
+      entry.resolve(true);
+      return;
+    }
   }
 
   private drainQueue(): void {

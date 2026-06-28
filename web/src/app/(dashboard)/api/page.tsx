@@ -16,12 +16,13 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CodeBlock } from "@/components/code-block";
 import { EndpointReference } from "@/components/endpoint-reference";
-import { fetchProfiles, type ProfileMetaItem } from "@/lib/api";
+import { fetchProfiles, type ProfileMetaItem, fetchProviders } from "@/lib/api";
 import { contentDoc, scrapeDoc, screenshotDoc } from "./docs";
 
 export default function ApiPage() {
   const [profiles, setProfiles] = useState<ProfileMetaItem[] | null>(null);
   const [profilesEnabled, setProfilesEnabled] = useState<boolean>(false);
+  const [providers, setProviders] = useState<{ id: string }[]>([]);
 
   useEffect(() => {
     fetchProfiles()
@@ -33,6 +34,9 @@ export default function ApiPage() {
         setProfilesEnabled(false);
         setProfiles([]);
       });
+    fetchProviders()
+      .then((r) => setProviders(r.providers.map((p) => ({ id: p.id }))))
+      .catch(() => setProviders([]));
   }, []);
 
   return (
@@ -58,7 +62,7 @@ export default function ApiPage() {
             method="POST"
             path="/v1/screenshot"
             doc={screenshotDoc}
-            actionPanel={<ScreenshotForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
+            actionPanel={<ScreenshotForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} />}
           />
         </TabsContent>
 
@@ -69,7 +73,7 @@ export default function ApiPage() {
             method="POST"
             path="/v1/content"
             doc={contentDoc}
-            actionPanel={<ContentForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
+            actionPanel={<ContentForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} />}
           />
         </TabsContent>
 
@@ -80,7 +84,7 @@ export default function ApiPage() {
             method="POST"
             path="/v1/scrape"
             doc={scrapeDoc}
-            actionPanel={<ScrapeForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} />}
+            actionPanel={<ScrapeForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} />}
           />
         </TabsContent>
       </Tabs>
@@ -160,13 +164,15 @@ function EndpointSection(props: {
 interface FormSectionProps {
   profiles: ProfileMetaItem[];
   profilesEnabled: boolean;
+  providers: { id: string }[];
 }
 
-function ScreenshotForm({ profiles, profilesEnabled }: FormSectionProps) {
+function ScreenshotForm({ profiles, profilesEnabled, providers }: FormSectionProps) {
   const [url, setUrl] = useState("https://example.com");
   const [format, setFormat] = useState<"png" | "jpeg">("png");
   const [fullPage, setFullPage] = useState(false);
   const [profile, setProfile] = useState("");
+  const [provider, setProvider] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -182,6 +188,7 @@ function ScreenshotForm({ profiles, profilesEnabled }: FormSectionProps) {
     try {
       const body: Record<string, unknown> = { url, format, fullPage };
       if (profile) body.profile = profile;
+      if (provider) body.provider = provider;
       const res = await fetch("/v1/screenshot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -220,6 +227,7 @@ function ScreenshotForm({ profiles, profilesEnabled }: FormSectionProps) {
         </label>
       </FormRow>
       <ProfileDropdown profiles={profiles} profilesEnabled={profilesEnabled} value={profile} onChange={setProfile} />
+      <ProviderDropdown providers={providers} value={provider} onChange={setProvider} />
 
       <RunButton loading={loading} onClick={handleRun} label="Run screenshot" />
       {error && <ErrorBlock message={error} />}
@@ -243,10 +251,11 @@ function ScreenshotForm({ profiles, profilesEnabled }: FormSectionProps) {
   );
 }
 
-function ContentForm({ profiles, profilesEnabled }: FormSectionProps) {
+function ContentForm({ profiles, profilesEnabled, providers }: FormSectionProps) {
   const [url, setUrl] = useState("https://example.com");
   const [formats, setFormats] = useState<string[]>(["markdown"]);
   const [profile, setProfile] = useState("");
+  const [provider, setProvider] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ content: Record<string, string> } | null>(null);
@@ -260,6 +269,7 @@ function ContentForm({ profiles, profilesEnabled }: FormSectionProps) {
     try {
       const body: Record<string, unknown> = { url, formats };
       if (profile) body.profile = profile;
+      if (provider) body.provider = provider;
       const res = await fetch("/v1/content", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -301,6 +311,7 @@ function ContentForm({ profiles, profilesEnabled }: FormSectionProps) {
         </div>
       </FormRow>
       <ProfileDropdown profiles={profiles} profilesEnabled={profilesEnabled} value={profile} onChange={setProfile} />
+      <ProviderDropdown providers={providers} value={provider} onChange={setProvider} />
 
       <RunButton loading={loading} onClick={handleRun} label="Run content" />
       {error && <ErrorBlock message={error} />}
@@ -334,12 +345,13 @@ function ContentForm({ profiles, profilesEnabled }: FormSectionProps) {
   );
 }
 
-function ScrapeForm({ profiles, profilesEnabled }: FormSectionProps) {
+function ScrapeForm({ profiles, profilesEnabled, providers }: FormSectionProps) {
   const [url, setUrl] = useState("https://example.com");
   const [selectors, setSelectors] = useState<{ name: string; selector: string }[]>([
     { name: "title", selector: "h1" },
   ]);
   const [profile, setProfile] = useState("");
+  const [provider, setProvider] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
@@ -365,6 +377,7 @@ function ScrapeForm({ profiles, profilesEnabled }: FormSectionProps) {
       const cleaned = selectors.filter((s) => s.name && s.selector);
       const body: Record<string, unknown> = { url, selectors: cleaned };
       if (profile) body.profile = profile;
+      if (provider) body.provider = provider;
       const res = await fetch("/v1/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -417,6 +430,7 @@ function ScrapeForm({ profiles, profilesEnabled }: FormSectionProps) {
         </div>
       </FormRow>
       <ProfileDropdown profiles={profiles} profilesEnabled={profilesEnabled} value={profile} onChange={setProfile} />
+      <ProviderDropdown providers={providers} value={provider} onChange={setProvider} />
 
       <RunButton loading={loading} onClick={handleRun} label="Run scrape" />
       {error && <ErrorBlock message={error} />}
@@ -460,6 +474,31 @@ function ProfileDropdown(props: {
         </NativeSelect>
         <p className="text-[11px] text-muted-foreground">
           Optional. Runs with the saved cookies and storage of this profile.
+        </p>
+      </div>
+    </FormRow>
+  );
+}
+
+function ProviderDropdown(props: {
+  providers: { id: string }[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  if (props.providers.length <= 1) return null;
+  return (
+    <FormRow label="Provider">
+      <div className="space-y-1">
+        <NativeSelect value={props.value} onChange={(e) => props.onChange(e.target.value)}>
+          <option value="">Auto (gateway picks)</option>
+          {props.providers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.id}
+            </option>
+          ))}
+        </NativeSelect>
+        <p className="text-[11px] text-muted-foreground">
+          Optional. Pin this request to one backend. No failover when pinned.
         </p>
       </div>
     </FormRow>

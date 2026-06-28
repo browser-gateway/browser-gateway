@@ -34,6 +34,18 @@ const BaseFields = {
    * the `profiles` feature to be enabled on the gateway.
    */
   profile: ProfileIdSchema.optional(),
+  /**
+   * Pin this request to a specific provider id (matches a key under
+   * `providers:` in gateway.yml). When set, the gateway routes only to that
+   * backend — no failover. Returns 400 if the id isn't configured, 503 if
+   * the provider is in cooldown / saturated past `connectionTimeout`, and
+   * 400 if `profile` is also set but the provider's `browserCookies`
+   * capability is unsupported.
+   */
+  provider: z
+    .string()
+    .regex(/^[a-zA-Z0-9_-]+$/, { message: "provider id must be alphanumeric with hyphens or underscores" })
+    .optional(),
 };
 
 export const ScreenshotRequestSchema = z.object({

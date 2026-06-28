@@ -52,9 +52,20 @@ export class SessionPool {
     );
   }
 
-  async acquirePage(): Promise<PageHandle> {
+  /**
+   * Acquire a page from any pool session, or — when `opts.targetProviderId`
+   * is set — open a one-shot session pinned to that provider. Pinned sessions
+   * do NOT use the cached pool: the operator asked for a specific backend,
+   * so we don't want to return a session that's already attached to a
+   * different one.
+   */
+  async acquirePage(opts: { targetProviderId?: string } = {}): Promise<PageHandle> {
     if (this.closed) {
       throw new Error("Pool is shut down");
+    }
+
+    if (opts.targetProviderId) {
+      return this.acquirePinnedPage(opts.targetProviderId);
     }
 
     // Trigger proactive scaling BEFORE serialized acquisition
@@ -184,6 +195,72 @@ export class SessionPool {
 
       this.dequeueNext();
     }
+  }
+
+  /**
+   * Open a fresh CDP connection pinned to the requested provider, hand back a
+   * page handle that closes the underlying browser on release. Bypasses the
+   * cached pool intentionally — pool sessions are anonymous (any provider),
+   * and reusing one would defeat the pinning guarantee.
+   *
+   * The pin is enforced inside the WS-upgrade handler: we pass
+   * `?provider=<id>` on the loopback connect URL and the handler refuses to
+   * route anywhere else (including failover). 400/503 from the upgrade
+   * surface here as a thrown Error so the caller can map to the right HTTP
+   * status.
+   */
+  private async acquirePinnedPage(providerId: string): Promise<PageHandle> {
+    const params = new URLSearchParams();
+    if (this.token) params.set("token", this.token);
+    params.set("provider", providerId);
+    const wsUrl = `ws://127.0.0.1:${this.gatewayPort}/v1/connect?${params.toString()}`;
+
+    const id = randomUUID();
+    const session: PoolSession = {
+      id,
+      browser: null!,
+      state: "starting",
+      activePages: 0,
+      totalPagesServed: 0,
+      createdAt: Date.now(),
+      lastActivity: Date.now(),
+    };
+
+    const browser = await chromium.connectOverCDP(wsUrl, {
+      timeout: this.config.pageTimeoutMs,
+    });
+    session.browser = browser;
+    session.state = "active";
+
+    const handleId = randomUUID();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    let page;
+    try {
+      page = await context.newPage();
+    } catch (err) {
+      await context.close().catch(() => { /* ignore */ });
+      await browser.close().catch(() => { /* ignore */ });
+      throw err;
+    }
+
+    session.activePages = 1;
+    session.totalPagesServed = 1;
+
+    const handle: PageHandle = { id: handleId, sessionId: id, context, page, acquiredAt: Date.now() };
+    this.activeHandles.set(handleId, handle);
+
+    // Wrap release so the one-shot browser closes after the page does.
+    const originalContextClose = context.close.bind(context);
+    context.close = async () => {
+      try {
+        await originalContextClose();
+      } finally {
+        await browser.close().catch(() => { /* ignore */ });
+      }
+    };
+
+    this.logger.info({ handleId, providerId, sessionId: id }, "pool: pinned page acquired");
+    return handle;
   }
 
   getStatus(): PoolStatus {

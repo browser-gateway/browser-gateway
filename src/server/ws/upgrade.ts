@@ -209,8 +209,20 @@ export function createWebSocketHandler(
     // Normal routing (new session or failed reconnect)
     const sessionId = randomUUID();
 
+    // Optional pin to a specific provider. Used internally by the REST/MCP
+    // dispatcher so users can target one backend. When set, failover is
+    // disabled — the request either runs on this provider or fails.
+    const targetProviderId = url.searchParams.get("provider") ?? undefined;
+    if (targetProviderId && !gateway.registry.get(targetProviderId)) {
+      respondError(socket, 400, {
+        error: `Provider '${targetProviderId}' not configured`,
+        availableProviders: gateway.registry.getAll().map((p) => p.id),
+      });
+      return;
+    }
+
     const tryConnect = async (): Promise<boolean> => {
-      const candidates = gateway.selectProviderWithFallbacks();
+      const candidates = gateway.selectProviderWithFallbacks(targetProviderId);
 
       if (candidates.length === 0 && gateway.registry.size() === 0) {
         return false;
@@ -242,11 +254,15 @@ export function createWebSocketHandler(
     try {
       if (await tryConnect()) return;
 
-      const slotAvailable = await gateway.waitForSlot();
+      const slotAvailable = await gateway.waitForSlot(undefined, targetProviderId);
       if (slotAvailable && await tryConnect()) return;
 
-      logger.warn({ sessionId, queueSize: gateway.queueSize }, "connection failed, all providers exhausted");
-      respondError(socket, 503, { error: "All providers unavailable" });
+      logger.warn({ sessionId, queueSize: gateway.queueSize, targetProviderId }, "connection failed, all providers exhausted");
+      if (targetProviderId) {
+        respondError(socket, 503, { error: `Provider '${targetProviderId}' unavailable (cooldown or saturated)` });
+      } else {
+        respondError(socket, 503, { error: "All providers unavailable" });
+      }
     } finally {
       // If the profile was acquired but never handed off to a successful pipe, release it.
       if (acquired && profileLifecycle) {

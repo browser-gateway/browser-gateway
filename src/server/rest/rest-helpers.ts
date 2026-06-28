@@ -30,6 +30,7 @@ export function pageOptionsFromBody(body: BaseRequestFields, c: Context): PageOp
     headers: body.headers,
     userAgent: body.userAgent,
     retries: body.retries,
+    provider: body.provider,
     signal: c.req.raw.signal,
   };
 }

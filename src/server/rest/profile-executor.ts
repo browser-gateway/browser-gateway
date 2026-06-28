@@ -72,11 +72,16 @@ export async function withProfilePage<T>(
   }
 
   const sessionId = `rest-profile-${profileId}-${Date.now()}`;
-  const candidates = gateway.selectProviderWithFallbacks();
+  const candidates = gateway.selectProviderWithFallbacks(options.provider);
 
   if (candidates.length === 0) {
     await lifecycle.release(acquired);
-    throw new RestApiError(503, "No providers available");
+    throw new RestApiError(
+      503,
+      options.provider
+        ? `Provider '${options.provider}' unavailable (cooldown or saturated)`
+        : "No providers available",
+    );
   }
 
   let lastError: Error | null = null;

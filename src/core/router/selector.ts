@@ -9,6 +9,18 @@ export type Strategy =
   | "latency-optimized"
   | "weighted";
 
+export interface SelectOptions {
+  strategy?: Strategy;
+  /**
+   * When set, restrict the candidate list to exactly this provider id.
+   * Returns `[provider]` when the pinned provider is healthy + has a free slot,
+   * `[]` when it's missing / in cooldown / saturated. All other selection
+   * strategies are bypassed — the caller asked for one specific provider,
+   * not a routing decision.
+   */
+  targetProviderId?: string;
+}
+
 export class ProviderSelector {
   private roundRobinIndex = 0;
   private weightedState: Map<string, number> = new Map();
@@ -19,7 +31,16 @@ export class ProviderSelector {
     private defaultStrategy: Strategy
   ) {}
 
-  getCandidates(strategy?: Strategy): ProviderState[] {
+  getCandidates(opts: SelectOptions = {}): ProviderState[] {
+    if (opts.targetProviderId !== undefined) {
+      const pinned = this.registry.get(opts.targetProviderId);
+      if (!pinned) return [];
+      if (this.cooldown.isInCooldown(pinned)) return [];
+      const max = pinned.config.limits?.maxConcurrent;
+      if (max && pinned.active >= max) return [];
+      return [pinned];
+    }
+
     const all = this.registry.getAllSortedByPriority();
 
     const available = all.filter((b) => {
@@ -33,7 +54,7 @@ export class ProviderSelector {
 
     if (available.length === 0) return [];
 
-    const activeStrategy = strategy ?? this.defaultStrategy;
+    const activeStrategy = opts.strategy ?? this.defaultStrategy;
     return this.applyStrategy(available, activeStrategy);
   }
 
