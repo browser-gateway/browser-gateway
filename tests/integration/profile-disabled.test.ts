@@ -39,14 +39,14 @@ describe("Profile REST when feature is disabled", () => {
     expect(body.enabled).toBe(false);
     expect(body.count).toBe(0);
     expect(body.profiles).toEqual([]);
-    expect(body.reason).toMatch(/profiles\.enabled/i);
+    expect(body.reason).toMatch(/enable profiles\b/i);
   });
 
   it("GET /v1/profiles/:id returns 404 (no profile can exist when disabled)", async () => {
     const res = await app.request("/v1/profiles/some-id");
     expect(res.status).toBe(404);
     const body = await res.json() as { error: string; reason: string };
-    expect(body.reason).toMatch(/profiles\.enabled/i);
+    expect(body.reason).toMatch(/enable profiles\b/i);
   });
 
   it("DELETE /v1/profiles/:id returns 400 with a clear disabled reason", async () => {
@@ -54,7 +54,7 @@ describe("Profile REST when feature is disabled", () => {
     expect(res.status).toBe(400);
     const body = await res.json() as { error: string; reason: string };
     expect(body.error).toBe("Profiles disabled");
-    expect(body.reason).toMatch(/profiles\.enabled/i);
+    expect(body.reason).toMatch(/enable profiles\b/i);
   });
 
   it("POST /v1/profiles/import returns 400", async () => {

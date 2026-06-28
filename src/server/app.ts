@@ -120,6 +120,7 @@ export function createApp(
   logger?: Logger,
   pool?: SessionPool,
   profile?: ProfileAppDeps,
+  profileBootstrapError?: string,
 ) {
   const app = new Hono();
   const sessionSecret = getSessionSecret(token);
@@ -238,7 +239,10 @@ export function createApp(
     // Profiles feature is OFF. Still register routes so callers (dashboard,
     // scripts) get a structured "disabled" response instead of falling through
     // to the catch-all 503. See `createDisabledProfileRoutes` for the shape.
-    app.route("/v1", createDisabledProfileRoutes());
+    app.route("/v1", createDisabledProfileRoutes({
+      config: gateway.config,
+      bootstrapError: profileBootstrapError,
+    }));
   }
 
   // Provider CRUD endpoints

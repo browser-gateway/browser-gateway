@@ -196,20 +196,24 @@ async function startServer() {
   resolveEncryptionKey(logger);
 
   let profileBootstrap;
+  let profileBootstrapError: string | undefined;
   try {
     profileBootstrap = await bootstrapProfiles(config.profiles, logger);
   } catch (err) {
     // Profile bootstrap failure is non-fatal — the rest of the gateway (routing,
-    // REST, dashboard, MCP) is fully functional without profiles. Surface a
-    // loud error so the operator can fix the underlying problem (corrupt
-    // keycheck, wrong key, unreadable store) without losing access to the
-    // dashboard's config editor in the meantime.
+    // REST, dashboard, MCP) is fully functional without profiles. The error is
+    // also stashed on the disabled-profile route so the dashboard's empty state
+    // can show the operator what actually went wrong instead of the generic
+    // "config says false" message.
     const detail = err instanceof ProfileBootstrapError
-      ? err.message + (err.hint ? `\n  hint: ${err.hint}` : "")
+      ? err.message + (err.hint ? ` — hint: ${err.hint.replace(/\n/g, " ")}` : "")
       : err instanceof Error
       ? err.message
       : String(err);
-    logger.error({ error: detail }, "profile bootstrap failed — gateway will continue with profiles disabled");
+    profileBootstrapError = detail;
+    // Embed the detail directly in the message string so log viewers that only
+    // show the `msg` field (Railway, k8s lens) still see it.
+    logger.error(`profile bootstrap failed — gateway will continue with profiles disabled: ${detail}`);
     profileBootstrap = { enabled: false as const };
   }
 
@@ -227,6 +231,7 @@ async function startServer() {
           lifecycle: profileBootstrap.lifecycle,
         }
       : undefined,
+    profileBootstrapError,
   );
 
   if (token) {

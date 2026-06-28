@@ -11,6 +11,7 @@ import {
 import type { FilesystemProfileStore } from "../profile/filesystem-store.js";
 import { loadedConfigPath } from "../config/loader.js";
 import { enableProfilesFlow } from "../setup/profiles-setup.js";
+import type { GatewayConfig } from "../../core/types.js";
 
 export interface ProfileRestDeps {
   store: FilesystemProfileStore;
@@ -18,8 +19,17 @@ export interface ProfileRestDeps {
   logger: Logger;
 }
 
-const DISABLED_REASON =
-  "Profiles are not enabled on this gateway. Set `profiles.enabled: true` in gateway.yml and configure BG_ENCRYPTION_KEY (any 32+ character secret), then restart.";
+export interface DisabledProfileDeps {
+  /** Live gateway config — `enableProfilesFlow` updates `config.profiles.enabled` so subsequent writes preserve the block. */
+  config?: GatewayConfig;
+  /** Last profile-bootstrap error string, if bootstrap failed at startup. Distinguishes "config off" from "config on but broken". */
+  bootstrapError?: string;
+}
+
+const REASON_CONFIG_OFF =
+  "Profiles are not enabled. Click 'Enable Profiles' in the dashboard, then restart the gateway.";
+const REASON_BOOTSTRAP_FAILED = (err: string) =>
+  `Profiles are enabled in gateway.yml but the bootstrap failed at startup: ${err}. The most common cause is a stale keycheck in the data directory — delete ${"`"}$BG_DATA_DIR/profiles${"`"} and restart to reinitialize.`;
 
 /**
  * Profile routes that respond gracefully when the profiles feature is OFF.
@@ -33,37 +43,40 @@ const DISABLED_REASON =
  * The list endpoint returns 200 (not 503) so dashboards can render an empty
  * state with a "feature disabled" banner instead of throwing an error.
  */
-export function createDisabledProfileRoutes(): Hono {
+export function createDisabledProfileRoutes(deps: DisabledProfileDeps = {}): Hono {
   const app = new Hono();
+  const reason = () => deps.bootstrapError ? REASON_BOOTSTRAP_FAILED(deps.bootstrapError) : REASON_CONFIG_OFF;
+
   app.get("/profiles", (c) =>
-    c.json({ enabled: false, count: 0, profiles: [], reason: DISABLED_REASON }),
+    c.json({ enabled: false, count: 0, profiles: [], reason: reason(), bootstrapError: deps.bootstrapError ?? null }),
   );
   app.get("/profiles/:id", (c) =>
-    c.json({ error: "Profile not found", reason: DISABLED_REASON }, 404),
+    c.json({ error: "Profile not found", reason: reason() }, 404),
   );
   app.delete("/profiles/:id", (c) =>
-    c.json({ error: "Profiles disabled", reason: DISABLED_REASON }, 400),
+    c.json({ error: "Profiles disabled", reason: reason() }, 400),
   );
   app.get("/profiles/:id/export", (c) =>
-    c.json({ error: "Profiles disabled", reason: DISABLED_REASON }, 400),
+    c.json({ error: "Profiles disabled", reason: reason() }, 400),
   );
   app.post("/profiles/import", (c) =>
-    c.json({ error: "Profiles disabled", reason: DISABLED_REASON }, 400),
+    c.json({ error: "Profiles disabled", reason: reason() }, 400),
   );
   app.post("/profiles/create", (c) =>
-    c.json({ error: "Profiles disabled", reason: DISABLED_REASON }, 400),
+    c.json({ error: "Profiles disabled", reason: reason() }, 400),
   );
 
   /**
-   * Enable-Profiles wizard — appends a profiles block to gateway.yml. The
-   * encryption key is auto-resolved on next boot (env → data-dir file →
-   * generated). The gateway still needs a manual restart after this — it
-   * can't relaunch itself in process.
+   * Enable-Profiles wizard — appends a profiles block to gateway.yml AND
+   * flips the live `config.profiles.enabled` so any subsequent writeConfig
+   * call (provider add/edit/delete) doesn't overwrite the new block.
+   * Restart is still required for the gateway to actually bootstrap profiles.
    */
   app.post("/profiles/setup", async (c) => {
     try {
       const result = enableProfilesFlow({
         configPath: loadedConfigPath ?? resolve(process.cwd(), "gateway.yml"),
+        config: deps.config,
       });
       return c.json(result);
     } catch (err) {

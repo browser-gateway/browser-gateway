@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-06-27
+Generated: 2026-06-28
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -220,14 +220,14 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/app.ts`
 
 - **interface** `interface ProfileAppDeps` (line 38)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps) → unknown` (line 116)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string) → unknown` (line 116)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
 - **fn** `loadConfig(configPath?: string) → GatewayConfig` (line 40)
 ### `src/server/config/writer.ts`
 
-- **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
+- **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 19) — Serialize the gateway config to YAML and persist it to disk durably.
 ### `src/server/live/cdp-client.ts`
 
 - **interface** `interface CdpEvent` (line 12)
@@ -339,9 +339,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `withProfilePage(deps: WithProfilePageDeps, profileId: string, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 42)
 ### `src/server/rest/profiles.ts`
 
-- **interface** `interface ProfileRestDeps` (line 15)
-- **fn** `createDisabledProfileRoutes() → Hono` (line 36) — Profile routes that respond gracefully when the profiles feature is OFF.
-- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 91) — Profile management REST routes.
+- **interface** `interface ProfileRestDeps` (line 16)
+- **interface** `interface DisabledProfileDeps` (line 22)
+- **fn** `createDisabledProfileRoutes(deps: DisabledProfileDeps = {}) → Hono` (line 46) — Profile routes that respond gracefully when the profiles feature is OFF.
+- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 104) — Profile management REST routes.
 ### `src/server/rest/rest-helpers.ts`
 
 - **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body
@@ -377,9 +378,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `resolveHost() → string` (line 23) — Resolve the bind interface. Default `0.0.0.0` (reachable on any iface).
 ### `src/server/setup/profiles-setup.ts`
 
-- **interface** `interface EnableProfilesInput` (line 10)
-- **interface** `interface EnableProfilesResult` (line 15)
-- **fn** `enableProfilesFlow(input: EnableProfilesInput) → EnableProfilesResult` (line 36)
+- **interface** `interface EnableProfilesInput` (line 18)
+- **interface** `interface EnableProfilesResult` (line 29)
+- **fn** `enableProfilesFlow(input: EnableProfilesInput) → EnableProfilesResult` (line 64)
 ### `src/server/startup/banner.ts`
 
 - **interface** `interface BannerOptions` (line 53)

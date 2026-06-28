@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, openSync, writeSync, fsyncSync, closeSync } from "node:fs";
 import { parse } from "yaml";
 import { GatewayConfigSchema, type GatewayConfig } from "../../core/types.js";
 import { resolveDataDir } from "../setup/data-dir.js";
@@ -66,7 +66,15 @@ export function loadConfig(configPath?: string): GatewayConfig {
     loadedConfigPath = configPath ?? writable;
     if (loadedConfigPath === writable && !existsSync(writable)) {
       try {
-        writeFileSync(writable, "version: 1\nproviders: {}\n");
+        // fsync the seed so a Railway-style container kill seconds after first
+        // boot doesn't leave gateway.yml in an inconsistent state.
+        const fd = openSync(writable, "w");
+        try {
+          writeSync(fd, "version: 1\nproviders: {}\n");
+          fsyncSync(fd);
+        } finally {
+          closeSync(fd);
+        }
       } catch {
         // read-only filesystem — the in-memory default still works, dashboard
         // edits will surface the underlying write error to the user.
