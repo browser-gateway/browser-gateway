@@ -3,7 +3,7 @@
 import { createServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { existsSync, readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pino from "pino";
 
@@ -38,6 +38,8 @@ import { loadConfig } from "./config/loader.js";
 import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
 import { bootstrapProfiles, ProfileBootstrapError } from "./profile/bootstrap.js";
+import { ReplayController, ReplayRetention, ReplayStore } from "./replay/index.js";
+import { resolveDataDir } from "./setup/data-dir.js";
 import { resolveEncryptionKey } from "./setup/encryption-key.js";
 import { resolvePort, resolveHost } from "./setup/port.js";
 import { createMcpServer, createSessionManager } from "./mcp/server.js";
@@ -217,6 +219,26 @@ async function startServer() {
     profileBootstrap = { enabled: false as const };
   }
 
+  const replayStorePath = resolve(resolveDataDir(), config.replay.filesystem.path);
+  const replayStore = new ReplayStore(replayStorePath);
+  const replayController = config.replay.enabled
+    ? new ReplayController({
+        storePath: replayStorePath,
+        config: config.replay,
+        registry: gateway.registry,
+        logger,
+      })
+    : undefined;
+  const replayRetention = config.replay.enabled
+    ? new ReplayRetention({
+        store: replayStore,
+        storePath: replayStorePath,
+        retentionDays: config.replay.retentionDays,
+        logger,
+      })
+    : undefined;
+  replayRetention?.start();
+
   const webDir = findWebDir();
   const app = createApp(
     gateway,
@@ -232,6 +254,7 @@ async function startServer() {
         }
       : undefined,
     profileBootstrapError,
+    replayStore,
   );
 
   if (token) {
@@ -258,6 +281,7 @@ async function startServer() {
     token,
     reconnectRegistry,
     profileBootstrap.enabled ? profileBootstrap.lifecycle : undefined,
+    replayController,
   );
 
   const activeSockets = new Map<string, { client: Duplex; provider: Duplex }>();
@@ -424,6 +448,11 @@ async function startServer() {
     // Bounded by gateway.shutdownDrainMs so a hung provider can't block exit forever.
     if (profileBootstrap.enabled) {
       await profileBootstrap.lifecycle.drain(config.gateway.shutdownDrainMs ?? 30_000);
+    }
+
+    replayRetention?.stop();
+    if (replayController) {
+      await replayController.shutdown();
     }
 
     logger.info("server stopped");

@@ -49,3 +49,16 @@ dashboard:
 
 logging:
   level: info                       # debug | info | warn | error
+
+# Session replay — capture a visual record of every routed session for later
+# playback in the dashboard. Captures via CDP Page.startScreencast on any
+# provider whose capability probe reports pageScreencast: supported. Skipped
+# silently for providers that don't. Replays live in $BG_DATA_DIR/replays/.
+replay:
+  enabled: false
+  retentionDays: 7                  # delete completed replays older than this. 0 = keep forever
+  maxBytesPerSession: 524288000     # 500 MB per session
+  capture:
+    format: png                     # png | jpeg
+    quality: 80                     # only used when format=jpeg
+    everyNthFrame: 1                # 1 = every visual change; bump to skip frames

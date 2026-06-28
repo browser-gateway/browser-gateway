@@ -16,6 +16,8 @@ import { loadedConfigPath } from "./config/loader.js";
 import type { SessionPool } from "../core/pool/index.js";
 import { createRestRoutes } from "./rest/index.js";
 import { createDisabledProfileRoutes, createProfileRoutes } from "./rest/profiles.js";
+import { createReplayRoutes } from "./rest/replays.js";
+import type { ReplayStore } from "./replay/index.js";
 import type { FilesystemProfileStore } from "./profile/filesystem-store.js";
 import type { ProfileLifecycle } from "./profile/lifecycle.js";
 import { getEffectiveHost, getEffectiveProtocol, parseAllowedOrigins } from "./util/request.js";
@@ -121,6 +123,7 @@ export function createApp(
   pool?: SessionPool,
   profile?: ProfileAppDeps,
   profileBootstrapError?: string,
+  replayStore?: ReplayStore,
 ) {
   const app = new Hono();
   const sessionSecret = getSessionSecret(token);
@@ -242,6 +245,15 @@ export function createApp(
     app.route("/v1", createDisabledProfileRoutes({
       config: gateway.config,
       bootstrapError: profileBootstrapError,
+    }));
+  }
+
+  if (replayStore) {
+    const replayLogger = logger ?? gateway.logger;
+    app.route("/v1", createReplayRoutes({
+      store: replayStore,
+      logger: replayLogger,
+      enabled: gateway.config.replay.enabled,
     }));
   }
 

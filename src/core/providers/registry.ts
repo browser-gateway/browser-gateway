@@ -82,6 +82,10 @@ export class ProviderRegistry {
     return this.capabilities.get(id);
   }
 
+  setCapabilities(id: string, capabilities: import("./capabilities.js").ProviderCapabilities): void {
+    this.capabilities.set(id, { status: "ready", capabilities });
+  }
+
   get(id: string): ProviderState | undefined {
     return this.providers.get(id);
   }

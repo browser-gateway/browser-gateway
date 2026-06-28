@@ -168,6 +168,25 @@ export const GatewayConfigSchema: z.ZodObject<{
         cdpTimeoutMs: z.ZodDefault<z.ZodNumber>;
         commitTimeoutMs: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>>;
+    replay: z.ZodDefault<z.ZodObject<{
+        enabled: z.ZodDefault<z.ZodBoolean>;
+        store: z.ZodDefault<z.ZodEnum<{
+            filesystem: "filesystem";
+        }>>;
+        filesystem: z.ZodDefault<z.ZodObject<{
+            path: z.ZodDefault<z.ZodString>;
+        }, z.core.$strip>>;
+        retentionDays: z.ZodDefault<z.ZodNumber>;
+        maxBytesPerSession: z.ZodDefault<z.ZodNumber>;
+        capture: z.ZodDefault<z.ZodObject<{
+            format: z.ZodDefault<z.ZodEnum<{
+                png: "png";
+                jpeg: "jpeg";
+            }>>;
+            quality: z.ZodDefault<z.ZodNumber>;
+            everyNthFrame: z.ZodDefault<z.ZodNumber>;
+        }, z.core.$strip>>;
+    }, z.core.$strip>>;
 }, z.core.$strip>;
 
 // @public (undocumented)
@@ -261,6 +280,10 @@ export class ProviderRegistry {
     register(id: string, config: ProviderConfig, opts?: RegisterOptions): void;
     // (undocumented)
     remove(id: string): boolean;
+    // Warning: (ae-forgotten-export) The symbol "ProviderCapabilities" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    setCapabilities(id: string, capabilities: ProviderCapabilities): void;
     // (undocumented)
     size(): number;
 }

@@ -314,3 +314,88 @@ export async function enableProfilesSetup(encryptionKey: string): Promise<Enable
   }
   return res.json();
 }
+
+export interface ReplayFrameRecord {
+  frame: number;
+  ts: number;
+  url: string;
+  deviceWidth: number;
+  deviceHeight: number;
+  scrollX: number;
+  scrollY: number;
+  sizeBytes: number;
+}
+
+export interface ReplayTargetSummary {
+  targetId: string;
+  frameCount: number;
+  sizeBytes: number;
+  firstUrl?: string;
+  lastUrl?: string;
+}
+
+export interface ReplayMeta {
+  sessionId: string;
+  providerId: string;
+  profileId?: string;
+  startedAt: number;
+  endedAt?: number;
+  frameCount: number;
+  sizeBytes: number;
+  complete: boolean;
+}
+
+export interface ReplayDetail extends ReplayMeta {
+  targets: ReplayTargetSummary[];
+}
+
+export interface ReplayListResponse {
+  enabled: boolean;
+  count: number;
+  replays: ReplayMeta[];
+  reason?: string;
+}
+
+export async function fetchReplays(): Promise<ReplayListResponse> {
+  const res = await fetch(`${API_BASE}/v1/replays`, fetchOpts);
+  if (res.status === 401) throw new AuthError();
+  if (res.status === 404) return { enabled: false, count: 0, replays: [] };
+  if (!res.ok) throw new Error(`Replays API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchReplay(id: string): Promise<ReplayDetail | null> {
+  const res = await fetch(`${API_BASE}/v1/replays/${encodeURIComponent(id)}`, fetchOpts);
+  if (res.status === 401) throw new AuthError();
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Replay API error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchReplayManifest(id: string, targetId: string): Promise<ReplayFrameRecord[]> {
+  const res = await fetch(
+    `${API_BASE}/v1/replays/${encodeURIComponent(id)}/targets/${encodeURIComponent(targetId)}/manifest`,
+    fetchOpts,
+  );
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) throw new Error(`Manifest fetch failed: ${res.status}`);
+  const text = await res.text();
+  return text.split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l) as ReplayFrameRecord);
+}
+
+export function replayFrameUrl(id: string, targetId: string, frame: number, ext: "png" | "jpeg" = "png"): string {
+  const padded = String(frame).padStart(6, "0");
+  return `${API_BASE}/v1/replays/${encodeURIComponent(id)}/targets/${encodeURIComponent(targetId)}/frames/${padded}.${ext}`;
+}
+
+export async function deleteReplay(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/replays/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    ...fetchOpts,
+  });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Delete failed: ${res.status}`);
+  }
+}

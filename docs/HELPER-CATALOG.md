@@ -210,18 +210,20 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **const** `const ProviderConfigSchema` (line 4)
 - **const** `const ProfilesConfigSchema` (line 65)
 - **type** `type ProfilesConfig` (line 81)
-- **const** `const GatewayConfigSchema` (line 83)
-- **type** `type ProviderConfig` (line 94)
-- **type** `type GatewayConfig` (line 95)
-- **interface** `interface ProviderState` (line 97)
-- **interface** `interface Session` (line 110)
+- **const** `const ReplayConfigSchema` (line 93)
+- **type** `type ReplayConfig` (line 102)
+- **const** `const GatewayConfigSchema` (line 104)
+- **type** `type ProviderConfig` (line 116)
+- **type** `type GatewayConfig` (line 117)
+- **interface** `interface ProviderState` (line 119)
+- **interface** `interface Session` (line 132)
 
 ## Server layer (src/server/)
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 38)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string) → unknown` (line 116)
+- **interface** `interface ProfileAppDeps` (line 40)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore) → unknown` (line 118)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
@@ -317,6 +319,28 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type LifecycleFailureReason` (line 47)
 - **class** `class LifecycleError` (line 54)
 - **class** `class ProfileLifecycle` (line 65) — Orchestrates acquire/inject/commit/release for a profile around one session.
+### `src/server/replay/capture.ts`
+
+- **interface** `interface ReplayCaptureOpts` (line 9)
+- **class** `class ReplayCapture` (line 31)
+### `src/server/replay/controller.ts`
+
+- **interface** `interface ReplayControllerOpts` (line 6)
+- **class** `class ReplayController` (line 13)
+### `src/server/replay/retention.ts`
+
+- **interface** `interface ReplayRetentionOpts` (line 5)
+- **class** `class ReplayRetention` (line 17)
+### `src/server/replay/store.ts`
+
+- **interface** `interface ListOpts` (line 15)
+- **class** `class ReplayStore` (line 20)
+### `src/server/replay/types.ts`
+
+- **interface** `interface ReplayFrameRecord` (line 1)
+- **interface** `interface ReplayMeta` (line 12)
+- **interface** `interface ReplayTargetSummary` (line 23)
+- **interface** `interface ReplayDetail` (line 31)
 ### `src/server/rest/content.ts`
 
 - **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 17)
@@ -344,6 +368,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface DisabledProfileDeps` (line 22)
 - **fn** `createDisabledProfileRoutes(deps: DisabledProfileDeps = {}) → Hono` (line 46) — Profile routes that respond gracefully when the profiles feature is OFF.
 - **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 104) — Profile management REST routes.
+### `src/server/rest/replays.ts`
+
+- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 17)
 ### `src/server/rest/rest-helpers.ts`
 
 - **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body
@@ -406,7 +433,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle) → unknown` (line 85)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController) → unknown` (line 86)
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 

@@ -15,6 +15,7 @@ import {
 import { createLiveUpgradeHandler } from "../live/upgrade.js";
 import { getEffectiveProtocolNode } from "../util/request.js";
 import { parseAllowedOrigins } from "../util/request.js";
+import type { ReplayController } from "../replay/controller.js";
 
 function safeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -88,6 +89,7 @@ export function createWebSocketHandler(
   token?: string,
   reconnectRegistry?: ReconnectRegistry,
   profileLifecycle?: ProfileLifecycle,
+  replayController?: ReplayController,
 ) {
 
   const liveHandler = createLiveUpgradeHandler({ gateway, logger, token, profileLifecycle });
@@ -191,7 +193,7 @@ export function createWebSocketHandler(
 
           const connected = await pipeToProvider(
             gateway, logger, socket, head, req, reconnectSessionId, provider, reconnectRegistry,
-            profileLifecycle, acquired,
+            profileLifecycle, acquired, replayController,
           );
 
           if (connected) {
@@ -236,7 +238,7 @@ export function createWebSocketHandler(
 
         const connected = await pipeToProvider(
           gateway, logger, socket, head, req, sessionId, provider, reconnectRegistry,
-          profileLifecycle, acquired,
+          profileLifecycle, acquired, replayController,
         );
 
         if (connected) {
@@ -318,6 +320,7 @@ async function pipeToProvider(
   reconnectRegistry?: ReconnectRegistry,
   profileLifecycle?: ProfileLifecycle,
   acquired?: AcquiredProfile | null,
+  replayController?: ReplayController,
 ): Promise<boolean> {
   // L4 fix: do the awaited setup OUTSIDE the Promise constructor so async
   // errors don't get silently swallowed by a missing reject path.
@@ -400,6 +403,15 @@ async function pipeToProvider(
         gateway.emit("session.created", { sessionId, providerId: provider.id });
         logger.info({ sessionId, providerId: provider.id }, "session established");
 
+        if (replayController) {
+          replayController.onSessionStart({
+            sessionId,
+            providerId: provider.id,
+            providerWsUrl: resolvedUrl,
+            profileId: acquired?.profileId,
+          });
+        }
+
         // Inject X-Session-Id header into the 101 response
         const headerPart = responseBuffer.subarray(0, headerEnd).toString();
         const afterHeaders = responseBuffer.subarray(headerEnd + 4); // skip \r\n\r\n
@@ -434,6 +446,10 @@ async function pipeToProvider(
 
       const session = gateway.sessions.remove(sessionId);
       gateway.releaseSlot(sessionId, provider.id);
+
+      if (replayController) {
+        replayController.onSessionEnd(sessionId);
+      }
 
       const durationMs = Date.now() - startTime;
       gateway.recordSuccess(provider.id, durationMs);

@@ -1,0 +1,119 @@
+import { Hono } from "hono";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import type { Logger } from "pino";
+import type { ReplayStore } from "../replay/index.js";
+
+const SESSION_ID_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
+const TARGET_ID_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
+
+interface ReplayRoutesDeps {
+  store: ReplayStore;
+  logger: Logger;
+  enabled: boolean;
+}
+
+const DISABLED_REASON = "Replay capture is disabled. Set replay.enabled: true in gateway.yml and restart.";
+
+export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
+  const app = new Hono();
+
+  if (!deps.enabled) {
+    app.get("/replays", (c) => c.json({ enabled: false, replays: [], reason: DISABLED_REASON }));
+    app.get("/replays/:id", (c) => c.json({ error: "Replay not found", reason: DISABLED_REASON }, 404));
+    app.delete("/replays/:id", (c) => c.json({ error: "Replays disabled", reason: DISABLED_REASON }, 400));
+    app.get("/replays/:id/manifest", (c) => c.json({ error: "Replays disabled", reason: DISABLED_REASON }, 400));
+    app.get("/replays/:id/targets/:targetId/manifest", (c) =>
+      c.json({ error: "Replays disabled", reason: DISABLED_REASON }, 400),
+    );
+    app.get("/replays/:id/targets/:targetId/frames/:frame{[0-9]+\\.(png|jpeg)}", (c) =>
+      c.json({ error: "Replays disabled", reason: DISABLED_REASON }, 400),
+    );
+    return app;
+  }
+
+  app.get("/replays", (c) => {
+    const sinceRaw = c.req.query("since");
+    const limitRaw = c.req.query("limit");
+    const sinceMs = sinceRaw ? Date.parse(sinceRaw) : undefined;
+    const limit = limitRaw ? Math.max(1, Math.min(500, parseInt(limitRaw, 10))) : undefined;
+
+    if (sinceRaw && (sinceMs === undefined || Number.isNaN(sinceMs))) {
+      return c.json({ error: "since must be an ISO-8601 timestamp" }, 400);
+    }
+
+    const replays = deps.store.list({ sinceMs, limit });
+    return c.json({ enabled: true, count: replays.length, replays });
+  });
+
+  app.get("/replays/:id", (c) => {
+    const id = c.req.param("id");
+    if (!SESSION_ID_REGEX.test(id)) {
+      return c.json({ error: "Invalid session id" }, 400);
+    }
+    const detail = deps.store.get(id);
+    if (!detail) {
+      return c.json({ error: "Replay not found" }, 404);
+    }
+    return c.json(detail);
+  });
+
+  app.delete("/replays/:id", (c) => {
+    const id = c.req.param("id");
+    if (!SESSION_ID_REGEX.test(id)) {
+      return c.json({ error: "Invalid session id" }, 400);
+    }
+    if (!deps.store.get(id)) {
+      return c.json({ error: "Replay not found" }, 404);
+    }
+    deps.store.delete(id);
+    deps.logger.info({ sessionId: id }, "replay deleted via REST");
+    return c.json({ deleted: id });
+  });
+
+  app.get("/replays/:id/targets/:targetId/manifest", (c) => {
+    const id = c.req.param("id");
+    const targetId = c.req.param("targetId");
+    if (!SESSION_ID_REGEX.test(id) || !TARGET_ID_REGEX.test(targetId)) {
+      return c.json({ error: "Invalid id" }, 400);
+    }
+    const path = deps.store.manifestPath(id, targetId);
+    if (!existsSync(path)) {
+      return c.json({ error: "Manifest not found" }, 404);
+    }
+    const body = readFileSync(path);
+    return new Response(new Uint8Array(body), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/jsonlines",
+        "Content-Length": String(body.length),
+      },
+    });
+  });
+
+  app.get("/replays/:id/targets/:targetId/frames/:frame", (c) => {
+    const id = c.req.param("id");
+    const targetId = c.req.param("targetId");
+    const frame = c.req.param("frame");
+    const m = /^([0-9]+)\.(png|jpeg)$/.exec(frame);
+    if (!m || !SESSION_ID_REGEX.test(id) || !TARGET_ID_REGEX.test(targetId)) {
+      return c.json({ error: "Invalid frame request" }, 400);
+    }
+    const frameNum = parseInt(m[1], 10);
+    const ext = m[2] as "png" | "jpeg";
+    const path = deps.store.framePath(id, targetId, frameNum, ext);
+    if (!existsSync(path)) {
+      return c.json({ error: "Frame not found" }, 404);
+    }
+    const body = readFileSync(path);
+    return new Response(new Uint8Array(body), {
+      status: 200,
+      headers: {
+        "Content-Type": ext === "png" ? "image/png" : "image/jpeg",
+        "Content-Length": String(statSync(path).size),
+        "Cache-Control": "public, max-age=31536000, immutable",
+      },
+    });
+  });
+
+  return app;
+}

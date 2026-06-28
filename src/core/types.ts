@@ -80,6 +80,27 @@ export const ProfilesConfigSchema = z.object({
 
 export type ProfilesConfig = z.infer<typeof ProfilesConfigSchema>;
 
+const ReplayFilesystemSchema = z.object({
+  path: z.string().default("./replays"),
+});
+
+const ReplayCaptureSchema = z.object({
+  format: z.enum(["png", "jpeg"]).default("png"),
+  quality: z.number().int().min(1).max(100).default(80),
+  everyNthFrame: z.number().int().min(1).default(1),
+});
+
+export const ReplayConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  store: z.enum(["filesystem"]).default("filesystem"),
+  filesystem: ReplayFilesystemSchema.default(() => ReplayFilesystemSchema.parse({})),
+  retentionDays: z.number().int().min(0).default(7),
+  maxBytesPerSession: z.number().int().min(1_048_576).default(500 * 1024 * 1024),
+  capture: ReplayCaptureSchema.default(() => ReplayCaptureSchema.parse({})),
+});
+
+export type ReplayConfig = z.infer<typeof ReplayConfigSchema>;
+
 export const GatewayConfigSchema = z.object({
   version: z.number().default(1),
   gateway: GatewaySettingsSchema.default(() => GatewaySettingsSchema.parse({})),
@@ -89,6 +110,7 @@ export const GatewayConfigSchema = z.object({
   dashboard: DashboardSchema.default(() => DashboardSchema.parse({})),
   logging: LoggingSchema.default(() => LoggingSchema.parse({})),
   profiles: ProfilesConfigSchema.default(() => ProfilesConfigSchema.parse({})),
+  replay: ReplayConfigSchema.default(() => ReplayConfigSchema.parse({})),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
