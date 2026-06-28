@@ -28,32 +28,40 @@ await browser.disconnect();
 
 ## Quickstart — Enabling The Feature
 
-Profiles are off by default. To turn them on you need two things: a `gateway.yml` block and an encryption key.
+Profiles are off by default. Enabling them is one click — the encryption key is auto-managed.
 
 ### Option A — Dashboard (recommended)
 
 1. Start the gateway: `browser-gateway serve`
 2. Open the dashboard at `http://localhost:9500/web`
 3. Click **Profiles** → **Enable Profiles**
-4. Click **Apply automatically** — the dashboard generates a strong key in your browser and writes it to `.env` + `gateway.yml`
-5. Stop the gateway (Ctrl+C) and start it again with the same command
+4. Restart the gateway
 
-### Option B — Manual
+That's it. No encryption-key prompt. The wizard appends a `profiles:` block to `gateway.yml`. On the next boot the gateway generates a 256-bit key, writes it to `$BG_DATA_DIR/.encryption-key` (mode 0600), and is ready.
+
+### Option B — Manual gateway.yml
 
 ```yaml
 # gateway.yml
 profiles:
   enabled: true
   filesystem:
-    path: ./profiles            # where encrypted blobs live
+    path: ./profiles            # resolved relative to $BG_DATA_DIR
   encryption:
-    keyEnv: BG_ENCRYPTION_KEY   # env var name to read the key from
+    keyEnv: BG_ENCRYPTION_KEY   # env var name (optional — auto file beats it absent)
 ```
 
 ```bash
-export BG_ENCRYPTION_KEY=$(openssl rand -base64 32)
 browser-gateway serve
 ```
+
+The encryption key resolution chain:
+
+1. `BG_ENCRYPTION_KEY` env var (set this for centralized secrets management — Vault, AWS Secrets Manager, Doppler)
+2. `$BG_DATA_DIR/.encryption-key` file (auto-managed, persists across restarts)
+3. **Generate fresh** on first boot, write to the file
+
+Most operators don't need to set anything — backups of `$BG_DATA_DIR` include the key.
 
 Once enabled, any `?profile=<id>` connection auto-creates a profile on first disconnect.
 
@@ -162,7 +170,7 @@ The gateway streams capture/inject so memory pressure is bounded, but very large
 | `/v1/profiles/:id` | DELETE | Permanent delete (refuses while locked) |
 | `/v1/profiles/:id/export` | GET | Download the encrypted `.bgp` blob |
 | `/v1/profiles/import` | POST | Upload a `.bgp` blob (id is taken from the blob's encryption AAD) |
-| `/v1/profiles/setup` | POST | One-click enable — writes `BG_ENCRYPTION_KEY` to `.env` + profiles block to `gateway.yml` |
+| `/v1/profiles/setup` | POST | One-click enable — appends profiles block to `gateway.yml`. Encryption key is auto-managed under `$BG_DATA_DIR/.encryption-key` on the next boot. |
 
 All endpoints use the gateway's standard `BG_TOKEN` auth.
 

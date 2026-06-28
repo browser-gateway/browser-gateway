@@ -8,10 +8,11 @@ The gateway looks for configuration in this order:
 
 1. `--config <path>` CLI flag
 2. `BG_CONFIG_PATH` environment variable
-3. `./gateway.yml` in the current directory
-4. `./gateway.yaml` in the current directory
+3. `$BG_DATA_DIR/gateway.yml` (default writable location — `/data` in Docker, `~/.browser-gateway` outside)
+4. `./gateway.yml` in the current directory (legacy)
+5. `./gateway.yaml` in the current directory (legacy)
 
-If no file is found, the gateway falls back to environment variables.
+If no file is found on first boot, the gateway seeds `$BG_DATA_DIR/gateway.yml` with a minimal default (`version: 1` + empty `providers`). The dashboard's config editor reads and writes the same path.
 
 ## Full Config Reference
 

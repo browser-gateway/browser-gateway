@@ -183,6 +183,43 @@ REST API endpoints require the same authentication as all `/v1/*` endpoints. Pas
 - Header: `Authorization: Bearer your-token`
 - Cookie: `bg_session` (set by dashboard login)
 
+## Pinning a request to a specific provider
+
+Every REST endpoint accepts an optional `"provider": "<id>"` field in the JSON body. When set, the gateway routes only to that backend — no failover, no strategy override.
+
+```bash
+curl -X POST http://localhost:9500/v1/screenshot \
+  -H "Authorization: Bearer $BG_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "format": "png",
+    "provider": "browserless"
+  }'
+```
+
+**Behavior:**
+
+| Condition | Response |
+|---|---|
+| Provider not configured | `400` with `availableProviders` listed in the error |
+| Provider in cooldown or saturated past `connectionTimeout` | `503` with provider-specific reason |
+| Provider at `maxConcurrent` but slots may free | Queues, waits up to `connectionTimeout`, then runs |
+| `provider` + `profile` together, but provider has `browserCookies: unsupported` | `400` capability error (refuses up-front rather than failing mid-run) |
+| Provider exists, healthy, has capacity | Runs on that backend |
+
+**When to use it:**
+
+- Debugging — pin to one backend to isolate where a failure happens
+- A/B testing — compare a fast/cheap backend against a slower/feature-rich one
+- Capability targeting — pin profile work to a backend known to support `browserCookies`
+
+**When NOT to use it:**
+
+- High-throughput automation — pinning disables failover, so a backend hiccup means the request fails instead of routing elsewhere. Use auto-routing (no `provider` field) for production traffic.
+
+The dashboard's REST API tester page (`/web/api`) has a "Provider" dropdown that surfaces this field. Hidden on single-provider deploys (nothing to pin to).
+
 ## Session Pool
 
 The gateway maintains a pool of browser sessions to serve REST requests efficiently. Instead of opening a new browser connection for every request, pages are created within existing browser sessions.
