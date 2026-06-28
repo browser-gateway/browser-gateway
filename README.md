@@ -37,6 +37,8 @@
   &nbsp;·&nbsp;
   <a href="./docs/profiles.md">Profiles</a>
   &nbsp;·&nbsp;
+  <a href="./docs/replays.md">Replays</a>
+  &nbsp;·&nbsp;
   <a href="./docs/rest-api.md">REST API</a>
   &nbsp;·&nbsp;
   <a href="./docs/dashboard.md">Dashboard</a>
@@ -113,6 +115,16 @@ A web dashboard ships with every install. Open `http://localhost:9500/web` after
 - **One-click enable** - the dashboard wizard generates a strong key in your browser and writes it to config
 
 See [docs/profiles.md](docs/profiles.md) for the full guide, security model, REST endpoints, and limitations.
+
+### Session replay — see what the agent saw
+
+- **Frame-accurate visual record** of every routed session, captured via CDP `Page.startScreencast`
+- **Zero injection** - no script runs inside the customer page, capture is fully out-of-band
+- **Provider-agnostic** - works with any backend that supports page screencast
+- **Dashboard player** - scrub through the recorded frames, switch between captured browser targets
+- **Retention controls** - configurable horizon, per-session byte cap, daily cleanup
+
+See [docs/replays.md](docs/replays.md) for the storage layout, REST endpoints, and tuning knobs.
 
 ### MCP server for AI agents
 

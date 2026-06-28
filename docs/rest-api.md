@@ -220,6 +220,20 @@ curl -X POST http://localhost:9500/v1/screenshot \
 
 The dashboard's REST API tester page (`/web/api`) has a "Provider" dropdown that surfaces this field. Hidden on single-provider deploys (nothing to pin to).
 
+## Session Replays
+
+When `replay.enabled: true` is set in `gateway.yml`, every routed session is captured as a series of PNG frames. The frames are served back through these endpoints. See [the session replay guide](./replays.md) for the full feature.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/v1/replays` | GET | List replays. Accepts `?since=<iso>&limit=<n>`. |
+| `/v1/replays/:id` | GET | Single replay metadata + per-target summaries. |
+| `/v1/replays/:id` | DELETE | Permanent delete. |
+| `/v1/replays/:id/targets/:targetId/manifest` | GET | `manifest.jsonl` for one target. |
+| `/v1/replays/:id/targets/:targetId/frames/:N.png` | GET | Single frame binary. Long-cached. |
+
+When the feature is off, `GET /v1/replays` returns `{ enabled: false, replays: [], reason: "..." }` so the dashboard can render a disabled-state card.
+
 ## Session Pool
 
 The gateway maintains a pool of browser sessions to serve REST requests efficiently. Instead of opening a new browser connection for every request, pages are created within existing browser sessions.

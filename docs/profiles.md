@@ -184,6 +184,7 @@ The **Profiles** page in the dashboard at `http://localhost:9500/web/profiles/`:
 - Per-row **Export** downloads the encrypted blob for backup or transfer
 - Per-row **Delete** removes the blob (refuses if a session currently holds the lock)
 - **Enable Profiles** wizard (shown when the feature is off) generates a key and applies the config
+- **Recent Replays** appears on the per-profile detail page when [session replay](./replays.md) is enabled
 
 ## Comparison To Adjacent Approaches
 
