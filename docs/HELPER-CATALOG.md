@@ -222,15 +222,15 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 41)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore) → unknown` (line 119)
+- **interface** `interface ProfileAppDeps` (line 40)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore) → unknown` (line 118)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
 - **fn** `loadConfig(configPath?: string) → GatewayConfig` (line 40)
 ### `src/server/config/writer.ts`
 
-- **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 19) — Serialize the gateway config to YAML and persist it to disk durably.
+- **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
 ### `src/server/live/cdp-client.ts`
 
 - **interface** `interface CdpEvent` (line 12)
@@ -289,7 +289,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `registerTools(server: McpServer, gateway: Gateway, sessionManager: McpSessionManager, _logger: Logger) → void` (line 27)
 ### `src/server/middleware/security-headers.ts`
 
-- **fn** `securityHeaders() → MiddlewareHandler` (line 21) — Production security headers — HSTS, nosniff, frame-ancestors, Referrer-Policy.
+- **fn** `securityHeaders() → MiddlewareHandler` (line 14) — Production security headers — HSTS, nosniff, frame-ancestors, Referrer-Policy.
 ### `src/server/profile/bootstrap.ts`
 
 - **interface** `interface ProfileBootstrap` (line 11)
@@ -341,11 +341,6 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface ReplayMeta` (line 12)
 - **interface** `interface ReplayTargetSummary` (line 23)
 - **interface** `interface ReplayDetail` (line 31)
-### `src/server/rest/admin.ts`
-
-- **interface** `interface AdminRoutesDeps` (line 4)
-- **fn** `createAdminRoutes(deps: AdminRoutesDeps) → Hono` (line 9)
-- **fn** `defaultTriggerRestart(logger: Logger) → void` (line 24)
 ### `src/server/rest/content.ts`
 
 - **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 17)
@@ -411,8 +406,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `resolveEncryptionKey(logger?: Logger) → ResolvedEncryptionKey` (line 34) — Resolve the gateway's profile-encryption key. Chain:
 ### `src/server/setup/port.ts`
 
-- **fn** `resolvePort(cliOverride: string | undefined) → number | undefined` (line 11) — Resolve the HTTP listen port. Precedence:
-- **fn** `resolveHost() → string` (line 23) — Resolve the bind interface. Default `0.0.0.0` (reachable on any iface).
+- **fn** `resolvePort(cliOverride: string | undefined) → number | undefined` (line 1)
+- **fn** `resolveHost() → string` (line 8)
 ### `src/server/setup/profiles-setup.ts`
 
 - **interface** `interface ProfilesSetupInput` (line 5)
@@ -431,10 +426,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `printStartupBanner(opts: BannerOptions) → void` (line 69)
 ### `src/server/util/request.ts`
 
-- **fn** `getEffectiveProtocol(c: { req: { header: (name: string) => string | undefined; url: string } }) → "http" | "https"` (line 9) — Return the effective protocol the client used to reach us, honoring
-- **fn** `getEffectiveProtocolNode(req: IncomingMessage) → "http" | "https"` (line 21) — Same as `getEffectiveProtocol` but operates on a raw Node `IncomingMessage`.
-- **fn** `getEffectiveHost(c: { req: { header: (name: string) => string | undefined } }) → string` (line 37) — Return the effective host the client used to reach us, honoring
-- **fn** `parseAllowedOrigins(value: string | undefined) → Set<string>` (line 45) — Parse `BG_ALLOWED_ORIGINS` (comma-separated). Empty / unset returns
+- **fn** `getEffectiveProtocol(c: { req: { header: (name: string) => string | undefined; url: string } }) → "http" | "https"` (line 8) — Return the effective protocol the client used to reach us, honoring
+- **fn** `getEffectiveProtocolNode(req: IncomingMessage) → "http" | "https"` (line 20) — Same as `getEffectiveProtocol` but operates on a raw Node `IncomingMessage`.
+- **fn** `getEffectiveHost(c: { req: { header: (name: string) => string | undefined } }) → string` (line 36) — Return the effective host the client used to reach us, honoring
+- **fn** `parseAllowedOrigins(value: string | undefined) → Set<string>` (line 44) — Parse `BG_ALLOWED_ORIGINS` (comma-separated). Empty / unset returns
 ### `src/server/validation.ts`
 
 - **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 14) — Format a Zod error into a human-readable list of "path: message" strings.

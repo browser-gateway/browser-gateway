@@ -426,19 +426,3 @@ export function disableReplays(): Promise<ToggleResult> {
 export function disableProfiles(): Promise<ToggleResult> {
   return postAction<ToggleResult>("/v1/profiles/disable", "Disable failed");
 }
-
-export async function restartGateway(): Promise<void> {
-  await postAction<unknown>("/v1/admin/restart", "Restart failed");
-}
-
-export async function waitForGatewayHealth(timeoutMs = 30_000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const r = await fetch(`${API_BASE}/health`, { cache: "no-store" });
-      if (r.ok) return true;
-    } catch { /* still down */ }
-    await new Promise((r) => setTimeout(r, 1_000));
-  }
-  return false;
-}

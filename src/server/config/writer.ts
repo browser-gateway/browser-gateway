@@ -3,19 +3,6 @@ import { stringify } from "yaml";
 import type { GatewayConfig } from "../../core/types.js";
 import { loadedConfigPath } from "./loader.js";
 
-/**
- * Serialize the gateway config to YAML and persist it to disk durably.
- *
- * Two correctness rules this enforces:
- *
- *   1. The output includes EVERY block of the in-memory config — including
- *      `profiles` and `webhooks` — so writes triggered by the providers CRUD
- *      endpoints don't accidentally wipe sections the operator enabled via
- *      another path (e.g. `/v1/profiles/setup`).
- *
- *   2. `fsync` runs before close, so a Railway-style container kill (SIGTERM
- *      followed by SIGKILL milliseconds later) can't drop a recent write.
- */
 export function writeConfig(config: GatewayConfig, configPath?: string): void {
   const path = configPath ?? loadedConfigPath ?? "./gateway.yml";
 

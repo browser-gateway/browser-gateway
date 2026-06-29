@@ -22,7 +22,7 @@ import {
 } from "@/lib/api";
 import { IntegrationTabs } from "@/components/integration-tabs";
 import { NewProfileDialog } from "@/components/new-profile-dialog";
-import { RestartDialog } from "@/components/restart-dialog";
+import { RestartNotice } from "@/components/restart-notice";
 import { SetupEncryptionKeyDialog } from "@/components/setup-encryption-key-dialog";
 import { disableProfiles } from "@/lib/api";
 import { useGatewayToken, useAuthEnabled } from "@/components/token-autofill";
@@ -52,7 +52,7 @@ export default function ProfilesPage() {
   // The intro is collapsed by default to save space for return visitors —
   // first-time users have the empty-state hint inside the table.
   const [introOpen, setIntroOpen] = useState(false);
-  const [restartOpen, setRestartOpen] = useState(false);
+  const [restartNotice, setRestartNotice] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const authEnabled = useAuthEnabled();
 
@@ -62,9 +62,7 @@ export default function ProfilesPage() {
     try {
       const r = await disableProfiles();
       if (r.restartRequired) {
-        setRestartOpen(true);
-      } else {
-        window.location.reload();
+        setRestartNotice("Profiles disabled in gateway.yml.");
       }
     } catch (e: unknown) {
       setMessage({ type: "error", text: `Disable failed: ${e instanceof Error ? e.message : String(e)}` });
@@ -178,7 +176,7 @@ export default function ProfilesPage() {
               variant="outline"
               size="sm"
               onClick={handleDisableProfiles}
-              disabled={busy !== null}
+              disabled={busy !== null || restartNotice !== null}
               title="Disable profiles in gateway.yml. Restart required."
             >
               <Power className="size-3.5 mr-1.5" />
@@ -188,11 +186,7 @@ export default function ProfilesPage() {
           {enabled && <NewProfileDialog authEnabled onCreated={reload} />}
         </div>
       </div>
-      <RestartDialog
-        open={restartOpen}
-        title="Restart Gateway to disable profiles"
-        onClose={() => setRestartOpen(false)}
-      />
+      {restartNotice && <RestartNotice message={restartNotice} />}
 
 
       {message && (

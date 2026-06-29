@@ -2,9 +2,8 @@ import type { IncomingMessage } from "node:http";
 
 /**
  * Return the effective protocol the client used to reach us, honoring
- * `X-Forwarded-Proto` set by trusted reverse proxies (Railway, Render,
- * Fly, etc.). Falls back to inspecting the request URL when no proxy
- * header is present.
+ * `X-Forwarded-Proto` set by a trusted reverse proxy. Falls back to the
+ * request URL scheme.
  */
 export function getEffectiveProtocol(c: { req: { header: (name: string) => string | undefined; url: string } }): "http" | "https" {
   const fwd = c.req.header("x-forwarded-proto");

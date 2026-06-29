@@ -66,8 +66,6 @@ export function loadConfig(configPath?: string): GatewayConfig {
     loadedConfigPath = configPath ?? writable;
     if (loadedConfigPath === writable && !existsSync(writable)) {
       try {
-        // fsync the seed so a Railway-style container kill seconds after first
-        // boot doesn't leave gateway.yml in an inconsistent state.
         const fd = openSync(writable, "w");
         try {
           writeSync(fd, "version: 1\nproviders: {}\n");

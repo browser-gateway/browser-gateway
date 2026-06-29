@@ -1,13 +1,6 @@
 import type { MiddlewareHandler } from "hono";
 import { getEffectiveProtocol } from "../util/request.js";
 
-/**
- * Paths whose response is consumed by infrastructure probes (Railway,
- * Kubernetes, Docker HEALTHCHECK) rather than browsers. Some PaaS edges
- * fail their internal probe when extra response headers (`CSP`,
- * `X-Frame-Options`) are present, so we skip the security layer for these
- * routes. No XSS / clickjacking surface lives at these endpoints.
- */
 const HEADER_SKIP_PATHS = new Set(["/health"]);
 
 /**

@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ReplayPlayer } from "@/components/replay-player";
-import { RestartDialog } from "@/components/restart-dialog";
+import { RestartNotice } from "@/components/restart-notice";
 import type { ReplayDetail, ReplayListResponse } from "@/lib/api";
 import { deleteReplay, disableReplays, enableReplays, fetchReplay, fetchReplays } from "@/lib/api";
 
@@ -48,8 +48,7 @@ function ReplaysList() {
   const [data, setData] = useState<ReplayListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
-  const [restartOpen, setRestartOpen] = useState(false);
-  const [restartTitle, setRestartTitle] = useState("Restart Gateway");
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,12 +63,7 @@ function ReplaysList() {
     setToggling(true);
     try {
       const r = await enableReplays();
-      if (r.restartRequired) {
-        setRestartTitle("Restart Gateway to start recording");
-        setRestartOpen(true);
-      } else {
-        window.location.reload();
-      }
+      setNotice(r.restartRequired ? "Replays enabled in gateway.yml." : null);
     } catch (e: unknown) {
       alert(`Enable failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -82,12 +76,7 @@ function ReplaysList() {
     setToggling(true);
     try {
       const r = await disableReplays();
-      if (r.restartRequired) {
-        setRestartTitle("Restart Gateway to stop recording");
-        setRestartOpen(true);
-      } else {
-        window.location.reload();
-      }
+      setNotice(r.restartRequired ? "Replays disabled in gateway.yml." : null);
     } catch (e: unknown) {
       alert(`Disable failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -108,7 +97,8 @@ function ReplaysList() {
 
   if (!data.enabled) {
     return (
-      <>
+      <div className="space-y-4">
+        {notice && <RestartNotice message={notice} />}
         <Card>
           <CardContent className="space-y-4 p-6">
             <div>
@@ -117,22 +107,22 @@ function ReplaysList() {
                 {data.reason ?? "Replays are off. Enable to start capturing a frame-accurate visual record of every routed session."}
               </p>
             </div>
-            <Button onClick={handleEnable} disabled={toggling} className="gap-2">
+            <Button onClick={handleEnable} disabled={toggling || notice !== null} className="gap-2">
               <Power className="size-4" />
               {toggling ? "Enabling..." : "Enable Replays"}
             </Button>
           </CardContent>
         </Card>
-        <RestartDialog open={restartOpen} title={restartTitle} onClose={() => setRestartOpen(false)} />
-      </>
+      </div>
     );
   }
 
   return (
-    <>
+    <div className="space-y-4">
+      {notice && <RestartNotice message={notice} />}
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">{data.count} {data.count === 1 ? "replay" : "replays"} captured</p>
-        <Button variant="outline" size="sm" onClick={handleDisable} disabled={toggling} className="gap-2">
+        <Button variant="outline" size="sm" onClick={handleDisable} disabled={toggling || notice !== null} className="gap-2">
           <Power className="size-4" />
           {toggling ? "Disabling..." : "Disable"}
         </Button>
@@ -183,8 +173,7 @@ function ReplaysList() {
           </CardContent>
         </Card>
       )}
-      <RestartDialog open={restartOpen} title={restartTitle} onClose={() => setRestartOpen(false)} />
-    </>
+    </div>
   );
 }
 

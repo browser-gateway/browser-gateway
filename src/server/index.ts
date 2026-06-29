@@ -213,8 +213,6 @@ async function startServer() {
       ? err.message
       : String(err);
     profileBootstrapError = detail;
-    // Embed the detail directly in the message string so log viewers that only
-    // show the `msg` field (Railway, k8s lens) still see it.
     logger.error(`profile bootstrap failed — gateway will continue with profiles disabled: ${detail}`);
     profileBootstrap = { enabled: false as const };
   }

@@ -17,7 +17,6 @@ import type { SessionPool } from "../core/pool/index.js";
 import { createRestRoutes } from "./rest/index.js";
 import { createDisabledProfileRoutes, createProfileRoutes } from "./rest/profiles.js";
 import { createReplayRoutes } from "./rest/replays.js";
-import { createAdminRoutes, defaultTriggerRestart } from "./rest/admin.js";
 import type { ReplayStore } from "./replay/index.js";
 import type { FilesystemProfileStore } from "./profile/filesystem-store.js";
 import type { ProfileLifecycle } from "./profile/lifecycle.js";
@@ -256,12 +255,6 @@ export function createApp(
       config: gateway.config,
     }));
   }
-
-  const adminLogger = logger ?? gateway.logger;
-  app.route("/v1", createAdminRoutes({
-    logger: adminLogger,
-    triggerRestart: defaultTriggerRestart,
-  }));
 
   // Provider CRUD endpoints
   app.get("/v1/providers", (c) => {
