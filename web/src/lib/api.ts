@@ -399,3 +399,46 @@ export async function deleteReplay(id: string): Promise<void> {
     throw new Error(body.error ?? `Delete failed: ${res.status}`);
   }
 }
+
+export interface ToggleResult {
+  configWritten: boolean;
+  restartRequired: boolean;
+}
+
+async function postAction<T>(path: string, fallbackLabel: string): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, { method: "POST", ...fetchOpts });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `${fallbackLabel}: ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function enableReplays(): Promise<ToggleResult> {
+  return postAction<ToggleResult>("/v1/replays/setup", "Enable failed");
+}
+
+export function disableReplays(): Promise<ToggleResult> {
+  return postAction<ToggleResult>("/v1/replays/disable", "Disable failed");
+}
+
+export function disableProfiles(): Promise<ToggleResult> {
+  return postAction<ToggleResult>("/v1/profiles/disable", "Disable failed");
+}
+
+export async function restartGateway(): Promise<void> {
+  await postAction<unknown>("/v1/admin/restart", "Restart failed");
+}
+
+export async function waitForGatewayHealth(timeoutMs = 30_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch(`${API_BASE}/health`, { cache: "no-store" });
+      if (r.ok) return true;
+    } catch { /* still down */ }
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+  return false;
+}

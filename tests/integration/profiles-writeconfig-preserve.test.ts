@@ -60,14 +60,21 @@ describe("profiles block survives a writeConfig call", () => {
     expect(final).toContain("test-provider");
   });
 
-  it("writeConfig omits profiles block when profiles.enabled is false", () => {
+  it("writeConfig always serializes profiles + replay blocks so disable preserves user customizations", () => {
     const configPath = join(dir, "gateway.yml");
-    const config = GatewayConfigSchema.parse({ providers: {} });
+    const config = GatewayConfigSchema.parse({
+      providers: {},
+      profiles: { enabled: false, filesystem: { path: "./custom-profiles" } },
+      replay: { enabled: false, retentionDays: 30 },
+    });
 
     writeConfig(config, configPath);
 
     const yaml = readFileSync(configPath, "utf-8");
-    expect(yaml).not.toMatch(/^profiles:/m);
+    expect(yaml).toMatch(/^profiles:/m);
+    expect(yaml).toContain("./custom-profiles");
+    expect(yaml).toMatch(/^replay:/m);
+    expect(yaml).toContain("retentionDays: 30");
   });
 
   it("enableProfilesFlow without config arg still writes the file (legacy callers)", () => {

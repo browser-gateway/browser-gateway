@@ -10,13 +10,15 @@ import {
 } from "../../core/profile/index.js";
 import type { FilesystemProfileStore } from "../profile/filesystem-store.js";
 import { loadedConfigPath } from "../config/loader.js";
-import { enableProfilesFlow } from "../setup/profiles-setup.js";
+import { enableProfilesFlow, disableProfilesFlow } from "../setup/profiles-setup.js";
+import { makeToggleHandler } from "./toggle-handler.js";
 import type { GatewayConfig } from "../../core/types.js";
 
 export interface ProfileRestDeps {
   store: FilesystemProfileStore;
   dekByVersion: ReadonlyMap<number, Buffer>;
   logger: Logger;
+  config?: GatewayConfig;
 }
 
 export interface DisabledProfileDeps {
@@ -84,6 +86,16 @@ export function createDisabledProfileRoutes(deps: DisabledProfileDeps = {}): Hon
       return c.json({ error: message }, 400);
     }
   });
+
+  app.post(
+    "/profiles/disable",
+    makeToggleHandler(
+      () => deps.config,
+      disableProfilesFlow,
+      "Cannot toggle profiles without a loaded config",
+      "Disable failed",
+    ),
+  );
 
   return app;
 }
@@ -291,6 +303,16 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
       await store.unlock(profileId, token);
     }
   });
+
+  app.post(
+    "/profiles/disable",
+    makeToggleHandler(
+      () => deps.config,
+      disableProfilesFlow,
+      "Cannot toggle profiles without a loaded config",
+      "Disable failed",
+    ),
+  );
 
   return app;
 }

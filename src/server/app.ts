@@ -17,6 +17,7 @@ import type { SessionPool } from "../core/pool/index.js";
 import { createRestRoutes } from "./rest/index.js";
 import { createDisabledProfileRoutes, createProfileRoutes } from "./rest/profiles.js";
 import { createReplayRoutes } from "./rest/replays.js";
+import { createAdminRoutes, defaultTriggerRestart } from "./rest/admin.js";
 import type { ReplayStore } from "./replay/index.js";
 import type { FilesystemProfileStore } from "./profile/filesystem-store.js";
 import type { ProfileLifecycle } from "./profile/lifecycle.js";
@@ -236,12 +237,10 @@ export function createApp(
       store: profile.store,
       dekByVersion: profile.dekByVersion,
       logger: profileLogger,
+      config: gateway.config,
     });
     app.route("/v1", profileRoutes);
   } else {
-    // Profiles feature is OFF. Still register routes so callers (dashboard,
-    // scripts) get a structured "disabled" response instead of falling through
-    // to the catch-all 503. See `createDisabledProfileRoutes` for the shape.
     app.route("/v1", createDisabledProfileRoutes({
       config: gateway.config,
       bootstrapError: profileBootstrapError,
@@ -254,8 +253,15 @@ export function createApp(
       store: replayStore,
       logger: replayLogger,
       enabled: gateway.config.replay.enabled,
+      config: gateway.config,
     }));
   }
+
+  const adminLogger = logger ?? gateway.logger;
+  app.route("/v1", createAdminRoutes({
+    logger: adminLogger,
+    triggerRestart: defaultTriggerRestart,
+  }));
 
   // Provider CRUD endpoints
   app.get("/v1/providers", (c) => {

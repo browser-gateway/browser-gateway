@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Power, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ReplayPlayer } from "@/components/replay-player";
+import { RestartDialog } from "@/components/restart-dialog";
 import type { ReplayDetail, ReplayListResponse } from "@/lib/api";
-import { deleteReplay, fetchReplay, fetchReplays } from "@/lib/api";
+import { deleteReplay, disableReplays, enableReplays, fetchReplay, fetchReplays } from "@/lib/api";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -46,6 +47,9 @@ function formatWhen(ms: number): string {
 function ReplaysList() {
   const [data, setData] = useState<ReplayListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [toggling, setToggling] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
+  const [restartTitle, setRestartTitle] = useState("Restart Gateway");
 
   useEffect(() => {
     let cancelled = false;
@@ -55,6 +59,41 @@ function ReplaysList() {
     );
     return () => { cancelled = true; };
   }, []);
+
+  async function handleEnable() {
+    setToggling(true);
+    try {
+      const r = await enableReplays();
+      if (r.restartRequired) {
+        setRestartTitle("Restart Gateway to start recording");
+        setRestartOpen(true);
+      } else {
+        window.location.reload();
+      }
+    } catch (e: unknown) {
+      alert(`Enable failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setToggling(false);
+    }
+  }
+
+  async function handleDisable() {
+    if (!confirm("Disable replays? In-progress captures stop. Existing replays stay on disk.")) return;
+    setToggling(true);
+    try {
+      const r = await disableReplays();
+      if (r.restartRequired) {
+        setRestartTitle("Restart Gateway to stop recording");
+        setRestartOpen(true);
+      } else {
+        window.location.reload();
+      }
+    } catch (e: unknown) {
+      alert(`Disable failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setToggling(false);
+    }
+  }
 
   if (error) {
     return (
@@ -69,64 +108,83 @@ function ReplaysList() {
 
   if (!data.enabled) {
     return (
-      <Card>
-        <CardContent className="space-y-2 p-6">
-          <h2 className="text-base font-semibold">Replays disabled</h2>
-          <p className="text-sm text-muted-foreground">{data.reason ?? "Set replay.enabled: true in gateway.yml to record sessions."}</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (data.replays.length === 0) {
-    return (
-      <Card>
-        <CardContent className="p-6 text-sm text-muted-foreground">
-          No replays yet. Route a session through a provider that supports page screencast and one will appear here.
-        </CardContent>
-      </Card>
+      <>
+        <Card>
+          <CardContent className="space-y-4 p-6">
+            <div>
+              <h2 className="text-base font-semibold">Replays disabled</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {data.reason ?? "Replays are off. Enable to start capturing a frame-accurate visual record of every routed session."}
+              </p>
+            </div>
+            <Button onClick={handleEnable} disabled={toggling} className="gap-2">
+              <Power className="size-4" />
+              {toggling ? "Enabling..." : "Enable Replays"}
+            </Button>
+          </CardContent>
+        </Card>
+        <RestartDialog open={restartOpen} title={restartTitle} onClose={() => setRestartOpen(false)} />
+      </>
     );
   }
 
   return (
-    <Card>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Session</TableHead>
-              <TableHead>Provider</TableHead>
-              <TableHead>Profile</TableHead>
-              <TableHead>Duration</TableHead>
-              <TableHead>Frames</TableHead>
-              <TableHead>Size</TableHead>
-              <TableHead>Started</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {data.replays.map((r) => (
-              <TableRow key={r.sessionId} className="cursor-pointer hover:bg-muted/40">
-                <TableCell className="font-mono text-xs">
-                  <Link href={`/replays/?session=${encodeURIComponent(r.sessionId)}`} className="hover:underline">
-                    {r.sessionId.slice(0, 12)}
-                  </Link>
-                </TableCell>
-                <TableCell>{r.providerId}</TableCell>
-                <TableCell className="font-mono text-xs">{r.profileId ?? "—"}</TableCell>
-                <TableCell className="tabular-nums">{formatDuration(r.startedAt, r.endedAt)}</TableCell>
-                <TableCell className="tabular-nums">{r.frameCount.toLocaleString()}</TableCell>
-                <TableCell className="tabular-nums">{formatBytes(r.sizeBytes)}</TableCell>
-                <TableCell className="text-muted-foreground">{formatWhen(r.startedAt)}</TableCell>
-                <TableCell>
-                  {r.complete ? <Badge variant="outline">Complete</Badge> : <Badge>Recording</Badge>}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+    <>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">{data.count} {data.count === 1 ? "replay" : "replays"} captured</p>
+        <Button variant="outline" size="sm" onClick={handleDisable} disabled={toggling} className="gap-2">
+          <Power className="size-4" />
+          {toggling ? "Disabling..." : "Disable"}
+        </Button>
+      </div>
+      {data.replays.length === 0 ? (
+        <Card>
+          <CardContent className="p-6 text-sm text-muted-foreground">
+            No replays yet. Route a session through a provider that supports page screencast and one will appear here.
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Session</TableHead>
+                  <TableHead>Provider</TableHead>
+                  <TableHead>Profile</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Frames</TableHead>
+                  <TableHead>Size</TableHead>
+                  <TableHead>Started</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.replays.map((r) => (
+                  <TableRow key={r.sessionId} className="cursor-pointer hover:bg-muted/40">
+                    <TableCell className="font-mono text-xs">
+                      <Link href={`/replays/?session=${encodeURIComponent(r.sessionId)}`} className="hover:underline">
+                        {r.sessionId.slice(0, 12)}
+                      </Link>
+                    </TableCell>
+                    <TableCell>{r.providerId}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.profileId ?? "—"}</TableCell>
+                    <TableCell className="tabular-nums">{formatDuration(r.startedAt, r.endedAt)}</TableCell>
+                    <TableCell className="tabular-nums">{r.frameCount.toLocaleString()}</TableCell>
+                    <TableCell className="tabular-nums">{formatBytes(r.sizeBytes)}</TableCell>
+                    <TableCell className="text-muted-foreground">{formatWhen(r.startedAt)}</TableCell>
+                    <TableCell>
+                      {r.complete ? <Badge variant="outline">Complete</Badge> : <Badge>Recording</Badge>}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+      <RestartDialog open={restartOpen} title={restartTitle} onClose={() => setRestartOpen(false)} />
+    </>
   );
 }
 

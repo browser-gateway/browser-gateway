@@ -1,44 +1,20 @@
-/**
- * One-click enable flow for the profiles feature.
- *
- * Two-sided update so the change survives a subsequent `writeConfig` call:
- *
- *   1. Disk: `${configPath}` gains a `profiles:` block (durable fsync write).
- *   2. Memory: the live `gateway.config.profiles` object is flipped to enabled
- *      so the next provider edit doesn't serialize an `enabled: false` back to
- *      disk and wipe the new block.
- *
- * The encryption key is auto-resolved at runtime (env var → data-dir file →
- * generated), so the wizard no longer touches `.env` and no longer prompts
- * the user for a key.
- */
 import { openSync, readFileSync, writeSync, fsyncSync, closeSync, existsSync } from "node:fs";
 import type { GatewayConfig } from "../../core/types.js";
+import { writeConfig } from "../config/writer.js";
 
-export interface EnableProfilesInput {
-  /** Path to gateway.yml on disk. From `loadedConfigPath` in config/loader.ts. */
+export interface ProfilesSetupInput {
   configPath: string;
-  /**
-   * Live gateway config object — flipped in place when the file is written so
-   * `writeConfig` doesn't later round-trip a stale `enabled: false`.
-   * Optional for unit tests that don't have a Gateway instance.
-   */
   config?: GatewayConfig;
 }
 
-export interface EnableProfilesResult {
+export interface ProfilesSetupResult {
   configPath: string;
   configWritten: boolean;
   configAlreadyHadBlock: boolean;
-  /** True if the gateway.yml changed — UI shows the restart hint. */
   restartRequired: boolean;
 }
 
 const PROFILES_BLOCK = `
-# Added by browser-gateway dashboard "Enable Profiles" wizard.
-# The encryption key is auto-managed under BG_DATA_DIR/.encryption-key on
-# first start. Override with BG_ENCRYPTION_KEY in the container env if you
-# manage secrets centrally (Vault, AWS Secrets Manager, etc.).
 profiles:
   enabled: true
   filesystem:
@@ -47,10 +23,6 @@ profiles:
     keyEnv: BG_ENCRYPTION_KEY
 `;
 
-/**
- * Write to disk with explicit fsync so the container can be killed (Railway
- * SIGTERM → SIGKILL window) without losing the write.
- */
 function writeDurably(path: string, contents: string): void {
   const fd = openSync(path, "w");
   try {
@@ -61,11 +33,23 @@ function writeDurably(path: string, contents: string): void {
   }
 }
 
-export function enableProfilesFlow(input: EnableProfilesInput): EnableProfilesResult {
+export function enableProfilesFlow(input: ProfilesSetupInput): ProfilesSetupResult {
   const { configPath, config } = input;
 
   let configWritten = false;
   let configAlreadyHadBlock = false;
+
+  if (config && existsSync(configPath)) {
+    if (config.profiles.enabled) {
+      configAlreadyHadBlock = true;
+    } else {
+      config.profiles.enabled = true;
+      writeConfig(config, configPath);
+      configWritten = true;
+    }
+    return { configPath, configWritten, configAlreadyHadBlock, restartRequired: configWritten };
+  }
+
   try {
     if (existsSync(configPath)) {
       const yamlText = readFileSync(configPath, "utf-8");
@@ -88,17 +72,25 @@ export function enableProfilesFlow(input: EnableProfilesInput): EnableProfilesRe
     );
   }
 
-  // Mirror the disk change into the in-memory config so the next writeConfig
-  // call (triggered by a provider edit, for example) doesn't overwrite the
-  // freshly-written profiles block with a stale `enabled: false`.
   if (config && configWritten) {
     config.profiles.enabled = true;
   }
 
-  return {
-    configPath,
-    configWritten,
-    configAlreadyHadBlock,
-    restartRequired: configWritten,
-  };
+  return { configPath, configWritten, configAlreadyHadBlock, restartRequired: configWritten };
+}
+
+export function disableProfilesFlow(input: ProfilesSetupInput): ProfilesSetupResult {
+  const { configPath, config } = input;
+
+  if (!config) {
+    throw new Error("Cannot disable profiles without an in-memory config");
+  }
+
+  if (!config.profiles.enabled) {
+    return { configPath, configWritten: false, configAlreadyHadBlock: true, restartRequired: false };
+  }
+
+  config.profiles.enabled = false;
+  writeConfig(config, configPath);
+  return { configPath, configWritten: true, configAlreadyHadBlock: true, restartRequired: true };
 }

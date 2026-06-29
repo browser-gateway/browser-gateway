@@ -2,13 +2,38 @@ version: 1
 
 gateway:
   port: 9500
+  defaultStrategy: round-robin
+  connectionTimeout: 15000
+  cooldown:
+    defaultMs: 10000
+    failureThreshold: 0.5
+    minRequestVolume: 3
+  sessions:
+    idleTimeoutMs: 60000
+    reconnectTimeoutMs: 60000
+  queue:
+    maxSize: 200
+    timeoutMs: 60000
 
 providers:
-  local-test:
-    url: ws://localhost:9999
+  chrome-docker-1:
+    url: http://localhost:9222
+    limits:
+      maxConcurrent: 10
+    priority: 1
+  chrome-docker-2:
+    url: http://localhost:9223
     limits:
       maxConcurrent: 10
     priority: 1
 
 logging:
-  level: debug
+  level: info
+
+# Added by browser-gateway dashboard "Enable Profiles" wizard.
+profiles:
+  enabled: true
+  filesystem:
+    path: ./profiles
+  encryption:
+    keyEnv: BG_ENCRYPTION_KEY

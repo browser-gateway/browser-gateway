@@ -2,6 +2,9 @@ import { Hono } from "hono";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import type { Logger } from "pino";
 import type { ReplayStore } from "../replay/index.js";
+import type { GatewayConfig } from "../../core/types.js";
+import { disableReplayFlow, enableReplayFlow } from "../setup/replay-setup.js";
+import { makeToggleHandler } from "./toggle-handler.js";
 
 const SESSION_ID_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
 const TARGET_ID_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
@@ -10,12 +13,23 @@ interface ReplayRoutesDeps {
   store: ReplayStore;
   logger: Logger;
   enabled: boolean;
+  config?: GatewayConfig;
 }
 
-const DISABLED_REASON = "Replay capture is disabled. Set replay.enabled: true in gateway.yml and restart.";
+const DISABLED_REASON = "Replay capture is disabled. Click 'Enable Replays' in the dashboard or set replay.enabled: true in gateway.yml, then restart.";
 
 export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
   const app = new Hono();
+
+  const MISSING_CONFIG = "Cannot toggle replays without a loaded config";
+  app.post(
+    "/replays/setup",
+    makeToggleHandler(() => deps.config, enableReplayFlow, MISSING_CONFIG, "Setup failed"),
+  );
+  app.post(
+    "/replays/disable",
+    makeToggleHandler(() => deps.config, disableReplayFlow, MISSING_CONFIG, "Disable failed"),
+  );
 
   if (!deps.enabled) {
     app.get("/replays", (c) => c.json({ enabled: false, replays: [], reason: DISABLED_REASON }));

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Copy, Download, Info, Trash2, Upload } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, Download, Info, Power, Trash2, Upload } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,9 @@ import {
 } from "@/lib/api";
 import { IntegrationTabs } from "@/components/integration-tabs";
 import { NewProfileDialog } from "@/components/new-profile-dialog";
+import { RestartDialog } from "@/components/restart-dialog";
 import { SetupEncryptionKeyDialog } from "@/components/setup-encryption-key-dialog";
+import { disableProfiles } from "@/lib/api";
 import { useGatewayToken, useAuthEnabled } from "@/components/token-autofill";
 import { buildConnectUrl } from "@/lib/connect-url";
 
@@ -50,8 +52,26 @@ export default function ProfilesPage() {
   // The intro is collapsed by default to save space for return visitors —
   // first-time users have the empty-state hint inside the table.
   const [introOpen, setIntroOpen] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const authEnabled = useAuthEnabled();
+
+  async function handleDisableProfiles() {
+    if (!confirm("Disable profiles? Existing profiles stay on disk. Restart required.")) return;
+    setBusy("disable-profiles");
+    try {
+      const r = await disableProfiles();
+      if (r.restartRequired) {
+        setRestartOpen(true);
+      } else {
+        window.location.reload();
+      }
+    } catch (e: unknown) {
+      setMessage({ type: "error", text: `Disable failed: ${e instanceof Error ? e.message : String(e)}` });
+    } finally {
+      setBusy(null);
+    }
+  }
   const realToken = useGatewayToken();
 
   async function handleCopyUrl(profileId: string) {
@@ -153,9 +173,27 @@ export default function ProfilesPage() {
             <Upload className="size-3.5 mr-1.5" />
             Import
           </Button>
+          {enabled && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDisableProfiles}
+              disabled={busy !== null}
+              title="Disable profiles in gateway.yml. Restart required."
+            >
+              <Power className="size-3.5 mr-1.5" />
+              Disable
+            </Button>
+          )}
           {enabled && <NewProfileDialog authEnabled onCreated={reload} />}
         </div>
       </div>
+      <RestartDialog
+        open={restartOpen}
+        title="Restart Gateway to disable profiles"
+        onClose={() => setRestartOpen(false)}
+      />
+
 
       {message && (
         <div

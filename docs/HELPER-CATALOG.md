@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-06-28
+Generated: 2026-06-29
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -222,8 +222,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 40)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore) → unknown` (line 118)
+- **interface** `interface ProfileAppDeps` (line 41)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore) → unknown` (line 119)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
@@ -341,6 +341,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface ReplayMeta` (line 12)
 - **interface** `interface ReplayTargetSummary` (line 23)
 - **interface** `interface ReplayDetail` (line 31)
+### `src/server/rest/admin.ts`
+
+- **interface** `interface AdminRoutesDeps` (line 4)
+- **fn** `createAdminRoutes(deps: AdminRoutesDeps) → Hono` (line 9)
+- **fn** `defaultTriggerRestart(logger: Logger) → void` (line 24)
 ### `src/server/rest/content.ts`
 
 - **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 17)
@@ -364,13 +369,13 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `withProfilePage(deps: WithProfilePageDeps, profileId: string, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 42)
 ### `src/server/rest/profiles.ts`
 
-- **interface** `interface ProfileRestDeps` (line 16)
-- **interface** `interface DisabledProfileDeps` (line 22)
-- **fn** `createDisabledProfileRoutes(deps: DisabledProfileDeps = {}) → Hono` (line 46) — Profile routes that respond gracefully when the profiles feature is OFF.
-- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 104) — Profile management REST routes.
+- **interface** `interface ProfileRestDeps` (line 17)
+- **interface** `interface DisabledProfileDeps` (line 24)
+- **fn** `createDisabledProfileRoutes(deps: DisabledProfileDeps = {}) → Hono` (line 48) — Profile routes that respond gracefully when the profiles feature is OFF.
+- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 116) — Profile management REST routes.
 ### `src/server/rest/replays.ts`
 
-- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 17)
+- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 21)
 ### `src/server/rest/rest-helpers.ts`
 
 - **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body
@@ -393,6 +398,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/rest/screenshot.ts`
 
 - **fn** `handleScreenshot(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 12)
+### `src/server/rest/toggle-handler.ts`
+
+- **type** `type ToggleFlow` (line 6)
+- **fn** `makeToggleHandler(getConfig: () => GatewayConfig | undefined, flow: ToggleFlow<R>, missingConfigError: string, failureLabel: string) → unknown` (line 8)
 ### `src/server/setup/data-dir.ts`
 
 - **fn** `resolveDataDir() → string` (line 15) — Resolve `BG_DATA_DIR` to an absolute path. Chain (highest precedence first):
@@ -406,9 +415,16 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `resolveHost() → string` (line 23) — Resolve the bind interface. Default `0.0.0.0` (reachable on any iface).
 ### `src/server/setup/profiles-setup.ts`
 
-- **interface** `interface EnableProfilesInput` (line 18)
-- **interface** `interface EnableProfilesResult` (line 29)
-- **fn** `enableProfilesFlow(input: EnableProfilesInput) → EnableProfilesResult` (line 64)
+- **interface** `interface ProfilesSetupInput` (line 5)
+- **interface** `interface ProfilesSetupResult` (line 10)
+- **fn** `enableProfilesFlow(input: ProfilesSetupInput) → ProfilesSetupResult` (line 36)
+- **fn** `disableProfilesFlow(input: ProfilesSetupInput) → ProfilesSetupResult` (line 82)
+### `src/server/setup/replay-setup.ts`
+
+- **interface** `interface ReplaySetupInput` (line 4)
+- **interface** `interface ReplaySetupResult` (line 9)
+- **fn** `enableReplayFlow(input: ReplaySetupInput) → ReplaySetupResult` (line 16)
+- **fn** `disableReplayFlow(input: ReplaySetupInput) → ReplaySetupResult` (line 26)
 ### `src/server/startup/banner.ts`
 
 - **interface** `interface BannerOptions` (line 53)

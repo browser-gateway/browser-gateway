@@ -53,9 +53,8 @@ export function writeConfig(config: GatewayConfig, configPath?: string): void {
   if (config.webhooks.length > 0) {
     output.webhooks = config.webhooks;
   }
-  if (config.profiles.enabled) {
-    output.profiles = config.profiles;
-  }
+  output.profiles = config.profiles;
+  output.replay = config.replay;
 
   const yaml = stringify(output, { lineWidth: 120 });
   const fd = openSync(path, "w");
