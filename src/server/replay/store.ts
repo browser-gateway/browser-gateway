@@ -94,6 +94,7 @@ export class ReplayStore {
     } catch {
       return null;
     }
+    if (!raw.format) raw.format = "png";
     const completePath = join(sessionDir, COMPLETE_FILE);
     if (existsSync(completePath)) {
       try {

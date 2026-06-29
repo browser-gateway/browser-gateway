@@ -85,8 +85,8 @@ const ReplayFilesystemSchema = z.object({
 });
 
 const ReplayCaptureSchema = z.object({
-  format: z.enum(["png", "jpeg"]).default("png"),
-  quality: z.number().int().min(1).max(100).default(80),
+  format: z.enum(["png", "jpeg"]).default("jpeg"),
+  quality: z.number().int().min(1).max(100).default(70),
   everyNthFrame: z.number().int().min(1).default(1),
 });
 

@@ -18,6 +18,7 @@ export interface ReplayMeta {
   frameCount: number;
   sizeBytes: number;
   complete: boolean;
+  format: "png" | "jpeg";
 }
 
 export interface ReplayTargetSummary {

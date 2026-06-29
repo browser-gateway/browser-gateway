@@ -49,8 +49,8 @@ replay:
 | `retentionDays` | `7` | Daily cleanup deletes completed replays older than this. `0` keeps replays forever. |
 | `maxBytesPerSession` | `500 MB` | Safety cap. Capture stops for a session that exceeds this. |
 | `filesystem.path` | `./replays` | Where replays are stored under `$BG_DATA_DIR`. |
-| `capture.format` | `png` | `png` is lossless and fast. `jpeg` is smaller on disk. |
-| `capture.quality` | `80` | JPEG quality (1-100). Ignored for PNG. |
+| `capture.format` | `jpeg` | `jpeg` is ~5x smaller than PNG on disk and indistinguishable for replay playback. Switch to `png` for lossless capture. |
+| `capture.quality` | `70` | JPEG quality (1-100). Ignored for PNG. |
 | `capture.everyNthFrame` | `1` | Frame sampling. `1` captures every visual change. |
 
 ## Storage Layout
@@ -91,6 +91,7 @@ Check provider capabilities in the dashboard under **Providers** or via `GET /v1
 | `/v1/replays/:id` | DELETE | Permanent delete. |
 | `/v1/replays/:id/targets/:targetId/manifest` | GET | Stream `manifest.jsonl` for one target. |
 | `/v1/replays/:id/targets/:targetId/frames/:N.png` | GET | Single frame binary. Long-cached. |
+| `/v1/replays/:id/targets/:targetId/export.mp4` | GET | H.264-encoded MP4 of the target. Requires `ffmpeg` on the gateway host. Returns 503 with install instructions when missing. |
 
 Auth uses the standard `BG_TOKEN`.
 
@@ -128,10 +129,26 @@ The player is an image-swap loop driven by manifest timestamps. Play, pause, scr
 
 REST endpoints are single-shot operations that complete in seconds. Capturing them would dominate the request budget. The cost is also high for what you'd see — a couple of frames of a page load. Use the Playground if you need to inspect a one-off page interactively.
 
+## MP4 export
+
+The dashboard player exposes an **Export as MP4** button. The endpoint runs `ffmpeg` from `PATH` to encode the captured frames into an H.264 MP4 with variable per-frame durations honoring the original timestamps. The Docker image ships with `ffmpeg` pre-installed. For npm installs, install ffmpeg via your system package manager:
+
+```bash
+# macOS
+brew install ffmpeg
+
+# Debian / Ubuntu
+apt install ffmpeg
+
+# Fedora / RHEL
+dnf install ffmpeg
+```
+
+When `ffmpeg` is missing, the endpoint returns `503` with platform-specific install instructions in the JSON body.
+
 ## Limitations
 
 - Capture skips providers without `pageScreencast` support. Sessions still run, just without a recording.
-- Frame-by-frame PNG storage is larger than encoded MP4. A future release adds opt-in MP4 encoding for archived replays.
 - No PII redaction yet. If you record sessions handling sensitive data, configure short retention and restrict dashboard access.
 - Replays are stored on local disk. Operators running multi-instance deployments need to point all instances at a shared mount.
 

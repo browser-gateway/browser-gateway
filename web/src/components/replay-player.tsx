@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pause, Play, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { Pause, Play, ChevronsLeft, ChevronsRight, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ReplayFrameRecord } from "@/lib/api";
-import { fetchReplayManifest, replayFrameUrl } from "@/lib/api";
+import { fetchReplayManifest, replayFrameUrl, replayMp4ExportUrl } from "@/lib/api";
 
 interface ReplayPlayerProps {
   sessionId: string;
@@ -51,10 +51,22 @@ export function ReplayPlayer({ sessionId, targetId, format }: ReplayPlayerProps)
     if (frameIdx >= manifest.length - 1) { setPlaying(false); return; }
     const cur = manifest[frameIdx];
     const next = manifest[frameIdx + 1];
-    const delay = Math.max(20, next.ts - cur.ts);
+    const delay = Math.min(2000, Math.max(20, next.ts - cur.ts));
     timerRef.current = setTimeout(() => setFrameIdx((i) => i + 1), delay);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [playing, frameIdx, manifest, timeline]);
+
+  function togglePlay() {
+    if (!manifest || manifest.length === 0) return;
+    if (playing) {
+      setPlaying(false);
+      return;
+    }
+    if (frameIdx >= manifest.length - 1) {
+      setFrameIdx(0);
+    }
+    setPlaying(true);
+  }
 
   if (error) {
     return (
@@ -85,14 +97,15 @@ export function ReplayPlayer({ sessionId, targetId, format }: ReplayPlayerProps)
 
   return (
     <div className="space-y-3">
-      <div className="overflow-hidden rounded-md border border-border bg-muted/30">
+      <div
+        className="overflow-hidden rounded-md border border-border bg-muted/30"
+        style={{ aspectRatio: current.deviceWidth && current.deviceHeight ? `${current.deviceWidth} / ${current.deviceHeight}` : undefined }}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          key={frameUrl}
           src={frameUrl}
           alt={`Frame ${current.frame}`}
-          className="block w-full"
-          style={{ aspectRatio: current.deviceWidth && current.deviceHeight ? `${current.deviceWidth} / ${current.deviceHeight}` : undefined }}
+          className="block w-full h-full"
         />
       </div>
 
@@ -100,7 +113,7 @@ export function ReplayPlayer({ sessionId, targetId, format }: ReplayPlayerProps)
         <Button size="icon" variant="ghost" onClick={() => setFrameIdx(0)} aria-label="Go to start">
           <ChevronsLeft className="size-4" />
         </Button>
-        <Button size="icon" variant="ghost" onClick={() => setPlaying((p) => !p)} aria-label={playing ? "Pause" : "Play"}>
+        <Button size="icon" variant="ghost" onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}>
           {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
         </Button>
         <Button size="icon" variant="ghost" onClick={() => setFrameIdx(manifest.length - 1)} aria-label="Go to end">
@@ -126,6 +139,69 @@ export function ReplayPlayer({ sessionId, targetId, format }: ReplayPlayerProps)
         <div>Scroll <span className="text-foreground tabular-nums">{current.scrollX}, {current.scrollY}</span></div>
         <div className="truncate">URL <span className="text-foreground" title={current.url}>{current.url || "—"}</span></div>
       </div>
+
+      <div>
+        <ExportMp4Button sessionId={sessionId} targetId={targetId} />
+      </div>
+    </div>
+  );
+}
+
+function ExportMp4Button({ sessionId, targetId }: { sessionId: string; targetId: string }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleExport() {
+    setBusy(true);
+    setError(null);
+    try {
+      const url = replayMp4ExportUrl(sessionId, targetId);
+      const res = await fetch(url, { credentials: "include" });
+      if (res.status === 503) {
+        const body = await res.json() as { install?: Record<string, string> };
+        const install = body.install ?? {};
+        const lines = [
+          "MP4 export needs ffmpeg installed on the gateway host.",
+          "",
+          `macOS:    ${install.macos ?? "brew install ffmpeg"}`,
+          `Debian:   ${install.debian ?? "apt install ffmpeg"}`,
+          `Fedora:   ${install.redhat ?? "dnf install ffmpeg"}`,
+          `Windows:  ${install.windows ?? "https://ffmpeg.org/download.html"}`,
+        ].join("\n");
+        setError(lines);
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        setError(body.error ?? `Export failed: ${res.status}`);
+        return;
+      }
+      const blob = await res.blob();
+      const dl = document.createElement("a");
+      dl.href = URL.createObjectURL(blob);
+      dl.download = `replay-${sessionId.slice(0, 8)}-${targetId.slice(0, 8)}.mp4`;
+      document.body.appendChild(dl);
+      dl.click();
+      dl.remove();
+      URL.revokeObjectURL(dl.href);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <Button variant="outline" size="sm" onClick={handleExport} disabled={busy} className="gap-2">
+        <Download className="size-4" />
+        {busy ? "Encoding..." : "Export as MP4"}
+      </Button>
+      {error && (
+        <pre className="whitespace-pre-wrap rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground font-mono">
+          {error}
+        </pre>
+      )}
     </div>
   );
 }

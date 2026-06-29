@@ -54,6 +54,7 @@ export class ReplayCapture {
       frameCount: 0,
       sizeBytes: 0,
       complete: false,
+      format: this.opts.config.capture.format,
     };
     writeFileSync(join(this.sessionDir, "meta.json"), JSON.stringify(meta));
 

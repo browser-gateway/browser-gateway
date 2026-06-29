@@ -1,13 +1,29 @@
 import { Hono } from "hono";
 import { existsSync, readFileSync, statSync } from "node:fs";
+import { Readable } from "node:stream";
 import type { Logger } from "pino";
 import type { ReplayStore } from "../replay/index.js";
+import { FfmpegMissingError, NoFramesError, exportTargetAsMp4 } from "../replay/export-mp4.js";
 import type { GatewayConfig } from "../../core/types.js";
 import { disableReplayFlow, enableReplayFlow } from "../setup/replay-setup.js";
 import { makeToggleHandler } from "./toggle-handler.js";
 
 const SESSION_ID_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
 const TARGET_ID_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
+
+function parseReplayIds(id: string, targetId: string): boolean {
+  return SESSION_ID_REGEX.test(id) && TARGET_ID_REGEX.test(targetId);
+}
+
+function serveFile(path: string, contentType: string, cacheControl?: string): Response {
+  const body = readFileSync(path);
+  const headers: Record<string, string> = {
+    "Content-Type": contentType,
+    "Content-Length": String(statSync(path).size),
+  };
+  if (cacheControl) headers["Cache-Control"] = cacheControl;
+  return new Response(new Uint8Array(body), { status: 200, headers });
+}
 
 interface ReplayRoutesDeps {
   store: ReplayStore;
@@ -87,21 +103,10 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
   app.get("/replays/:id/targets/:targetId/manifest", (c) => {
     const id = c.req.param("id");
     const targetId = c.req.param("targetId");
-    if (!SESSION_ID_REGEX.test(id) || !TARGET_ID_REGEX.test(targetId)) {
-      return c.json({ error: "Invalid id" }, 400);
-    }
+    if (!parseReplayIds(id, targetId)) return c.json({ error: "Invalid id" }, 400);
     const path = deps.store.manifestPath(id, targetId);
-    if (!existsSync(path)) {
-      return c.json({ error: "Manifest not found" }, 404);
-    }
-    const body = readFileSync(path);
-    return new Response(new Uint8Array(body), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/jsonlines",
-        "Content-Length": String(body.length),
-      },
-    });
+    if (!existsSync(path)) return c.json({ error: "Manifest not found" }, 404);
+    return serveFile(path, "application/jsonlines");
   });
 
   app.get("/replays/:id/targets/:targetId/frames/:frame", (c) => {
@@ -109,24 +114,58 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
     const targetId = c.req.param("targetId");
     const frame = c.req.param("frame");
     const m = /^([0-9]+)\.(png|jpeg)$/.exec(frame);
-    if (!m || !SESSION_ID_REGEX.test(id) || !TARGET_ID_REGEX.test(targetId)) {
-      return c.json({ error: "Invalid frame request" }, 400);
-    }
-    const frameNum = parseInt(m[1], 10);
+    if (!m || !parseReplayIds(id, targetId)) return c.json({ error: "Invalid frame request" }, 400);
     const ext = m[2] as "png" | "jpeg";
-    const path = deps.store.framePath(id, targetId, frameNum, ext);
-    if (!existsSync(path)) {
-      return c.json({ error: "Frame not found" }, 404);
+    const path = deps.store.framePath(id, targetId, parseInt(m[1], 10), ext);
+    if (!existsSync(path)) return c.json({ error: "Frame not found" }, 404);
+    return serveFile(path, ext === "png" ? "image/png" : "image/jpeg", "public, max-age=31536000, immutable");
+  });
+
+  app.get("/replays/:id/targets/:targetId/export.mp4", async (c) => {
+    const id = c.req.param("id");
+    const targetId = c.req.param("targetId");
+    if (!SESSION_ID_REGEX.test(id) || !TARGET_ID_REGEX.test(targetId)) {
+      return c.json({ error: "Invalid id" }, 400);
     }
-    const body = readFileSync(path);
-    return new Response(new Uint8Array(body), {
-      status: 200,
-      headers: {
-        "Content-Type": ext === "png" ? "image/png" : "image/jpeg",
-        "Content-Length": String(statSync(path).size),
-        "Cache-Control": "public, max-age=31536000, immutable",
-      },
-    });
+    const detail = deps.store.get(id);
+    if (!detail) return c.json({ error: "Replay not found" }, 404);
+    const target = detail.targets.find((t) => t.targetId === targetId);
+    if (!target) return c.json({ error: "Target not found" }, 404);
+
+    try {
+      const result = await exportTargetAsMp4({
+        store: deps.store,
+        sessionId: id,
+        targetId,
+        format: detail.format,
+        logger: deps.logger,
+      });
+      return new Response(Readable.toWeb(result.readStream) as unknown as ReadableStream, {
+        status: 200,
+        headers: {
+          "Content-Type": "video/mp4",
+          "Content-Length": String(result.sizeBytes),
+          "Content-Disposition": `attachment; filename="replay-${id.slice(0, 8)}-${targetId.slice(0, 8)}.mp4"`,
+        },
+      });
+    } catch (err) {
+      if (err instanceof FfmpegMissingError) {
+        return c.json({
+          error: "ffmpeg not installed",
+          install: {
+            macos: "brew install ffmpeg",
+            debian: "apt install ffmpeg",
+            redhat: "dnf install ffmpeg",
+            windows: "https://ffmpeg.org/download.html",
+          },
+        }, 503);
+      }
+      if (err instanceof NoFramesError) {
+        return c.json({ error: "No frames captured for this target" }, 404);
+      }
+      deps.logger.warn({ err: err instanceof Error ? err.message : String(err) }, "replay export failed");
+      return c.json({ error: "Export failed" }, 500);
+    }
   });
 
   return app;

@@ -9,7 +9,7 @@
     "src/**/*.ts",
     "tests/**/*.ts"
   ],
-  "ignoreBinaries": [],
+  "ignoreBinaries": ["ffmpeg"],
   "ignoreDependencies": [
     "pino-pretty"
   ],

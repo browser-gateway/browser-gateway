@@ -343,6 +343,7 @@ export interface ReplayMeta {
   frameCount: number;
   sizeBytes: number;
   complete: boolean;
+  format: "png" | "jpeg";
 }
 
 export interface ReplayDetail extends ReplayMeta {
@@ -386,6 +387,10 @@ export async function fetchReplayManifest(id: string, targetId: string): Promise
 export function replayFrameUrl(id: string, targetId: string, frame: number, ext: "png" | "jpeg" = "png"): string {
   const padded = String(frame).padStart(6, "0");
   return `${API_BASE}/v1/replays/${encodeURIComponent(id)}/targets/${encodeURIComponent(targetId)}/frames/${padded}.${ext}`;
+}
+
+export function replayMp4ExportUrl(id: string, targetId: string): string {
+  return `${API_BASE}/v1/replays/${encodeURIComponent(id)}/targets/${encodeURIComponent(targetId)}/export.mp4`;
 }
 
 export async function deleteReplay(id: string): Promise<void> {

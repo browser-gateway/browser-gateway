@@ -327,6 +327,19 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface ReplayControllerOpts` (line 6)
 - **class** `class ReplayController` (line 13)
+### `src/server/replay/export-mp4.ts`
+
+- **class** `class FfmpegMissingError` (line 10)
+- **class** `class NoFramesError` (line 17)
+- **fn** `probeFfmpeg() → Promise<boolean>` (line 24)
+- **interface** `interface ExportResult` (line 36)
+- **fn** `exportTargetAsMp4(opts: {
+  store: ReplayStore;
+  sessionId: string;
+  targetId: string;
+  format: "png" | "jpeg";
+  logger: Logger;
+}) → Promise<ExportResult>` (line 43)
 ### `src/server/replay/retention.ts`
 
 - **interface** `interface ReplayRetentionOpts` (line 5)
@@ -339,8 +352,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface ReplayFrameRecord` (line 1)
 - **interface** `interface ReplayMeta` (line 12)
-- **interface** `interface ReplayTargetSummary` (line 23)
-- **interface** `interface ReplayDetail` (line 31)
+- **interface** `interface ReplayTargetSummary` (line 24)
+- **interface** `interface ReplayDetail` (line 32)
 ### `src/server/rest/content.ts`
 
 - **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 17)
@@ -370,7 +383,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 116) — Profile management REST routes.
 ### `src/server/rest/replays.ts`
 
-- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 21)
+- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 37)
 ### `src/server/rest/rest-helpers.ts`
 
 - **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body

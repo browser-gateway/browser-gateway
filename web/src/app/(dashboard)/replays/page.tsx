@@ -288,7 +288,7 @@ function ReplayDetailView({ sessionId }: { sessionId: string }) {
                 ))}
               </div>
               {activeTarget && (
-                <ReplayPlayer sessionId={detail.sessionId} targetId={activeTarget} format="png" />
+                <ReplayPlayer sessionId={detail.sessionId} targetId={activeTarget} format={detail.format} />
               )}
             </>
           )}

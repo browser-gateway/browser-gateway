@@ -32,7 +32,7 @@ ENV HUSKY=0
 # drop to the bguser uid for the actual node process). ca-certificates =
 # CDP-over-WSS trust.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends tini ca-certificates gosu && \
+    apt-get install -y --no-install-recommends tini ca-certificates gosu ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # Non-root user — uid 1001 deliberately chosen so it can be precomputed
