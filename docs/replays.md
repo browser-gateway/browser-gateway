@@ -118,6 +118,16 @@ The player is an image-swap loop driven by manifest timestamps. Play, pause, scr
 - **Provider pinning + replay.** REST endpoints with a `provider` field still record. The replay's `providerId` reflects the pinned provider.
 - **Live view + replay.** Both use CDP screencast but serve different purposes. Live view streams real-time to the dashboard. Replay persists to disk for later playback.
 
+## What gets recorded
+
+| Connection type | Recorded? |
+|---|---|
+| `WS /v1/connect` (Puppeteer, Playwright, MCP clients) | Yes |
+| `WS /v1/live` (Playground page) | Yes |
+| `POST /v1/screenshot` / `/v1/content` / `/v1/scrape` | No |
+
+REST endpoints are single-shot operations that complete in seconds. Capturing them would dominate the request budget. The cost is also high for what you'd see — a couple of frames of a page load. Use the Playground if you need to inspect a one-off page interactively.
+
 ## Limitations
 
 - Capture skips providers without `pageScreencast` support. Sessions still run, just without a recording.

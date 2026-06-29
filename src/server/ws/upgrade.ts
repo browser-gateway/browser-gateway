@@ -322,8 +322,10 @@ async function pipeToProvider(
   acquired?: AcquiredProfile | null,
   replayController?: ReplayController,
 ): Promise<boolean> {
-  // L4 fix: do the awaited setup OUTSIDE the Promise constructor so async
-  // errors don't get silently swallowed by a missing reject path.
+  const reqUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+  const isInternalPool = reqUrl.searchParams.get("__pool") === "1";
+  const effectiveReplay = isInternalPool ? undefined : replayController;
+
   let resolvedUrl: string;
   try {
     resolvedUrl = await cachedResolveWsUrl(provider.config.url, gateway.config.gateway.connectionTimeout);
@@ -403,8 +405,8 @@ async function pipeToProvider(
         gateway.emit("session.created", { sessionId, providerId: provider.id });
         logger.info({ sessionId, providerId: provider.id }, "session established");
 
-        if (replayController) {
-          replayController.onSessionStart({
+        if (effectiveReplay) {
+          effectiveReplay.onSessionStart({
             sessionId,
             providerId: provider.id,
             providerWsUrl: resolvedUrl,
@@ -447,8 +449,8 @@ async function pipeToProvider(
       const session = gateway.sessions.remove(sessionId);
       gateway.releaseSlot(sessionId, provider.id);
 
-      if (replayController) {
-        replayController.onSessionEnd(sessionId);
+      if (effectiveReplay) {
+        effectiveReplay.onSessionEnd(sessionId);
       }
 
       const durationMs = Date.now() - startTime;

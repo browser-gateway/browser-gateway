@@ -213,6 +213,7 @@ export class SessionPool {
     const params = new URLSearchParams();
     if (this.token) params.set("token", this.token);
     params.set("provider", providerId);
+    params.set("__pool", "1");
     const wsUrl = `ws://127.0.0.1:${this.gatewayPort}/v1/connect?${params.toString()}`;
 
     const id = randomUUID();
@@ -361,8 +362,8 @@ export class SessionPool {
     this.creatingSession = true;
     const id = randomUUID();
     const wsUrl = this.token
-      ? `ws://127.0.0.1:${this.gatewayPort}/v1/connect?token=${this.token}`
-      : `ws://127.0.0.1:${this.gatewayPort}/v1/connect`;
+      ? `ws://127.0.0.1:${this.gatewayPort}/v1/connect?token=${this.token}&__pool=1`
+      : `ws://127.0.0.1:${this.gatewayPort}/v1/connect?__pool=1`;
 
     const session: PoolSession = {
       id,
