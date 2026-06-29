@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync, openSync, fsyncSync, closeSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import type { Logger } from "pino";
@@ -24,6 +25,7 @@ interface TargetState {
   manifestFd: number;
   dir: string;
   lastUrl?: string;
+  lastFrameHash?: string;
 }
 
 const QUEUE_MAX = 200;
@@ -34,6 +36,7 @@ export class ReplayCapture {
   private readonly targets = new Map<string, TargetState>();
   private writeQueue = 0;
   private droppedFrames = 0;
+  private duplicatesSkipped = 0;
   private totalBytes = 0;
   private capStopped = false;
   private cleanupFns: Array<() => void> = [];
@@ -98,9 +101,9 @@ export class ReplayCapture {
     }
   }
 
-  async finish(): Promise<{ frameCount: number; sizeBytes: number; droppedFrames: number }> {
+  async finish(): Promise<{ frameCount: number; sizeBytes: number; droppedFrames: number; duplicatesSkipped: number }> {
     if (this.capStopped) {
-      return { frameCount: 0, sizeBytes: this.totalBytes, droppedFrames: this.droppedFrames };
+      return { frameCount: 0, sizeBytes: this.totalBytes, droppedFrames: this.droppedFrames, duplicatesSkipped: this.duplicatesSkipped };
     }
     this.capStopped = true;
 
@@ -122,13 +125,19 @@ export class ReplayCapture {
     try {
       writeFileSync(
         join(this.sessionDir, "complete.json"),
-        JSON.stringify({ endedAt, frameCount: totalFrames, sizeBytes: this.totalBytes, droppedFrames: this.droppedFrames }),
+        JSON.stringify({
+          endedAt,
+          frameCount: totalFrames,
+          sizeBytes: this.totalBytes,
+          droppedFrames: this.droppedFrames,
+          duplicatesSkipped: this.duplicatesSkipped,
+        }),
       );
     } catch (err) {
       this.opts.logger.warn({ err: errMsg(err) }, "replay: failed to write complete.json");
     }
 
-    return { frameCount: totalFrames, sizeBytes: this.totalBytes, droppedFrames: this.droppedFrames };
+    return { frameCount: totalFrames, sizeBytes: this.totalBytes, droppedFrames: this.droppedFrames, duplicatesSkipped: this.duplicatesSkipped };
   }
 
   private async attachToTarget(targetId: string): Promise<void> {
@@ -250,8 +259,15 @@ export class ReplayCapture {
       return;
     }
 
-    this.writeQueue++;
     const buf = Buffer.from(params.data, "base64");
+    const hash = createHash("sha1").update(buf).digest("hex");
+    if (target.lastFrameHash === hash) {
+      this.duplicatesSkipped++;
+      return;
+    }
+    target.lastFrameHash = hash;
+
+    this.writeQueue++;
     target.frameCount++;
     const frameNum = target.frameCount;
 

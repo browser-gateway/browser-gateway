@@ -119,6 +119,16 @@ The player is an image-swap loop driven by manifest timestamps. Play, pause, scr
 - **Provider pinning + replay.** REST endpoints with a `provider` field still record. The replay's `providerId` reflects the pinned provider.
 - **Live view + replay.** Both use CDP screencast but serve different purposes. Live view streams real-time to the dashboard. Replay persists to disk for later playback.
 
+## Frame deduplication
+
+Each frame's SHA-1 hash is compared against the previous frame's. Byte-identical consecutive frames are skipped at capture time — only one PNG/JPEG lands on disk and only one manifest entry is written. This is lossless for visual changes: a frame is only dropped when its bytes match the previous frame exactly. The skip count surfaces as `duplicatesSkipped` in `complete.json`.
+
+Why this beats "drop pure white frames":
+
+- A legitimate blank page (Google Docs, a print preview) keeps all its frames because each one with a blinking cursor differs in bytes.
+- Identical non-white frames also get deduped (dark-mode static pages, idle dashboards), not just white loading screens.
+- Zero false positives.
+
 ## What gets recorded
 
 | Connection type | Recorded? |

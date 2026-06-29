@@ -321,8 +321,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class ProfileLifecycle` (line 65) — Orchestrates acquire/inject/commit/release for a profile around one session.
 ### `src/server/replay/capture.ts`
 
-- **interface** `interface ReplayCaptureOpts` (line 9)
-- **class** `class ReplayCapture` (line 31)
+- **interface** `interface ReplayCaptureOpts` (line 10)
+- **class** `class ReplayCapture` (line 33)
 ### `src/server/replay/controller.ts`
 
 - **interface** `interface ReplayControllerOpts` (line 6)
