@@ -35,7 +35,7 @@ profiles:
   cdpTimeoutMs: 10000
   commitTimeoutMs: 4000
 replay:
-  enabled: true
+  enabled: false
   store: filesystem
   filesystem:
     path: ./replays

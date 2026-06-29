@@ -1,7 +1,7 @@
 /** WS /v1/live upgrade handler with profile injection. */
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { WebSocketServer } from "ws";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
@@ -40,10 +40,12 @@ export interface CreateLiveHandlerDeps {
   token?: string;
   /** Optional. When set, `?profile=<id>` is supported. */
   profileLifecycle?: ProfileLifecycle;
+  /** Optional. When set + enabled in config, the session is captured to the replay store. */
+  replayController?: import("../replay/controller.js").ReplayController;
 }
 
 export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
-  const { gateway, logger, token, profileLifecycle } = deps;
+  const { gateway, logger, token, profileLifecycle, replayController } = deps;
   const wss = new WebSocketServer({ noServer: true });
 
   async function handle(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
@@ -160,10 +162,15 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         return c;
       };
 
+      const sessionId = randomUUID();
+      let replayStarted = false;
       let cleanupRan = false;
       const cleanup = async () => {
         if (cleanupRan) return;
         cleanupRan = true;
+        if (replayStarted && replayController) {
+          replayController.onSessionEnd(sessionId);
+        }
         if (acquired && profileLifecycle) {
           try {
             await profileLifecycle.commit(acquired, providerWsUrl, profileClient ?? undefined);
@@ -187,6 +194,17 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
 
       try {
         await bridge.setup();
+
+        if (replayController) {
+          replayController.onSessionStart({
+            sessionId,
+            providerId,
+            providerWsUrl,
+            profileId: acquired?.profileId ?? undefined,
+          });
+          replayStarted = true;
+        }
+
         if (acquired && profileLifecycle) {
           const sharedClient = await ensureProfileClient();
           const result = await profileLifecycle.inject(acquired, providerWsUrl, sharedClient);

@@ -92,7 +92,7 @@ export function createWebSocketHandler(
   replayController?: ReplayController,
 ) {
 
-  const liveHandler = createLiveUpgradeHandler({ gateway, logger, token, profileLifecycle });
+  const liveHandler = createLiveUpgradeHandler({ gateway, logger, token, profileLifecycle, replayController });
   const allowedOrigins = parseAllowedOrigins(process.env.BG_ALLOWED_ORIGINS);
 
   async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {

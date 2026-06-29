@@ -255,7 +255,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/live/upgrade.ts`
 
 - **interface** `interface CreateLiveHandlerDeps` (line 36)
-- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 45)
+- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 47)
 ### `src/server/mcp/ax-tree.ts`
 
 - **fn** `clearRefs() → void` (line 28)
