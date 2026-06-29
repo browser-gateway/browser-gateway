@@ -124,6 +124,7 @@ export function createApp(
   profile?: ProfileAppDeps,
   profileBootstrapError?: string,
   replayStore?: ReplayStore,
+  dataDir?: string,
 ) {
   const app = new Hono();
   const sessionSecret = getSessionSecret(token);
@@ -246,13 +247,14 @@ export function createApp(
     }));
   }
 
-  if (replayStore) {
+  if (replayStore && dataDir) {
     const replayLogger = logger ?? gateway.logger;
     app.route("/v1", createReplayRoutes({
       store: replayStore,
       logger: replayLogger,
       enabled: gateway.config.replay.enabled,
       config: gateway.config,
+      dataDir,
     }));
   }
 

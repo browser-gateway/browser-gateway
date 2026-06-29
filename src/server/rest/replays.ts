@@ -3,7 +3,15 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { Readable } from "node:stream";
 import type { Logger } from "pino";
 import type { ReplayStore } from "../replay/index.js";
-import { FfmpegMissingError, NoFramesError, exportTargetAsMp4 } from "../replay/export-mp4.js";
+import {
+  FfmpegInstallError,
+  FfmpegMissingError,
+  NoFramesError,
+  exportTargetAsMp4,
+  findFfmpegBinary,
+  installFfmpegStatic,
+  isFfmpegStaticInstalled,
+} from "../replay/export-mp4.js";
 import type { GatewayConfig } from "../../core/types.js";
 import { disableReplayFlow, enableReplayFlow } from "../setup/replay-setup.js";
 import { makeToggleHandler } from "./toggle-handler.js";
@@ -30,6 +38,7 @@ interface ReplayRoutesDeps {
   logger: Logger;
   enabled: boolean;
   config?: GatewayConfig;
+  dataDir: string;
 }
 
 const DISABLED_REASON = "Replay capture is disabled. Click 'Enable Replays' in the dashboard or set replay.enabled: true in gateway.yml, then restart.";
@@ -138,6 +147,7 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
         sessionId: id,
         targetId,
         format: detail.format,
+        dataDir: deps.dataDir,
         logger: deps.logger,
       });
       return new Response(Readable.toWeb(result.readStream) as unknown as ReadableStream, {
@@ -152,6 +162,7 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
       if (err instanceof FfmpegMissingError) {
         return c.json({
           error: "ffmpeg not installed",
+          canAutoInstall: true,
           install: {
             macos: "brew install ffmpeg",
             debian: "apt install ffmpeg",
@@ -168,5 +179,39 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
     }
   });
 
+  app.get("/replays/ffmpeg/status", async (c) => {
+    const bin = await findFfmpegBinary(deps.dataDir);
+    const localInstalled = await isFfmpegStaticInstalled(deps.dataDir);
+    return c.json({
+      available: bin !== null,
+      source: bin === null ? null : bin === "ffmpeg" ? "system" : "local",
+      installing: ffmpegInstallInflight !== null,
+      localInstalled,
+    });
+  });
+
+  app.post("/replays/ffmpeg/install", async (c) => {
+    if (ffmpegInstallInflight) {
+      try {
+        await ffmpegInstallInflight;
+        return c.json({ ok: true, installed: true, alreadyInProgress: true });
+      } catch (err) {
+        return c.json({ ok: false, error: err instanceof Error ? err.message : "Install failed" }, 500);
+      }
+    }
+    ffmpegInstallInflight = installFfmpegStatic({ dataDir: deps.dataDir, logger: deps.logger });
+    try {
+      await ffmpegInstallInflight;
+      return c.json({ ok: true, installed: true });
+    } catch (err) {
+      const message = err instanceof FfmpegInstallError ? err.message : "Install failed";
+      return c.json({ ok: false, error: message }, 500);
+    } finally {
+      ffmpegInstallInflight = null;
+    }
+  });
+
   return app;
 }
+
+let ffmpegInstallInflight: Promise<void> | null = null;

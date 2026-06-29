@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync, createReadStream, statSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, createReadStream, statSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
@@ -7,9 +7,11 @@ import type { Logger } from "pino";
 import type { ReplayFrameRecord } from "./types.js";
 import type { ReplayStore } from "./store.js";
 
+const FFMPEG_STATIC_VERSION = "5.3.0";
+
 export class FfmpegMissingError extends Error {
   constructor() {
-    super("ffmpeg not found in PATH");
+    super("ffmpeg not found");
     this.name = "FfmpegMissingError";
   }
 }
@@ -21,16 +23,77 @@ export class NoFramesError extends Error {
   }
 }
 
-export async function probeFfmpeg(): Promise<boolean> {
+export class FfmpegInstallError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FfmpegInstallError";
+  }
+}
+
+function localFfmpegPath(dataDir: string): string {
+  const binName = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  return join(dataDir, ".npm", "node_modules", "ffmpeg-static", binName);
+}
+
+async function spawnCheck(cmd: string, args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
     try {
-      const proc = spawn("ffmpeg", ["-version"], { stdio: "ignore" });
+      const proc = spawn(cmd, args, { stdio: "ignore" });
       proc.on("error", () => resolve(false));
       proc.on("exit", (code) => resolve(code === 0));
     } catch {
       resolve(false);
     }
   });
+}
+
+function runProcess(cmd: string, args: string[], opts: { onError: (code: number | null, stderr: string) => Error }): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    proc.stderr?.on("data", (d) => { stderr += d.toString(); });
+    proc.on("error", reject);
+    proc.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(opts.onError(code, stderr));
+    });
+  });
+}
+
+export async function findFfmpegBinary(dataDir: string): Promise<string | null> {
+  if (await spawnCheck("ffmpeg", ["-version"])) return "ffmpeg";
+  const local = localFfmpegPath(dataDir);
+  if (existsSync(local) && (await spawnCheck(local, ["-version"]))) return local;
+  return null;
+}
+
+export async function isFfmpegStaticInstalled(dataDir: string): Promise<boolean> {
+  return existsSync(localFfmpegPath(dataDir));
+}
+
+export async function installFfmpegStatic(opts: { dataDir: string; logger: Logger }): Promise<void> {
+  const installDir = join(opts.dataDir, ".npm");
+  mkdirSync(installDir, { recursive: true });
+
+  if (!(await spawnCheck("npm", ["--version"]))) {
+    throw new FfmpegInstallError("npm is not available on PATH — install ffmpeg via your system package manager instead");
+  }
+
+  await runProcess(
+    "npm",
+    ["install", `ffmpeg-static@${FFMPEG_STATIC_VERSION}`, "--prefix", installDir, "--no-save", "--no-audit", "--no-fund", "--loglevel=error"],
+    {
+      onError: (code, stderr) => {
+        opts.logger.warn({ code, stderr: stderr.slice(0, 500) }, "ffmpeg-static install failed");
+        return new FfmpegInstallError(`npm install ffmpeg-static exited ${code}: ${stderr.slice(0, 200)}`);
+      },
+    },
+  );
+
+  const path = localFfmpegPath(opts.dataDir);
+  if (!existsSync(path)) {
+    throw new FfmpegInstallError("npm install completed but ffmpeg-static binary not found at expected path");
+  }
 }
 
 export interface ExportResult {
@@ -45,12 +108,13 @@ export async function exportTargetAsMp4(opts: {
   sessionId: string;
   targetId: string;
   format: "png" | "jpeg";
+  dataDir: string;
   logger: Logger;
 }): Promise<ExportResult> {
-  const { store, sessionId, targetId, format, logger } = opts;
+  const { store, sessionId, targetId, format, dataDir, logger } = opts;
 
-  const ffmpegAvailable = await probeFfmpeg();
-  if (!ffmpegAvailable) throw new FfmpegMissingError();
+  const ffmpegBin = await findFfmpegBinary(dataDir);
+  if (!ffmpegBin) throw new FfmpegMissingError();
 
   const records = store.readManifest(sessionId, targetId);
   if (records.length === 0) throw new NoFramesError();
@@ -65,7 +129,7 @@ export async function exportTargetAsMp4(opts: {
     writeConcatFile(concatPath, records, store, sessionId, targetId, format);
 
     const outputPath = join(tmpDir, "replay.mp4");
-    await runFfmpeg({ concatPath, outputPath, logger });
+    await runFfmpeg({ ffmpegBin, concatPath, outputPath, logger });
 
     if (!existsSync(outputPath)) {
       throw new Error("ffmpeg ran but produced no output");
@@ -103,9 +167,10 @@ function writeConcatFile(
   writeFileSync(concatPath, lines.join("\n") + "\n");
 }
 
-function runFfmpeg(opts: { concatPath: string; outputPath: string; logger: Logger }): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const args = [
+function runFfmpeg(opts: { ffmpegBin: string; concatPath: string; outputPath: string; logger: Logger }): Promise<void> {
+  return runProcess(
+    opts.ffmpegBin,
+    [
       "-y",
       "-loglevel", "error",
       "-f", "concat",
@@ -117,19 +182,12 @@ function runFfmpeg(opts: { concatPath: string; outputPath: string; logger: Logge
       "-pix_fmt", "yuv420p",
       "-movflags", "+faststart",
       opts.outputPath,
-    ];
-    const proc = spawn("ffmpeg", args, { stdio: ["ignore", "ignore", "pipe"] });
-    let stderr = "";
-    proc.stderr?.on("data", (d) => { stderr += d.toString(); });
-    proc.on("error", reject);
-    proc.on("exit", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
+    ],
+    {
+      onError: (code, stderr) => {
         opts.logger.warn({ code, stderr: stderr.slice(0, 500) }, "replay export: ffmpeg failed");
-        reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(0, 200)}`));
-      }
-    });
-  });
+        return new Error(`ffmpeg exited with code ${code}: ${stderr.slice(0, 200)}`);
+      },
+    },
+  );
 }
-

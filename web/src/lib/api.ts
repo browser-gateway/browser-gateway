@@ -393,6 +393,29 @@ export function replayMp4ExportUrl(id: string, targetId: string): string {
   return `${API_BASE}/v1/replays/${encodeURIComponent(id)}/targets/${encodeURIComponent(targetId)}/export.mp4`;
 }
 
+export interface FfmpegStatus {
+  available: boolean;
+  source: "system" | "local" | null;
+  installing: boolean;
+  localInstalled: boolean;
+}
+
+export async function fetchFfmpegStatus(): Promise<FfmpegStatus> {
+  const res = await fetch(`${API_BASE}/v1/replays/ffmpeg/status`, fetchOpts);
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) throw new Error(`ffmpeg status: ${res.status}`);
+  return res.json();
+}
+
+export async function installFfmpegStatic(): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/replays/ffmpeg/install`, { method: "POST", ...fetchOpts });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Install failed: ${res.status}`);
+  }
+}
+
 export async function deleteReplay(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/v1/replays/${encodeURIComponent(id)}`, {
     method: "DELETE",

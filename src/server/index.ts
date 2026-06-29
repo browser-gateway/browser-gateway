@@ -253,6 +253,7 @@ async function startServer() {
       : undefined,
     profileBootstrapError,
     replayStore,
+    resolveDataDir(),
   );
 
   if (token) {

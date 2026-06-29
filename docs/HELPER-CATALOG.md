@@ -223,7 +223,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/app.ts`
 
 - **interface** `interface ProfileAppDeps` (line 40)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore) → unknown` (line 118)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string) → unknown` (line 118)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
@@ -329,17 +329,21 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class ReplayController` (line 13)
 ### `src/server/replay/export-mp4.ts`
 
-- **class** `class FfmpegMissingError` (line 10)
-- **class** `class NoFramesError` (line 17)
-- **fn** `probeFfmpeg() → Promise<boolean>` (line 24)
-- **interface** `interface ExportResult` (line 36)
+- **class** `class FfmpegMissingError` (line 12)
+- **class** `class NoFramesError` (line 19)
+- **class** `class FfmpegInstallError` (line 26)
+- **fn** `findFfmpegBinary(dataDir: string) → Promise<string | null>` (line 63)
+- **fn** `isFfmpegStaticInstalled(dataDir: string) → Promise<boolean>` (line 70)
+- **fn** `installFfmpegStatic(opts: { dataDir: string; logger: Logger }) → Promise<void>` (line 74)
+- **interface** `interface ExportResult` (line 99)
 - **fn** `exportTargetAsMp4(opts: {
   store: ReplayStore;
   sessionId: string;
   targetId: string;
   format: "png" | "jpeg";
+  dataDir: string;
   logger: Logger;
-}) → Promise<ExportResult>` (line 43)
+}) → Promise<ExportResult>` (line 106)
 ### `src/server/replay/retention.ts`
 
 - **interface** `interface ReplayRetentionOpts` (line 5)
@@ -383,7 +387,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 116) — Profile management REST routes.
 ### `src/server/rest/replays.ts`
 
-- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 37)
+- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 46)
 ### `src/server/rest/rest-helpers.ts`
 
 - **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body

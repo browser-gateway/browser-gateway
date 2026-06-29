@@ -131,7 +131,18 @@ REST endpoints are single-shot operations that complete in seconds. Capturing th
 
 ## MP4 export
 
-The dashboard player exposes an **Export as MP4** button. The endpoint runs `ffmpeg` from `PATH` to encode the captured frames into an H.264 MP4 with variable per-frame durations honoring the original timestamps. The Docker image ships with `ffmpeg` pre-installed. For npm installs, install ffmpeg via your system package manager:
+The dashboard player exposes an **Export as MP4** button. The endpoint runs `ffmpeg` to encode the captured frames into an H.264 MP4 with variable per-frame durations honoring the original timestamps.
+
+The gateway looks for ffmpeg in this order:
+
+1. `ffmpeg` on the system `PATH` (preferred — uses your OS install, smaller footprint)
+2. `$BG_DATA_DIR/.npm/node_modules/ffmpeg-static/ffmpeg` (auto-installed fallback)
+
+The Docker image ships with `ffmpeg` pre-installed, so no setup is needed for containerized deploys.
+
+For npm installs, you have two options:
+
+### Option 1 — system install (recommended)
 
 ```bash
 # macOS
@@ -144,7 +155,20 @@ apt install ffmpeg
 dnf install ffmpeg
 ```
 
-When `ffmpeg` is missing, the endpoint returns `503` with platform-specific install instructions in the JSON body.
+### Option 2 — automatic install from the dashboard
+
+Click **Install ffmpeg automatically** in the export dialog. The gateway runs `npm install ffmpeg-static` into `$BG_DATA_DIR/.npm/`, which adds ~80 MB to the data directory and survives restarts. Requires `npm` on the host.
+
+The dashboard surfaces both options. The system install is faster (no download), uses a newer ffmpeg, and can be shared across multiple gateway instances on the same host. The auto-install is one click.
+
+### REST endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /v1/replays/ffmpeg/status` | Returns `{ available, source, installing, localInstalled }`. |
+| `POST /v1/replays/ffmpeg/install` | Triggers the `ffmpeg-static` install. Idempotent — concurrent calls share the same in-flight install. |
+
+When `ffmpeg` is missing entirely, the export endpoint returns `503` with platform-specific install hints + a `canAutoInstall: true` flag in the JSON body.
 
 ## Limitations
 
