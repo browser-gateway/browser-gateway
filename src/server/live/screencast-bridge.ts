@@ -103,6 +103,8 @@ export class ScreencastBridge {
     this.attachSessionId = attached.sessionId;
 
     await this.cdp.send("Page.enable", {}, this.attachSessionId);
+    await this.cdp.send("Network.enable", {}, this.attachSessionId).catch(() => undefined);
+    await this.cdp.send("Network.clearBrowserCookies", {}, this.attachSessionId).catch(() => undefined);
 
     // must run before Page.startScreencast — puppeteer/puppeteer#10527
     await this.cdp.send(

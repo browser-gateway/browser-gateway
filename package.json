@@ -29,7 +29,8 @@
     "url": "https://github.com/browser-gateway/browser-gateway/issues"
   },
   "license": "MIT",
-  "author": "browser-gateway",
+  "author": "Monostellar Limited (https://monostellar.com)",
+  "funding": "https://monostellar.com",
   "type": "module",
   "main": "dist/server/index.js",
   "types": "dist/server/index.d.ts",

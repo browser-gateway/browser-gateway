@@ -102,8 +102,9 @@ export async function injectStateEagerViaTransient(
 }
 
 async function injectCookies(client: WsCDPClient, cookies: CdpCookie[]): Promise<number> {
-  if (cookies.length === 0) return 0;
   await client.send("Network.enable").catch(() => undefined);
+  await client.send("Network.clearBrowserCookies").catch(() => undefined);
+  if (cookies.length === 0) return 0;
   await client.send("Storage.setCookies", { cookies: cookies.map(prepareCookieForInject) });
   return cookies.length;
 }

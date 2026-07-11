@@ -11,6 +11,10 @@
 </p>
 
 <p align="center">
+  An open-source tool by <a href="https://monostellar.com">Monostellar Labs</a>.
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/browser-gateway"><img src="https://img.shields.io/npm/v/browser-gateway?style=flat-square&logo=npm&logoColor=white" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/browser-gateway"><img src="https://img.shields.io/npm/dm/browser-gateway?style=flat-square&label=downloads" alt="npm downloads" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/npm/l/browser-gateway?style=flat-square" alt="MIT license" /></a>

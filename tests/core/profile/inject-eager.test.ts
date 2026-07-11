@@ -85,6 +85,7 @@ async function startMockCdp(): Promise<MockCdp> {
       switch (env.method) {
         case "Storage.setCookies":
         case "Network.enable":
+        case "Network.clearBrowserCookies":
         case "Page.enable":
         case "Fetch.enable":
         case "Fetch.fulfillRequest":
@@ -233,6 +234,22 @@ describe("injectStateEagerViaTransient — cookies", () => {
     expect(mock.received.filter((r) => r.method === "Storage.setCookies").length).toBe(0);
     // No helper pages spawned either.
     expect(mock.received.filter((r) => r.method === "Target.createTarget").length).toBe(0);
+  });
+
+  it("clears browser cookies before injecting, even for a fresh profile with zero cookies", async () => {
+    await injectStateEagerViaTransient(mock.url, makeProfile({}));
+    const clears = mock.received.filter((r) => r.method === "Network.clearBrowserCookies");
+    expect(clears.length).toBe(1);
+  });
+
+  it("clears browser cookies before Storage.setCookies", async () => {
+    await injectStateEagerViaTransient(mock.url, makeProfile({ cookies: 1 }));
+    const events = mock.received.map((r) => r.method);
+    const clearIdx = events.indexOf("Network.clearBrowserCookies");
+    const setIdx = events.indexOf("Storage.setCookies");
+    expect(clearIdx).toBeGreaterThan(-1);
+    expect(setIdx).toBeGreaterThan(-1);
+    expect(clearIdx).toBeLessThan(setIdx);
   });
 });
 
@@ -407,6 +424,7 @@ async function startMockCdpFetchAware(): Promise<MockCdp> {
       switch (env.method) {
         case "Storage.setCookies":
         case "Network.enable":
+        case "Network.clearBrowserCookies":
         case "Page.enable":
         case "Fetch.enable":
         case "Fetch.disable":
