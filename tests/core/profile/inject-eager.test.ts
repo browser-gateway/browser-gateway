@@ -196,13 +196,27 @@ describe("rankOrigins", () => {
 });
 
 describe("buildLocalStorageWriteExpression", () => {
-  it("skips sessionStorage entirely", () => {
+  it("clears sessionStorage but doesn't repopulate it", () => {
     const expr = buildLocalStorageWriteExpression({
       localStorage: { k: "v" },
       sessionStorage: { skip: "me" },
     });
     expect(expr).toContain("localStorage.setItem");
-    expect(expr).not.toContain("sessionStorage");
+    expect(expr).toContain("sessionStorage.clear()");
+    expect(expr).not.toContain('"skip"');
+    expect(expr).not.toContain("sessionStorage.setItem");
+  });
+
+  it("clears localStorage before writing new entries", () => {
+    const expr = buildLocalStorageWriteExpression({
+      localStorage: { k: "v" },
+      sessionStorage: {},
+    });
+    const clearIdx = expr.indexOf("localStorage.clear()");
+    const setIdx = expr.indexOf("localStorage.setItem");
+    expect(clearIdx).toBeGreaterThan(-1);
+    expect(setIdx).toBeGreaterThan(-1);
+    expect(clearIdx).toBeLessThan(setIdx);
   });
 
   it("safely escapes values via JSON.stringify", () => {

@@ -126,7 +126,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `injectStateEager(client: WsCDPClient, profile: CapturedProfile, opts: Omit<EagerInjectOptions, "totalTimeoutMs"> = {}) → Promise<EagerInjectResult>` (line 39) — Eagerly injects cookies and the top-K origins' localStorage on an already-connected client.
 - **fn** `injectStateEagerViaTransient(providerWsUrl: string, profile: CapturedProfile, opts: EagerInjectOptions = {}) → Promise<EagerInjectResult>` (line 83) — Opens a fresh WS to the provider, runs the eager inject, then closes the WS.
 - **fn** `buildLocalStorageWriteExpression(data: OriginStorage) → string` (line 151) — Returns a JS expression that writes the origin's localStorage entries.
-- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 169) — Returns origins sorted by lastVisitedAt descending.
+- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 171) — Returns origins sorted by lastVisitedAt descending.
 ### `src/core/profile/inject.ts`
 
 - **interface** `interface InjectOptions` (line 6)

@@ -153,6 +153,8 @@ export function buildLocalStorageWriteExpression(data: OriginStorage): string {
   return `
     (() => {
       const result = { wrote: 0, errors: [] };
+      try { localStorage.clear(); } catch (e) { result.errors.push("localStorage.clear failed: " + String(e && e.message || e)); }
+      try { sessionStorage.clear(); } catch (e) { result.errors.push("sessionStorage.clear failed: " + String(e && e.message || e)); }
       try {
         const entries = ${local};
         for (const [k, v] of Object.entries(entries)) {
