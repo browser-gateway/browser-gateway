@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  An open-source tool by <a href="https://monostellar.com">Monostellar Labs</a>.
+  by <a href="https://monostellar.com">Monostellar Labs</a>
 </p>
 
 <p align="center">
