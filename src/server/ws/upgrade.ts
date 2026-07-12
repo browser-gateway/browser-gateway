@@ -333,9 +333,7 @@ async function pipeToProvider(
     resolvedUrl = provider.config.url;
   }
 
-  // Inject the profile via a transient CDP connection BEFORE handing the user's
-  // pipe over. If inject fails, treat as a provider failure (retryable).
-  if (acquired && profileLifecycle && acquired.cookies.length > 0) {
+  if (acquired && profileLifecycle) {
     try {
       await profileLifecycle.inject(acquired, resolvedUrl);
     } catch (err) {

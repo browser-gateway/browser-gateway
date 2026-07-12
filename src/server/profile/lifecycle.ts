@@ -144,9 +144,6 @@ export class ProfileLifecycle {
     providerWsUrl: string,
     client?: WsCDPClient,
   ): Promise<{ injected: number; originsInjected: string[]; originsDeferred: string[] }> {
-    if (acquired.cookies.length === 0 && Object.keys(acquired.storage).length === 0) {
-      return { injected: 0, originsInjected: [], originsDeferred: [] };
-    }
     const cdpTimeoutMs = this.opts.cdpTimeoutMs ?? 10_000;
     const eagerOriginLimit = this.opts.eagerOriginLimit ?? 20;
     const helperPages = this.opts.helperPages ?? 4;

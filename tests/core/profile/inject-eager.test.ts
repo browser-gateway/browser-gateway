@@ -84,8 +84,8 @@ async function startMockCdp(): Promise<MockCdp> {
       let result: Record<string, unknown> | undefined;
       switch (env.method) {
         case "Storage.setCookies":
+        case "Storage.clearCookies":
         case "Network.enable":
-        case "Network.clearBrowserCookies":
         case "Page.enable":
         case "Fetch.enable":
         case "Fetch.fulfillRequest":
@@ -238,14 +238,14 @@ describe("injectStateEagerViaTransient — cookies", () => {
 
   it("clears browser cookies before injecting, even for a fresh profile with zero cookies", async () => {
     await injectStateEagerViaTransient(mock.url, makeProfile({}));
-    const clears = mock.received.filter((r) => r.method === "Network.clearBrowserCookies");
+    const clears = mock.received.filter((r) => r.method === "Storage.clearCookies");
     expect(clears.length).toBe(1);
   });
 
   it("clears browser cookies before Storage.setCookies", async () => {
     await injectStateEagerViaTransient(mock.url, makeProfile({ cookies: 1 }));
     const events = mock.received.map((r) => r.method);
-    const clearIdx = events.indexOf("Network.clearBrowserCookies");
+    const clearIdx = events.indexOf("Storage.clearCookies");
     const setIdx = events.indexOf("Storage.setCookies");
     expect(clearIdx).toBeGreaterThan(-1);
     expect(setIdx).toBeGreaterThan(-1);
@@ -423,8 +423,8 @@ async function startMockCdpFetchAware(): Promise<MockCdp> {
       let result: Record<string, unknown> | undefined;
       switch (env.method) {
         case "Storage.setCookies":
+        case "Storage.clearCookies":
         case "Network.enable":
-        case "Network.clearBrowserCookies":
         case "Page.enable":
         case "Fetch.enable":
         case "Fetch.disable":

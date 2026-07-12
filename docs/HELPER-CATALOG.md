@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-07-11
+Generated: 2026-07-12
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -125,8 +125,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface EagerInjectResult` (line 28)
 - **fn** `injectStateEager(client: WsCDPClient, profile: CapturedProfile, opts: Omit<EagerInjectOptions, "totalTimeoutMs"> = {}) → Promise<EagerInjectResult>` (line 39) — Eagerly injects cookies and the top-K origins' localStorage on an already-connected client.
 - **fn** `injectStateEagerViaTransient(providerWsUrl: string, profile: CapturedProfile, opts: EagerInjectOptions = {}) → Promise<EagerInjectResult>` (line 83) — Opens a fresh WS to the provider, runs the eager inject, then closes the WS.
-- **fn** `buildLocalStorageWriteExpression(data: OriginStorage) → string` (line 152) — Returns a JS expression that writes the origin's localStorage entries.
-- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 170) — Returns origins sorted by lastVisitedAt descending.
+- **fn** `buildLocalStorageWriteExpression(data: OriginStorage) → string` (line 151) — Returns a JS expression that writes the origin's localStorage entries.
+- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 169) — Returns origins sorted by lastVisitedAt descending.
 ### `src/core/profile/inject.ts`
 
 - **interface** `interface InjectOptions` (line 6)
