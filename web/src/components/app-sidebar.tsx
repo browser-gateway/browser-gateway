@@ -89,14 +89,6 @@ export function AppSidebar() {
         <p className="text-[11px] text-muted-foreground/50 font-mono mt-1">
           v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}
         </p>
-        <a
-          href="https://monostellar.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 inline-flex items-center gap-1.5 text-[11px] text-muted-foreground/60 hover:text-foreground transition-colors"
-        >
-          by Monostellar Labs
-        </a>
       </SidebarFooter>
     </Sidebar>
   );
