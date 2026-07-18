@@ -12,12 +12,21 @@ gateway:
     idleTimeoutMs: 60000
     reconnectTimeoutMs: 60000
 providers:
+  # profiles.enabled requires at least one provider slot pinned via `profile:`.
+  # Mix here gives coverage: two pinned slots + one unpinned for stateless
+  # traffic.
   chrome-docker-1:
     url: http://localhost:9222
     limits:
       maxConcurrent: 10
+    profile: default
   chrome-docker-2:
     url: http://localhost:9223
+    limits:
+      maxConcurrent: 10
+    profile: test
+  chrome-docker-4:
+    url: http://localhost:9224
     limits:
       maxConcurrent: 10
 dashboard:
@@ -35,7 +44,7 @@ profiles:
   cdpTimeoutMs: 10000
   commitTimeoutMs: 4000
 replay:
-  enabled: false
+  enabled: true
   store: filesystem
   filesystem:
     path: ./replays

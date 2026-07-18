@@ -7,6 +7,7 @@ import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { ProviderState } from "../../core/types.js";
 import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
+import { isEligibleForProfile } from "../../core/router/selector.js";
 import {
   LifecycleError,
   type ProfileLifecycle,
@@ -60,6 +61,10 @@ function extractBearerToken(header: string | undefined): string | undefined {
   if (!header) return undefined;
   if (!header.startsWith("Bearer ")) return undefined;
   return header.slice(7);
+}
+
+function anyProviderEligibleForProfile(gateway: Gateway, profileId: string): boolean {
+  return gateway.registry.getAll().some((p) => isEligibleForProfile(p.config, profileId));
 }
 
 function respondError(socket: Duplex, status: number, body: Record<string, unknown>): void {
@@ -224,7 +229,7 @@ export function createWebSocketHandler(
     }
 
     const tryConnect = async (): Promise<boolean> => {
-      const candidates = gateway.selectProviderWithFallbacks(targetProviderId);
+      const candidates = gateway.selectProviderWithFallbacks(targetProviderId, profileId);
 
       if (candidates.length === 0 && gateway.registry.size() === 0) {
         return false;
@@ -256,12 +261,19 @@ export function createWebSocketHandler(
     try {
       if (await tryConnect()) return;
 
-      const slotAvailable = await gateway.waitForSlot(undefined, targetProviderId);
+      const slotAvailable = await gateway.waitForSlot(undefined, targetProviderId, profileId);
       if (slotAvailable && await tryConnect()) return;
 
-      logger.warn({ sessionId, queueSize: gateway.queueSize, targetProviderId }, "connection failed, all providers exhausted");
+      logger.warn(
+        { sessionId, queueSize: gateway.queueSize, targetProviderId, profileId },
+        "connection failed, all providers exhausted",
+      );
       if (targetProviderId) {
-        respondError(socket, 503, { error: `Provider '${targetProviderId}' unavailable (cooldown or saturated)` });
+        respondError(socket, 503, { error: `Provider '${targetProviderId}' unavailable (cooldown, saturated, or not eligible for profile)` });
+      } else if (profileId !== null && !anyProviderEligibleForProfile(gateway, profileId)) {
+        respondError(socket, 400, {
+          error: `No provider is configured to serve profile '${profileId}'. Pin a provider slot with 'profile: ${profileId}'.`,
+        });
       } else {
         respondError(socket, 503, { error: "All providers unavailable" });
       }

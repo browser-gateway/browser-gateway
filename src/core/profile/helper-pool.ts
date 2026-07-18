@@ -80,6 +80,29 @@ export async function openHelperPool(
   return helpers;
 }
 
+/**
+ * Wraps the helper-pool lifecycle used by profile capture/inject: install
+ * Fetch fulfill, open up to `min(helperCount, originCount)` helper pages,
+ * hand them to `work`, guarantee teardown in `finally`.
+ */
+export async function withHelperPool<T>(
+  client: WsCDPClient,
+  helperCount: number,
+  originCount: number,
+  work: (helpers: HelperPage[]) => Promise<T>,
+): Promise<T> {
+  const helperSessionIds = new Set<string>();
+  const detachFulfill = installFetchFulfill(client, helperSessionIds);
+  const helpers = await openHelperPool(client, Math.min(helperCount, originCount));
+  for (const h of helpers) helperSessionIds.add(h.sessionId);
+  try {
+    return await work(helpers);
+  } finally {
+    detachFulfill();
+    await closeHelperPages(client, helpers);
+  }
+}
+
 /** Races a Promise against a per-operation timeout. */
 export function raceTimeout<T>(p: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return Promise.race([

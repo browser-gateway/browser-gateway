@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-07-12
+Generated: 2026-07-15
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -16,7 +16,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/gateway.ts`
 
 - **interface** `interface GatewayEvents` (line 18) — Map of events emitted by the {@link Gateway} class. Useful for typing
-- **class** `class Gateway` (line 39)
+- **class** `class Gateway` (line 41)
 ### `src/core/notifications/webhooks.ts`
 
 - **class** `class WebhookNotifier` (line 18)
@@ -48,11 +48,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `decodeBlob(blob: Buffer, dek: Buffer, expectedProfileId: string) → Buffer` (line 105)
 ### `src/core/profile/capture-full.ts`
 
-- **interface** `interface CaptureFullOptions` (line 14)
-- **interface** `interface CaptureFullResult` (line 27)
-- **fn** `captureFullStateOnClient(client: WsCDPClient, originsToCapture: string[], opts: Omit<CaptureFullOptions, "totalTimeoutMs"> = {}) → Promise<CaptureFullResult>` (line 50) — Captures cookies and per-origin localStorage on an already-connected client.
-- **fn** `captureFullStateViaTransient(providerWsUrl: string, originsToCapture: string[], opts: CaptureFullOptions = {}) → Promise<CaptureFullResult>` (line 83) — Opens its own WS to the provider, captures, then closes the WS.
-- **fn** `originsFromCookies(cookies: CdpCookie[]) → string[]` (line 164) — Returns https origin candidates derived from a cookie list.
+- **interface** `interface CaptureFullOptions` (line 12)
+- **interface** `interface CaptureFullResult` (line 25)
+- **fn** `captureFullStateOnClient(client: WsCDPClient, originsToCapture: string[], opts: Omit<CaptureFullOptions, "totalTimeoutMs"> = {}) → Promise<CaptureFullResult>` (line 48) — Captures cookies and per-origin localStorage on an already-connected client.
+- **fn** `captureFullStateViaTransient(providerWsUrl: string, originsToCapture: string[], opts: CaptureFullOptions = {}) → Promise<CaptureFullResult>` (line 81) — Opens its own WS to the provider, captures, then closes the WS.
+- **fn** `originsFromCookies(cookies: CdpCookie[]) → string[]` (line 155) — Returns https origin candidates derived from a cookie list.
 ### `src/core/profile/capture.ts`
 
 - **interface** `interface CaptureOptions` (line 14)
@@ -102,9 +102,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `installFetchFulfill(client: WsCDPClient, helperSessionIds: Set<string>) → () => void` (line 25) — Installs a Fetch.requestPaused fulfiller scoped to the given sessions. Returns an unregister fn.
 - **fn** `closeHelperPages(client: WsCDPClient, helpers: HelperPage[]) → Promise<void>` (line 57) — Closes helper targets and disables Fetch on each session.
 - **fn** `openHelperPool(client: WsCDPClient, count: number) → Promise<HelperPage[]>` (line 67) — Opens up to `count` helper pages sequentially. Returns however many succeeded.
-- **fn** `raceTimeout(p: Promise<T>, timeoutMs: number, label: string) → Promise<T>` (line 84) — Races a Promise against a per-operation timeout.
-- **fn** `withDeadline(op: Promise<T>, timeoutMs: number, label: string) → Promise<T>` (line 94) — Wall-clock deadline around a whole operation. Rejects on timeout.
-- **fn** `navigateAndEvaluate(client: WsCDPClient, helper: HelperPage, origin: string, expression: string, timeoutMs: number) → Promise<unknown>` (line 108) — Navigates the helper to an origin and evaluates `expression` in its page context.
+- **fn** `withHelperPool(client: WsCDPClient, helperCount: number, originCount: number, work: (helpers: HelperPage[]) => Promise<T>) → Promise<T>` (line 88) — Wraps the helper-pool lifecycle used by profile capture/inject: install
+- **fn** `raceTimeout(p: Promise<T>, timeoutMs: number, label: string) → Promise<T>` (line 107) — Races a Promise against a per-operation timeout.
+- **fn** `withDeadline(op: Promise<T>, timeoutMs: number, label: string) → Promise<T>` (line 117) — Wall-clock deadline around a whole operation. Rejects on timeout.
+- **fn** `navigateAndEvaluate(client: WsCDPClient, helper: HelperPage, origin: string, expression: string, timeoutMs: number) → Promise<unknown>` (line 131) — Navigates the helper to an origin and evaluates `expression` in its page context.
 - **fn** `runHelperPool(opts: {
   helpers: HelperPage[];
   origins: string[];
@@ -112,7 +113,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
   onSuccess: (origin: string, result: T) => void;
   onError: (origin: string, reason: string) => void;
   signal?: AbortSignal;
-}) → Promise<void>` (line 150) — Round-robin work over `origins` across `helpers`. Per-origin errors go to `onError`.
+}) → Promise<void>` (line 173) — Round-robin work over `origins` across `helpers`. Per-origin errors go to `onError`.
 ### `src/core/profile/inject-background.ts`
 
 - **interface** `interface BackgroundInjectOptions` (line 40)
@@ -121,12 +122,12 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `runBackgroundInject(opts: BackgroundInjectOptions) → Promise<BackgroundInjectResult>` (line 120) — Opens its own WS to the provider, runs the background phase, then closes the WS.
 ### `src/core/profile/inject-eager.ts`
 
-- **interface** `interface EagerInjectOptions` (line 15)
-- **interface** `interface EagerInjectResult` (line 28)
-- **fn** `injectStateEager(client: WsCDPClient, profile: CapturedProfile, opts: Omit<EagerInjectOptions, "totalTimeoutMs"> = {}) → Promise<EagerInjectResult>` (line 39) — Eagerly injects cookies and the top-K origins' localStorage on an already-connected client.
-- **fn** `injectStateEagerViaTransient(providerWsUrl: string, profile: CapturedProfile, opts: EagerInjectOptions = {}) → Promise<EagerInjectResult>` (line 83) — Opens a fresh WS to the provider, runs the eager inject, then closes the WS.
-- **fn** `buildLocalStorageWriteExpression(data: OriginStorage) → string` (line 151) — Returns a JS expression that writes the origin's localStorage entries.
-- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 171) — Returns origins sorted by lastVisitedAt descending.
+- **interface** `interface EagerInjectOptions` (line 12)
+- **interface** `interface EagerInjectResult` (line 25)
+- **fn** `injectStateEager(client: WsCDPClient, profile: CapturedProfile, opts: Omit<EagerInjectOptions, "totalTimeoutMs"> = {}) → Promise<EagerInjectResult>` (line 36) — Eagerly injects cookies and the top-K origins' localStorage on an already-connected client.
+- **fn** `injectStateEagerViaTransient(providerWsUrl: string, profile: CapturedProfile, opts: EagerInjectOptions = {}) → Promise<EagerInjectResult>` (line 80) — Opens a fresh WS to the provider, runs the eager inject, then closes the WS.
+- **fn** `buildLocalStorageWriteExpression(data: OriginStorage) → string` (line 140) — Returns a JS expression that writes the origin's localStorage entries.
+- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 160) — Returns origins sorted by lastVisitedAt descending.
 ### `src/core/profile/inject.ts`
 
 - **interface** `interface InjectOptions` (line 6)
@@ -198,7 +199,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **type** `type Strategy` (line 5)
 - **interface** `interface SelectOptions` (line 12)
-- **class** `class ProviderSelector` (line 24)
+- **fn** `isEligibleForProfile(config: ProviderConfig, requestedProfile: string | null | undefined) → boolean` (line 37) — Given a provider's config and the caller's requested profile, decide whether
+- **class** `class ProviderSelector` (line 46)
 ### `src/core/tracking/concurrency.ts`
 
 - **class** `class ConcurrencyTracker` (line 3)
@@ -208,15 +210,15 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/types.ts`
 
 - **const** `const ProviderConfigSchema` (line 4)
-- **const** `const ProfilesConfigSchema` (line 65)
-- **type** `type ProfilesConfig` (line 81)
-- **const** `const ReplayConfigSchema` (line 93)
-- **type** `type ReplayConfig` (line 102)
-- **const** `const GatewayConfigSchema` (line 104)
-- **type** `type ProviderConfig` (line 116)
-- **type** `type GatewayConfig` (line 117)
-- **interface** `interface ProviderState` (line 119)
-- **interface** `interface Session` (line 132)
+- **const** `const ProfilesConfigSchema` (line 81)
+- **type** `type ProfilesConfig` (line 97)
+- **const** `const ReplayConfigSchema` (line 109)
+- **type** `type ReplayConfig` (line 118)
+- **const** `const GatewayConfigSchema` (line 120)
+- **type** `type ProviderConfig` (line 132)
+- **type** `type GatewayConfig` (line 133)
+- **interface** `interface ProviderState` (line 135)
+- **interface** `interface Session` (line 148)
 
 ## Server layer (src/server/)
 
@@ -271,7 +273,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/mcp/local-chrome.ts`
 
 - **fn** `setupLocalChrome(stderrLog?: (msg: string) => void, options?: { headless?: boolean }) → Promise<GatewayConfig>` (line 18)
-- **fn** `killLocalChrome() → Promise<void>` (line 93)
+- **fn** `killLocalChrome() → Promise<void>` (line 94)
 ### `src/server/mcp/server.ts`
 
 - **fn** `createSessionManager(gateway: Gateway, logger: Logger) → McpSessionManager` (line 21)
@@ -455,13 +457,13 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
   | { kind: "parse-error"; message: string }
   | { kind: "validation-error"; errors: string[] }
   | { kind: "ok"; data: GatewayConfig }
->` (line 58) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
+>` (line 62) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/probe.ts`
 
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController) → unknown` (line 86)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController) → unknown` (line 91)
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 

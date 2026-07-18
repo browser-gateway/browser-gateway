@@ -72,9 +72,9 @@ export class Gateway extends EventEmitter {
     // (undocumented)
     readonly selector: ProviderSelector;
     // (undocumented)
-    selectProvider(targetProviderId?: string): ProviderState | null;
+    selectProvider(targetProviderId?: string, profileId?: string | null): ProviderState | null;
     // (undocumented)
-    selectProviderWithFallbacks(targetProviderId?: string): ProviderState[];
+    selectProviderWithFallbacks(targetProviderId?: string, profileId?: string | null): ProviderState[];
     // (undocumented)
     readonly sessions: SessionTracker;
     // (undocumented)
@@ -86,7 +86,7 @@ export class Gateway extends EventEmitter {
     // (undocumented)
     stop(): void;
     // (undocumented)
-    waitForSlot(timeoutMs?: number, targetProviderId?: string): Promise<boolean>;
+    waitForSlot(timeoutMs?: number, targetProviderId?: string, profileId?: string | null): Promise<boolean>;
 }
 
 // @public (undocumented)
@@ -128,6 +128,8 @@ export const GatewayConfigSchema: z.ZodObject<{
         }, z.core.$strip>>;
         priority: z.ZodDefault<z.ZodNumber>;
         weight: z.ZodDefault<z.ZodNumber>;
+        profile: z.ZodOptional<z.ZodString>;
+        multiProfile: z.ZodDefault<z.ZodBoolean>;
     }, z.core.$strip>>;
     pool: z.ZodDefault<z.ZodObject<{
         minSessions: z.ZodDefault<z.ZodNumber>;
@@ -259,6 +261,8 @@ export const ProviderConfigSchema: z.ZodObject<{
     }, z.core.$strip>>;
     priority: z.ZodDefault<z.ZodNumber>;
     weight: z.ZodDefault<z.ZodNumber>;
+    profile: z.ZodOptional<z.ZodString>;
+    multiProfile: z.ZodDefault<z.ZodBoolean>;
 }, z.core.$strip>;
 
 // @public (undocumented)

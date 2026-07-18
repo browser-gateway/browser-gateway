@@ -16,12 +16,14 @@ import {
 import {
   fetchStatus,
   fetchProviders,
+  fetchProfiles,
   addProvider,
   updateProvider,
   deleteProvider,
   testProvider,
   type GatewayStatus,
   type ProviderConfigItem,
+  type ProfileMetaItem,
 } from "@/lib/api";
 
 interface TestResult {
@@ -33,6 +35,8 @@ interface TestResult {
 export default function ProvidersPage() {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [providers, setProviders] = useState<ProviderConfigItem[]>([]);
+  const [availableProfiles, setAvailableProfiles] = useState<ProfileMetaItem[]>([]);
+  const [profilesEnabled, setProfilesEnabled] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<ProviderConfigItem | null>(null);
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
@@ -41,9 +45,11 @@ export default function ProvidersPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [s, p] = await Promise.all([fetchStatus(), fetchProviders()]);
+      const [s, p, profs] = await Promise.all([fetchStatus(), fetchProviders(), fetchProfiles()]);
       setStatus(s);
       setProviders(p.providers);
+      setAvailableProfiles(profs.profiles);
+      setProfilesEnabled(profs.enabled);
       setError(null);
     } catch {}
   }, []);
@@ -170,12 +176,17 @@ export default function ProvidersPage() {
               <CardContent className="px-5 py-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 flex-wrap">
                       <div className={`h-2 w-2 rounded-full shrink-0 ${live?.healthy !== false ? "bg-foreground" : "bg-destructive animate-pulse"}`} />
                       <span className="text-sm font-semibold font-mono truncate">{provider.id}</span>
                       <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
                         Priority {provider.priority}
                       </Badge>
+                      {provider.profile && (
+                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
+                          Serves: {provider.profile}
+                        </Badge>
+                      )}
                       {live?.cooldownUntil && (
                         <Badge variant="destructive" className="text-[10px] h-5 px-1.5 shrink-0">cooldown</Badge>
                       )}
@@ -251,13 +262,15 @@ export default function ProvidersPage() {
           </DialogHeader>
           <ProviderForm
             initial={editingProvider}
+            availableProfiles={availableProfiles}
+            profilesEnabled={profilesEnabled}
             onSave={async (data) => {
               if (editingProvider) {
                 const result = await updateProvider(editingProvider.id, data);
                 if (result.ok) { setModalOpen(false); await refresh(); }
                 else setError(result.error ?? "Failed to update");
               } else {
-                const result = await addProvider(data as { id: string; url: string; maxConcurrent?: number; priority?: number; weight?: number });
+                const result = await addProvider(data as { id: string; url: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null });
                 if (result.ok) { setModalOpen(false); await refresh(); }
                 else setError(result.error ?? "Failed to add");
               }
@@ -273,12 +286,16 @@ export default function ProvidersPage() {
 
 function ProviderForm({
   initial,
+  availableProfiles,
+  profilesEnabled,
   onSave,
   onCancel,
   onTest,
 }: {
   initial?: ProviderConfigItem | null;
-  onSave: (data: { id?: string; url: string; maxConcurrent?: number; priority?: number; weight?: number }) => Promise<void>;
+  availableProfiles: ProfileMetaItem[];
+  profilesEnabled: boolean;
+  onSave: (data: { id?: string; url: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null }) => Promise<void>;
   onCancel: () => void;
   onTest: (url: string) => Promise<{ ok: boolean; latencyMs: number; error?: string }>;
 }) {
@@ -287,6 +304,7 @@ function ProviderForm({
   const [maxConcurrent, setMaxConcurrent] = useState(initial?.maxConcurrent?.toString() ?? "");
   const [priority, setPriority] = useState(initial?.priority?.toString() ?? "1");
   const [weight, setWeight] = useState(initial?.weight?.toString() ?? "1");
+  const [profile, setProfile] = useState(initial?.profile ?? "");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null);
@@ -298,8 +316,8 @@ function ProviderForm({
     const errs: Record<string, string> = {};
     if (!isEdit && !id.trim()) errs.id = "Give this provider a name";
     else if (!isEdit && !/^[a-zA-Z0-9_-]+$/.test(id)) errs.id = "Only letters, numbers, hyphens, and underscores";
-    if (!url.trim()) errs.url = "Enter the WebSocket URL for this provider";
-    else if (!url.startsWith("ws://") && !url.startsWith("wss://")) errs.url = "URL must start with ws:// (local) or wss:// (secure/cloud)";
+    if (!url.trim()) errs.url = "Enter the URL for this provider";
+    else if (!/^(ws|wss|http|https):\/\//.test(url)) errs.url = "URL must start with ws://, wss://, http://, or https://";
     if (maxConcurrent && (isNaN(Number(maxConcurrent)) || Number(maxConcurrent) < 1)) errs.maxConcurrent = "Must be a positive number";
     if (priority && (isNaN(Number(priority)) || Number(priority) < 1)) errs.priority = "Must be a positive number";
     if (weight && (isNaN(Number(weight)) || Number(weight) < 1)) errs.weight = "Must be a positive number";
@@ -317,6 +335,7 @@ function ProviderForm({
       maxConcurrent: maxConcurrent ? Number(maxConcurrent) : undefined,
       priority: priority ? Number(priority) : undefined,
       weight: weight ? Number(weight) : undefined,
+      profile: profile.trim() ? profile.trim() : null,
     });
     setSaving(false);
   };
@@ -350,13 +369,13 @@ function ProviderForm({
       )}
 
       <div>
-        <label className="text-sm font-medium block mb-1.5">WebSocket URL</label>
+        <label className="text-sm font-medium block mb-1.5">Provider URL</label>
         <div className="flex gap-2">
           <input
             type="text"
             value={url}
             onChange={(e) => { setUrl(e.target.value); setErrors((p) => ({ ...p, url: "" })); setTestResult(null); }}
-            placeholder="ws://your-server:3000 or wss://provider.com?token=xxx"
+            placeholder="wss://provider.com?token=xxx or http://localhost:9222"
             autoFocus={isEdit}
             className="flex-1 h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
           />
@@ -372,10 +391,37 @@ function ProviderForm({
           </p>
         )}
         <p className="text-xs text-muted-foreground mt-1.5">
-          The WebSocket endpoint of your browser service. Use <span className="font-mono text-foreground/70">ws://</span> for local servers and <span className="font-mono text-foreground/70">wss://</span> for cloud services.
+          <span className="font-mono text-foreground/70">wss://</span> for cloud services, <span className="font-mono text-foreground/70">ws://</span> for local WebSocket servers, or <span className="font-mono text-foreground/70">http://</span> for Chrome remote debugging (the WebSocket URL is auto-discovered from <span className="font-mono text-foreground/70">/json/version</span>).
           If your provider requires an API key, include it in the URL (e.g. <span className="font-mono text-foreground/70">?token=your-key</span>).
         </p>
       </div>
+
+      {profilesEnabled && (
+        <div>
+          <label className="text-sm font-medium block mb-1.5">Serves profile</label>
+          <select
+            value={profile}
+            onChange={(e) => setProfile(e.target.value)}
+            className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            disabled={availableProfiles.length === 0 && !profile}
+          >
+            <option value="">— stateless traffic only —</option>
+            {profile && !availableProfiles.some((p) => p.id === profile) && (
+              <option value={profile}>{profile} (not yet created)</option>
+            )}
+            {availableProfiles.map((p) => (
+              <option key={p.id} value={p.id}>{p.id}</option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground mt-1.5">
+            {availableProfiles.length === 0 ? (
+              <>No profiles yet. Create one at <span className="font-mono text-foreground/70">Profiles → New Profile</span>, then come back to assign it to a slot.</>
+            ) : (
+              <>This slot serves only the selected profile. Clients connecting with <span className="font-mono text-foreground/70">?profile=&lt;name&gt;</span> matching the selection are routed here. Leave as stateless to serve requests with no <span className="font-mono text-foreground/70">?profile=</span>.</>
+            )}
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div>

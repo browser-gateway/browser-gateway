@@ -86,6 +86,7 @@ export async function setupLocalChrome(stderrLog?: (msg: string) => void, option
       limits: { maxConcurrent: 5 },
       priority: 1,
       weight: 1,
+      multiProfile: false,
     },
   });
 }

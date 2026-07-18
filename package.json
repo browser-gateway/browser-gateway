@@ -1,6 +1,6 @@
 {
   "name": "browser-gateway",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Reliable, scalable browser infrastructure for AI agents.",
   "mcpName": "io.github.browser-gateway/browser-gateway",
   "keywords": [
@@ -61,6 +61,8 @@
     "lint:all": "npm run lint && npm run lint:eslint && npm run lint:dup && npm run lint:dead",
     "catalog:gen": "tsx scripts/gen-helper-catalog.ts",
     "catalog:check": "tsx scripts/gen-helper-catalog.ts --check",
+    "docs:gen-rest": "tsx scripts/gen-rest-docs.ts",
+    "docs:check-rest": "tsx scripts/gen-rest-docs.ts --check",
     "api:check": "npm run build && api-extractor run",
     "api:update": "npm run build && api-extractor run --local && echo 'API surface updated. Commit the change to docs/api/.'",
     "stryker": "stryker run",

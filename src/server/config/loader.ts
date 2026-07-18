@@ -90,7 +90,25 @@ export function loadConfig(configPath?: string): GatewayConfig {
     throw new Error(`Invalid configuration:\n${errors}`);
   }
 
+  validateProfileEligibility(result.data);
+
   return result.data;
+}
+
+function validateProfileEligibility(config: GatewayConfig): void {
+  if (!config.profiles?.enabled) return;
+
+  const slots = Object.values(config.providers);
+  const hasMultiProfile = slots.some((p) => p.multiProfile);
+  const hasPinned = slots.some((p) => p.profile != null);
+
+  if (!hasMultiProfile && !hasPinned) {
+    throw new Error(
+      "profiles.enabled is true but no provider is configured to serve profiles.\n" +
+        "  Pin each provider slot to one profile with `profile: <name>`.\n" +
+        "  To use N profiles, configure N provider slots — one per profile.",
+    );
+  }
 }
 
 function buildConfigFromEnv(): Record<string, unknown> {

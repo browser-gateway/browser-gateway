@@ -90,6 +90,7 @@ providers:
     limits:
       maxConcurrent: 100
     priority: 1
+    multiProfile: true
 dashboard:
   enabled: false
 logging:

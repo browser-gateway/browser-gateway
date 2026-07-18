@@ -130,6 +130,7 @@ describe("REST golden — locks public API response shapes", () => {
               "id": "string",
               "maxConcurrent": "number",
               "priority": "number",
+              "profile": "null",
               "url": "string",
               "weight": "number",
             },

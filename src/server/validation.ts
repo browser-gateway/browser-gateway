@@ -30,6 +30,8 @@ export function parseProviderConfigBody(
   const maxConcurrent = body.maxConcurrent as number | undefined;
   const priority = body.priority as number | undefined;
   const weight = body.weight as number | undefined;
+  const profile = body.profile as string | null | undefined;
+  const multiProfile = body.multiProfile as boolean | undefined;
 
   const candidate = {
     url: url ?? existing?.url,
@@ -38,6 +40,8 @@ export function parseProviderConfigBody(
       : existing?.limits,
     priority: priority ?? existing?.priority ?? 1,
     weight: weight ?? existing?.weight ?? 1,
+    profile: profile === null ? undefined : (profile ?? existing?.profile),
+    multiProfile: multiProfile ?? existing?.multiProfile ?? false,
   };
 
   const parsed = ProviderConfigSchema.safeParse(candidate);

@@ -266,6 +266,7 @@ export function createApp(
       maxConcurrent: p.limits?.maxConcurrent ?? null,
       priority: p.priority,
       weight: p.weight ?? 1,
+      profile: p.profile ?? null,
     }));
     return c.json({ providers });
   });

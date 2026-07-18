@@ -19,6 +19,15 @@ export function writeConfig(config: GatewayConfig, configPath?: string): void {
     if (provider.priority !== 1) {
       entry.priority = provider.priority;
     }
+    if (provider.weight !== 1) {
+      entry.weight = provider.weight;
+    }
+    if (provider.profile) {
+      entry.profile = provider.profile;
+    }
+    if (provider.multiProfile) {
+      entry.multiProfile = true;
+    }
     providers[id] = entry;
   }
 

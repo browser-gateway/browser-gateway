@@ -11,10 +11,6 @@
 </p>
 
 <p align="center">
-  by <a href="https://monostellar.com">Monostellar Labs</a>
-</p>
-
-<p align="center">
   <a href="https://www.npmjs.com/package/browser-gateway"><img src="https://img.shields.io/npm/v/browser-gateway?style=flat-square&logo=npm&logoColor=white" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/browser-gateway"><img src="https://img.shields.io/npm/dm/browser-gateway?style=flat-square&label=downloads" alt="npm downloads" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/npm/l/browser-gateway?style=flat-square" alt="MIT license" /></a>
@@ -35,17 +31,17 @@
 <p align="center">
   <a href="https://browsergateway.com">Website</a>
   &nbsp;·&nbsp;
-  <a href="./docs/getting-started.md">Quick start</a>
+  <a href="https://docs.browsergateway.com/quickstart">Quick start</a>
   &nbsp;·&nbsp;
-  <a href="./docs/mcp.md">MCP</a>
+  <a href="https://docs.browsergateway.com/mcp">MCP</a>
   &nbsp;·&nbsp;
-  <a href="./docs/profiles.md">Profiles</a>
+  <a href="https://docs.browsergateway.com/profiles">Profiles</a>
   &nbsp;·&nbsp;
-  <a href="./docs/replays.md">Replays</a>
+  <a href="https://docs.browsergateway.com/replays">Replays</a>
   &nbsp;·&nbsp;
-  <a href="./docs/rest-api.md">REST API</a>
+  <a href="https://docs.browsergateway.com/rest-api">REST API</a>
   &nbsp;·&nbsp;
-  <a href="./docs/dashboard.md">Dashboard</a>
+  <a href="https://docs.browsergateway.com/dashboard">Dashboard</a>
 </p>
 
 <p align="center">
@@ -118,7 +114,7 @@ A web dashboard ships with every install. Open `http://localhost:9500/web` after
 - **Export and import** - encrypted `.bgp` blobs are portable between gateway installs
 - **One-click enable** - the dashboard wizard generates a strong key in your browser and writes it to config
 
-See [docs/profiles.md](docs/profiles.md) for the full guide, security model, REST endpoints, and limitations.
+See the [Profiles docs](https://docs.browsergateway.com/profiles) for the full guide, security model, REST endpoints, and limitations.
 
 ### Session replay — see what the agent saw
 
@@ -128,7 +124,7 @@ See [docs/profiles.md](docs/profiles.md) for the full guide, security model, RES
 - **Dashboard player** - scrub through the recorded frames, switch between captured browser targets
 - **Retention controls** - configurable horizon, per-session byte cap, daily cleanup
 
-See [docs/replays.md](docs/replays.md) for the storage layout, REST endpoints, and tuning knobs.
+See the [Replays docs](https://docs.browsergateway.com/replays) for the storage layout, REST endpoints, and tuning knobs.
 
 ### MCP server for AI agents
 
@@ -222,7 +218,7 @@ Add to your Claude Code or Cursor config:
 
 No config files needed. The agent gets navigate, snapshot, screenshot, click, type, and evaluate tools through the gateway's routing layer.
 
-See [docs/mcp.md](./docs/mcp.md) for all options.
+See the [MCP docs](https://docs.browsergateway.com/mcp) for all options.
 
 ---
 
@@ -268,9 +264,9 @@ browser-gateway help                     # Show help
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/v1/connect` | WebSocket | Connect to a browser (the core feature) |
-| `/v1/screenshot` | POST | Take a screenshot of any URL ([docs](./docs/rest-api.md)) |
-| `/v1/content` | POST | Extract page content as markdown, text, or HTML ([docs](./docs/rest-api.md)) |
-| `/v1/scrape` | POST | Extract data via CSS selectors or full-page formats ([docs](./docs/rest-api.md)) |
+| `/v1/screenshot` | POST | Take a screenshot of any URL ([docs](https://docs.browsergateway.com/rest-api)) |
+| `/v1/content` | POST | Extract page content as markdown, text, or HTML ([docs](https://docs.browsergateway.com/rest-api)) |
+| `/v1/scrape` | POST | Extract data via CSS selectors or full-page formats ([docs](https://docs.browsergateway.com/rest-api)) |
 | `/v1/status` | GET | Gateway health + provider status + pool status |
 | `/v1/sessions` | GET | Active sessions |
 | `/v1/providers` | GET/POST | List or add providers |
@@ -342,13 +338,13 @@ gh attestation verify oci://ghcr.io/browser-gateway/server:0.3.0 \
 ## How It Works
 
 1. Client connects to `ws://gateway:9500/v1/connect`
-2. Gateway selects a provider using your [routing strategy](./docs/load-balancing.md)
+2. Gateway selects a provider using your [routing strategy](https://docs.browsergateway.com/operating/load-balancing)
 3. Gateway opens a raw TCP connection to the provider
 4. HTTP upgrade forwarded, provider responds with `101 Switching Protocols`
 5. Bidirectional TCP pipe: `client <-> gateway <-> provider`
 6. All WebSocket messages forwarded transparently (never parsed or modified)
 7. On disconnect: session cleaned up, slot released, metrics updated
-8. If all providers full: connection [waits in a queue](./docs/request-queue.md) until a slot opens
+8. If all providers full: connection [waits in a queue](https://docs.browsergateway.com/operating/queue) until a slot opens
 
 ---
 
@@ -395,20 +391,24 @@ const browser = await puppeteer.connect({ browserWSEndpoint: "ws://localhost:950
 
 ## Documentation
 
-- [MCP Server for AI Agents](./docs/mcp.md) - Setup, tools, options
-- [Integrations](./docs/integrations.md) - Playwright, Puppeteer, browser-use, Stagehand, Playwright MCP
-- [Profiles — Persistent Browser State](./docs/profiles.md) - Save and replay cookies + storage across sessions
-- [Getting Started](./docs/getting-started.md)
-- [Configuration Reference](./docs/configuration.md)
-- [How Failover Works](./docs/failover.md)
-- [Load Balancing Strategies](./docs/load-balancing.md)
-- [Request Queue](./docs/request-queue.md)
-- [Webhooks](./docs/webhooks.md)
-- [Web Dashboard](./docs/dashboard.md)
-- [Supported Providers](./docs/providers.md)
-- [Session Lifecycle](./docs/session-lifecycle.md)
-- [CLI Reference](./docs/cli.md)
-- [Docker Deployment](./docs/docker.md)
+Full docs live at **[docs.browsergateway.com](https://docs.browsergateway.com)**.
+
+- [Getting Started](https://docs.browsergateway.com/quickstart)
+- [Configuration Reference](https://docs.browsergateway.com/configuration)
+- [Supported Providers](https://docs.browsergateway.com/providers)
+- [Profiles — Persistent Browser State](https://docs.browsergateway.com/profiles)
+- [Session Replays](https://docs.browsergateway.com/replays)
+- [Session Lifecycle](https://docs.browsergateway.com/sessions)
+- [REST API](https://docs.browsergateway.com/rest-api)
+- [MCP Server for AI Agents](https://docs.browsergateway.com/mcp)
+- [CLI Reference](https://docs.browsergateway.com/cli)
+- [Web Dashboard](https://docs.browsergateway.com/dashboard)
+- [How Failover Works](https://docs.browsergateway.com/operating/failover)
+- [Load Balancing Strategies](https://docs.browsergateway.com/operating/load-balancing)
+- [Request Queue](https://docs.browsergateway.com/operating/queue)
+- [Webhooks](https://docs.browsergateway.com/operating/webhooks)
+- [Docker Deployment](https://docs.browsergateway.com/operating/docker)
+- [Integrations](https://docs.browsergateway.com/operating/integrations) — Playwright, Puppeteer, browser-use, Stagehand, Playwright MCP
 
 ---
 
@@ -425,3 +425,7 @@ MIT - see [LICENSE](LICENSE).
 - [browsergateway.com](https://browsergateway.com)
 - [GitHub](https://github.com/browser-gateway/browser-gateway)
 - [npm](https://www.npmjs.com/package/browser-gateway)
+
+---
+
+<sub>Maintained by <a href="https://monostellar.com">Monostellar Labs</a>.</sub>

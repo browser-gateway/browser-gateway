@@ -488,6 +488,7 @@ async function startMcpStdio() {
         limits: { maxConcurrent: 5 },
         priority: 1,
         weight: 1,
+        multiProfile: false,
       },
     });
     log(`Using CDP endpoint: ${cdpEndpoint}`);

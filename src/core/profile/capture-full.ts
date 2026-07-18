@@ -1,12 +1,10 @@
 import type { CdpCookie, GetAllCookiesResponse } from "./cdp.js";
 import { WsCDPClient } from "./cdp-client.js";
 import {
-  closeHelperPages,
-  installFetchFulfill,
   navigateAndEvaluate,
-  openHelperPool,
   runHelperPool,
   withDeadline,
+  withHelperPool,
   type HelperPage,
 } from "./helper-pool.js";
 import type { OriginStorage, SkippedOrigin } from "./types.js";
@@ -108,24 +106,17 @@ async function captureOrigins(
 ): Promise<{ storage: Record<string, OriginStorage>; skipped: SkippedOrigin[] }> {
   const storage: Record<string, OriginStorage> = {};
   const skipped: SkippedOrigin[] = [];
-  const helperSessionIds = new Set<string>();
-  const detachFulfill = installFetchFulfill(client, helperSessionIds);
-  const helpers: HelperPage[] = await openHelperPool(client, Math.min(cfg.helperCount, origins.length));
-  for (const h of helpers) helperSessionIds.add(h.sessionId);
 
-  try {
-    await runHelperPool({
+  await withHelperPool(client, cfg.helperCount, origins.length, (helpers) =>
+    runHelperPool({
       helpers,
       origins,
       signal: cfg.signal,
       work: (origin, helper) => captureOneOrigin(client, helper, origin, cfg.perOriginTimeout),
       onSuccess: (origin, data) => { storage[origin] = data; },
       onError: (origin, reason) => skipped.push({ origin, reason }),
-    });
-  } finally {
-    detachFulfill();
-    await closeHelperPages(client, helpers);
-  }
+    }),
+  );
 
   return { storage, skipped };
 }

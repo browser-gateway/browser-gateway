@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { GatewayConfig, ProviderState } from "./types.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import { HealthChecker } from "./providers/health.js";
-import { ProviderSelector, type Strategy } from "./router/selector.js";
+import { ProviderSelector, isEligibleForProfile, type Strategy } from "./router/selector.js";
 import { ConcurrencyTracker } from "./tracking/concurrency.js";
 import { CooldownTracker } from "./tracking/cooldown.js";
 import { SessionTracker } from "./proxy/session.js";
@@ -34,6 +34,8 @@ interface QueueEntry {
   timer: ReturnType<typeof setTimeout>;
   /** When set, this entry only dequeues when THIS provider has a free slot. */
   targetProviderId?: string;
+  /** When set, only providers eligible for this profile satisfy the entry. */
+  profileId?: string | null;
 }
 
 export class Gateway extends EventEmitter {
@@ -93,13 +95,13 @@ export class Gateway extends EventEmitter {
     );
   }
 
-  selectProvider(targetProviderId?: string): ProviderState | null {
-    const candidates = this.selector.getCandidates({ targetProviderId });
+  selectProvider(targetProviderId?: string, profileId?: string | null): ProviderState | null {
+    const candidates = this.selector.getCandidates({ targetProviderId, profileId });
     return candidates[0] ?? null;
   }
 
-  selectProviderWithFallbacks(targetProviderId?: string): ProviderState[] {
-    return this.selector.getCandidates({ targetProviderId });
+  selectProviderWithFallbacks(targetProviderId?: string, profileId?: string | null): ProviderState[] {
+    return this.selector.getCandidates({ targetProviderId, profileId });
   }
 
   acquireSlot(providerId: string, sessionId: string): boolean {
@@ -153,10 +155,14 @@ export class Gateway extends EventEmitter {
 
   // --- Queue ---
 
-  async waitForSlot(timeoutMs?: number, targetProviderId?: string): Promise<boolean> {
+  async waitForSlot(
+    timeoutMs?: number,
+    targetProviderId?: string,
+    profileId?: string | null,
+  ): Promise<boolean> {
     if (this._shuttingDown) return false;
 
-    const candidates = this.selector.getCandidates({ targetProviderId });
+    const candidates = this.selector.getCandidates({ targetProviderId, profileId });
     if (candidates.length > 0) return true;
 
     // Pinned but provider doesn't exist OR is in cooldown — no point queuing,
@@ -165,6 +171,15 @@ export class Gateway extends EventEmitter {
       const pinned = this.registry.get(targetProviderId);
       if (!pinned || this.cooldown.isInCooldown(pinned)) return false;
     }
+
+    // No provider is currently configured to serve this request's profile
+    // eligibility. Queue resolution will never fire — every eligibility check
+    // will return empty. Bail fast so the caller can respond with a clear
+    // error instead of hanging until the queue timeout.
+    const anyEligible = this.registry
+      .getAll()
+      .some((p) => isEligibleForProfile(p.config, profileId));
+    if (!anyEligible) return false;
 
     const maxQueue = this.config.gateway.queue?.maxSize ?? 50;
     const queueTimeout = timeoutMs ?? this.config.gateway.queue?.timeoutMs ?? 30000;
@@ -178,15 +193,15 @@ export class Gateway extends EventEmitter {
       const timer = setTimeout(() => {
         const idx = this.queue.findIndex((e) => e.resolve === resolve);
         if (idx !== -1) this.queue.splice(idx, 1);
-        this.logger.debug({ waitMs: queueTimeout, targetProviderId }, "queue timeout");
+        this.logger.debug({ waitMs: queueTimeout, targetProviderId, profileId }, "queue timeout");
         this.emit("queue.timeout", { waitMs: queueTimeout });
         resolve(false);
       }, queueTimeout);
 
-      this.queue.push({ resolve, enqueuedAt: Date.now(), timer, targetProviderId });
+      this.queue.push({ resolve, enqueuedAt: Date.now(), timer, targetProviderId, profileId });
 
       this.logger.info(
-        { position: this.queue.length, total: this.queue.length, targetProviderId },
+        { position: this.queue.length, total: this.queue.length, targetProviderId, profileId },
         "request queued"
       );
       this.emit("queue.added", { position: this.queue.length, total: this.queue.length });
@@ -201,14 +216,22 @@ export class Gateway extends EventEmitter {
     // a slot; unpinned entries resolve if ANY provider does.
     for (let i = 0; i < this.queue.length; i++) {
       const entry = this.queue[i];
-      const candidates = this.selector.getCandidates({ targetProviderId: entry.targetProviderId });
+      const candidates = this.selector.getCandidates({
+        targetProviderId: entry.targetProviderId,
+        profileId: entry.profileId,
+      });
       if (candidates.length === 0) continue;
 
       this.queue.splice(i, 1);
       clearTimeout(entry.timer);
       const waitMs = Date.now() - entry.enqueuedAt;
       this.logger.info(
-        { waitMs, remaining: this.queue.length, targetProviderId: entry.targetProviderId },
+        {
+          waitMs,
+          remaining: this.queue.length,
+          targetProviderId: entry.targetProviderId,
+          profileId: entry.profileId,
+        },
         "request dequeued",
       );
       entry.resolve(true);

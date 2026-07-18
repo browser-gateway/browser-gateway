@@ -2,13 +2,10 @@ import type { CdpCookie } from "./cdp.js";
 import { WsCDPClient } from "./cdp-client.js";
 import { prepareCookieForInject } from "./cookie-helpers.js";
 import {
-  closeHelperPages,
-  installFetchFulfill,
   navigateAndEvaluate,
-  openHelperPool,
   runHelperPool,
   withDeadline,
-  type HelperPage,
+  withHelperPool,
 } from "./helper-pool.js";
 import type { CapturedProfile, OriginStorage, SkippedOrigin } from "./types.js";
 
@@ -117,14 +114,9 @@ async function injectEagerOrigins(
   const injected: string[] = [];
   const skipped: SkippedOrigin[] = [];
 
-  const helperSessionIds = new Set<string>();
-  const detachFulfill = installFetchFulfill(client, helperSessionIds);
-  const helpers: HelperPage[] = await openHelperPool(client, Math.min(cfg.helperCount, origins.length));
-  for (const h of helpers) helperSessionIds.add(h.sessionId);
-
-  try {
+  await withHelperPool(client, cfg.helperCount, origins.length, (helpers) => {
     const targetOrigins = origins.filter((o) => hasLocal(storage[o]));
-    await runHelperPool({
+    return runHelperPool({
       helpers,
       origins: targetOrigins,
       signal: cfg.signal,
@@ -139,10 +131,7 @@ async function injectEagerOrigins(
       onSuccess: (origin) => injected.push(origin),
       onError: (origin, reason) => skipped.push({ origin, reason }),
     });
-  } finally {
-    detachFulfill();
-    await closeHelperPages(client, helpers);
-  }
+  });
 
   return { injected, skipped };
 }

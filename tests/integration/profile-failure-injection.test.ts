@@ -150,11 +150,13 @@ providers:
     limits:
       maxConcurrent: 10
     priority: 1
+    multiProfile: true
   prov-b:
     url: http://localhost:${PROVIDER_PORT_B}
     limits:
       maxConcurrent: 10
     priority: 2
+    multiProfile: true
 dashboard:
   enabled: false
 logging:

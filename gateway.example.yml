@@ -34,6 +34,19 @@ providers:
   #     maxConcurrent: 1
   #   priority: 3
 
+  # --- Multi-profile setup ---
+  # Each provider slot serves ONE profile when `profile:` is pinned. Only
+  # clients connecting with `?profile=<name>` matching the pin are routed
+  # here. To serve N profiles, configure N provider slots — one per profile.
+  #
+  # provider-team-acme:
+  #   url: wss://provider.example.com?token=${PROVIDER_TOKEN}
+  #   profile: team-acme
+  #
+  # provider-team-bravo:
+  #   url: wss://provider.example.com?token=${PROVIDER_TOKEN_BRAVO}
+  #   profile: team-bravo
+
 # Session pool for REST API (/v1/screenshot, /v1/content, /v1/scrape)
 # The pool keeps browser sessions alive and serves pages from them.
 pool:

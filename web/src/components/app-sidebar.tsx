@@ -76,12 +76,12 @@ export function AppSidebar() {
       <SidebarFooter className="px-4 py-4">
         <div className="flex items-center justify-between">
           <a
-            href="https://browsergateway.com"
+            href="https://docs.browsergateway.com"
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            browsergateway.com
+            docs.browsergateway.com
             <ExternalLink className="h-3 w-3" />
           </a>
           <ThemeToggle />

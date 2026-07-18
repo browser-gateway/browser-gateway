@@ -1,16 +1,32 @@
 import { z } from "zod";
 import { PoolConfigSchema } from "./pool/types.js";
 
-export const ProviderConfigSchema = z.object({
-  url: z.string().url(),
-  limits: z
-    .object({
-      maxConcurrent: z.number().int().positive().optional(),
-    })
-    .optional(),
-  priority: z.number().int().positive().default(1),
-  weight: z.number().int().positive().default(1),
-});
+export const ProviderConfigSchema = z
+  .object({
+    url: z.string().url(),
+    limits: z
+      .object({
+        maxConcurrent: z.number().int().positive().optional(),
+      })
+      .optional(),
+    priority: z.number().int().positive().default(1),
+    weight: z.number().int().positive().default(1),
+    /**
+     * Pin this slot to a single profile. Only clients connecting with
+     * `?profile=<name>` matching this value are routed here.
+     */
+    profile: z.string().min(1).optional(),
+    /**
+     * Reserved: slot declares native per-session isolation and can serve any
+     * profile (including unpinned traffic). Mutually exclusive with `profile`.
+     * Not user-facing yet — do not advertise in docs or dashboard.
+     */
+    multiProfile: z.boolean().default(false),
+  })
+  .refine((c) => !(c.profile && c.multiProfile), {
+    message: "provider.profile and provider.multiProfile are mutually exclusive",
+    path: ["profile"],
+  });
 
 const CooldownSchema = z.object({
   defaultMs: z.number().int().default(30000),
