@@ -1,7 +1,7 @@
 {
   "name": "browser-gateway",
   "version": "0.3.6",
-  "description": "Reliable, scalable browser infrastructure for AI agents.",
+  "description": "Control plane for browser fleets. One endpoint, any provider: failover, load balancing, persistent profiles, session replay, REST API, MCP server, dashboard.",
   "mcpName": "io.github.browser-gateway/browser-gateway",
   "keywords": [
     "browser",
