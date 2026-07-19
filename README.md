@@ -5,11 +5,11 @@
 <h1 align="center">browser-gateway</h1>
 
 <p align="center">
-  <strong>The control plane for browser fleets.</strong>
+  <strong>OpenRouter for browsers.</strong>
   <br />
   One endpoint that routes across every browser provider you use: automatic failover, persistent profiles, session replay, REST API, MCP server, dashboard.
   <br />
-  <em>OpenRouter for browsers.</em> Works unchanged with Puppeteer, Playwright, Stagehand, browser-use, and any MCP client.
+  Works unchanged with Puppeteer, Playwright, Stagehand, browser-use, and any MCP client.
 </p>
 
 <p align="center">

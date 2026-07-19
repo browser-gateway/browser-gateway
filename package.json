@@ -1,7 +1,7 @@
 {
   "name": "browser-gateway",
   "version": "0.3.6",
-  "description": "Control plane for browser fleets. One endpoint, any provider: failover, load balancing, persistent profiles, session replay, REST API, MCP server, dashboard.",
+  "description": "OpenRouter for browsers. One endpoint, any provider: failover, load balancing, persistent profiles, session replay, REST API, MCP server, dashboard.",
   "mcpName": "io.github.browser-gateway/browser-gateway",
   "keywords": [
     "browser",
