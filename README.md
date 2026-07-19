@@ -9,7 +9,7 @@
   <br />
   One endpoint that routes across every browser provider you use: automatic failover, persistent profiles, session replay, REST API, MCP server, dashboard.
   <br />
-  <em>Think OpenRouter, for browsers.</em> Works unchanged with Puppeteer, Playwright, Stagehand, browser-use, and any MCP client.
+  <em>OpenRouter for browsers.</em> Works unchanged with Puppeteer, Playwright, Stagehand, browser-use, and any MCP client.
 </p>
 
 <p align="center">
