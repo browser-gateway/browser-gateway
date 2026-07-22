@@ -26,7 +26,8 @@
     "url": "git+https://github.com/browser-gateway/browser-gateway.git"
   },
   "bugs": {
-    "url": "https://github.com/browser-gateway/browser-gateway/issues"
+    "url": "https://github.com/browser-gateway/browser-gateway/issues",
+    "email": "hello@browsergateway.com"
   },
   "license": "MIT",
   "author": "Monostellar Limited (https://monostellar.com)",

@@ -425,8 +425,13 @@ MIT - see [LICENSE](LICENSE).
 ## Links
 
 - [browsergateway.com](https://browsergateway.com)
+- [docs.browsergateway.com](https://docs.browsergateway.com)
 - [GitHub](https://github.com/browser-gateway/browser-gateway)
 - [npm](https://www.npmjs.com/package/browser-gateway)
+
+## Contact
+
+Questions, security reports, or partnership inquiries: `hello@browsergateway.com`.
 
 ---
 
