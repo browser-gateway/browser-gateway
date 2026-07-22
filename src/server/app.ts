@@ -190,7 +190,13 @@ export function createApp(
       id: b.id,
       healthy: b.healthy,
       active: b.active,
-      maxConcurrent: b.config.limits?.maxConcurrent ?? null,
+      maxConcurrent: b.config.limits?.maxConcurrent ?? b.discoveredMaxConcurrent ?? null,
+      maxConcurrentSource: b.config.limits?.maxConcurrent
+        ? "config"
+        : b.discoveredMaxConcurrent
+          ? "discovered"
+          : null,
+      detectedKind: b.detectedKind,
       cooldownUntil: b.cooldownUntil
         ? new Date(b.cooldownUntil).toISOString()
         : null,
@@ -260,14 +266,24 @@ export function createApp(
 
   // Provider CRUD endpoints
   app.get("/v1/providers", (c) => {
-    const providers = Object.entries(gateway.config.providers).map(([id, p]) => ({
-      id,
-      url: p.url.replace(/([?&])(token|apiKey|key|secret|password)=[^&]*/gi, "$1$2=***"),
-      maxConcurrent: p.limits?.maxConcurrent ?? null,
-      priority: p.priority,
-      weight: p.weight ?? 1,
-      profile: p.profile ?? null,
-    }));
+    const providers = Object.entries(gateway.config.providers).map(([id, p]) => {
+      const state = gateway.registry.get(id);
+      return {
+        id,
+        url: p.url.replace(/([?&])(token|apiKey|key|secret|password)=[^&]*/gi, "$1$2=***"),
+        maxConcurrent: p.limits?.maxConcurrent ?? state?.discoveredMaxConcurrent ?? null,
+        maxConcurrentSource: p.limits?.maxConcurrent
+          ? "config"
+          : state?.discoveredMaxConcurrent
+            ? "discovered"
+            : null,
+        detectedKind: state?.detectedKind ?? null,
+        priority: p.priority,
+        weight: p.weight ?? 1,
+        profile: p.profile ?? null,
+        multiProfile: p.multiProfile || state?.detectedKind === "browserserve" || false,
+      };
+    });
     return c.json({ providers });
   });
 

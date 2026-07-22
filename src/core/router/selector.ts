@@ -1,6 +1,9 @@
-import type { ProviderConfig, ProviderState } from "../types.js";
+import type { ProviderState } from "../types.js";
 import type { ProviderRegistry } from "../providers/registry.js";
 import type { CooldownTracker } from "../tracking/cooldown.js";
+import { hasFreeSlot, isEligibleProviderForProfile } from "../providers/effective.js";
+
+export { isEligibleForProfile } from "../providers/effective.js";
 
 export type Strategy =
   | "priority-chain"
@@ -27,22 +30,6 @@ export interface SelectOptions {
   profileId?: string | null;
 }
 
-/**
- * Given a provider's config and the caller's requested profile, decide whether
- * that provider slot is eligible to serve the request. Three provider roles:
- *   - pinned (`profile: "X"`): serves only profile X
- *   - multi-profile (`multiProfile: true`): serves any profile including none
- *   - stateless-only (neither): serves only stateless (no `?profile=`) traffic
- */
-export function isEligibleForProfile(
-  config: ProviderConfig,
-  requestedProfile: string | null | undefined,
-): boolean {
-  if (config.multiProfile) return true;
-  if (requestedProfile == null) return config.profile == null;
-  return config.profile === requestedProfile;
-}
-
 export class ProviderSelector {
   private roundRobinIndex = 0;
   private weightedState: Map<string, number> = new Map();
@@ -58,9 +45,8 @@ export class ProviderSelector {
       const pinned = this.registry.get(opts.targetProviderId);
       if (!pinned) return [];
       if (this.cooldown.isInCooldown(pinned)) return [];
-      const max = pinned.config.limits?.maxConcurrent;
-      if (max && pinned.active >= max) return [];
-      if (!isEligibleForProfile(pinned.config, opts.profileId)) return [];
+      if (!hasFreeSlot(pinned)) return [];
+      if (!isEligibleProviderForProfile(pinned, opts.profileId)) return [];
       return [pinned];
     }
 
@@ -68,12 +54,8 @@ export class ProviderSelector {
 
     const available = all.filter((b) => {
       if (this.cooldown.isInCooldown(b)) return false;
-
-      const max = b.config.limits?.maxConcurrent;
-      if (max && b.active >= max) return false;
-
-      if (!isEligibleForProfile(b.config, opts.profileId)) return false;
-
+      if (!hasFreeSlot(b)) return false;
+      if (!isEligibleProviderForProfile(b, opts.profileId)) return false;
       return true;
     });
 

@@ -89,9 +89,11 @@ describe("REST golden — locks public API response shapes", () => {
               "active": "number",
               "avgLatencyMs": "number",
               "cooldownUntil": "null",
+              "detectedKind": "null",
               "healthy": "boolean",
               "id": "string",
               "maxConcurrent": "number",
+              "maxConcurrentSource": "string",
               "priority": "number",
               "totalConnections": "number",
             },
@@ -127,8 +129,11 @@ describe("REST golden — locks public API response shapes", () => {
         "shape": {
           "providers": [
             {
+              "detectedKind": "null",
               "id": "string",
               "maxConcurrent": "number",
+              "maxConcurrentSource": "string",
+              "multiProfile": "boolean",
               "priority": "number",
               "profile": "null",
               "url": "string",

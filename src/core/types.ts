@@ -143,6 +143,10 @@ export interface ProviderState {
   lastFailure: number | null;
   avgLatencyMs: number;
   totalConnections: number;
+  /** Vendor detected by the capability probe; `null` until a probe identifies one. */
+  detectedKind: "browserserve" | null;
+  /** Concurrency ceiling the provider advertised; adopted when `limits.maxConcurrent` is unset. */
+  discoveredMaxConcurrent: number | null;
 }
 
 export interface Session {

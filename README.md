@@ -350,6 +350,28 @@ gh attestation verify oci://ghcr.io/browser-gateway/server:0.3.0 \
 
 ---
 
+## Self-hosted provider: browserserve
+
+[browserserve](https://github.com/browser-gateway/browserserve) is the stack's own self-hosted browser server: one container that hands out isolated Chrome sessions over CDP. Add it like any other provider:
+
+```yaml
+providers:
+  browserserve:
+    url: ws://your-host:9222
+  cloud-provider:
+    url: <websocket-url-with-auth>
+    priority: 2
+```
+
+Because the gateway controls that runtime, a browserserve provider is **auto-detected** and unlocks two things no external provider gets:
+
+- **Auto capacity.** You do not set `maxConcurrent`. browserserve measures its host (memory, thread, and CPU limits) and advertises a safe ceiling, which the gateway adopts. The dashboard shows it as `(auto)`.
+- **Multiple profiles from one slot.** A browserserve provider can serve any profile, switching safely because every session is a fresh browser with no shared state. External providers stay single-profile-pinned, since reusing a browser leaks cookies and storage between profiles.
+
+A common shape: browserserve as the primary provider on your own hardware, with a cloud provider at a lower priority for failover.
+
+---
+
 ## Works With
 
 browser-gateway is compatible with existing browser tools. Just pass the gateway URL — it auto-resolves via `/json/version`.

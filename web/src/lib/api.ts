@@ -179,6 +179,8 @@ export interface ProviderStatus {
   healthy: boolean;
   active: number;
   maxConcurrent: number | null;
+  maxConcurrentSource: "config" | "discovered" | null;
+  detectedKind: "browserserve" | null;
   cooldownUntil: string | null;
   avgLatencyMs: number;
   totalConnections: number;
@@ -189,9 +191,12 @@ export interface ProviderConfigItem {
   id: string;
   url: string;
   maxConcurrent: number | null;
+  maxConcurrentSource: "config" | "discovered" | null;
+  detectedKind: "browserserve" | null;
   priority: number;
   weight: number;
   profile: string | null;
+  multiProfile: boolean;
 }
 
 export interface ProviderListResponse {

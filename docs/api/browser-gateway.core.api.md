@@ -312,6 +312,8 @@ export interface ProviderState {
     config: ProviderConfig;
     // (undocumented)
     cooldownUntil: number | null;
+    detectedKind: "browserserve" | null;
+    discoveredMaxConcurrent: number | null;
     // (undocumented)
     failureCount: number;
     // (undocumented)

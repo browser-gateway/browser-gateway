@@ -1,11 +1,12 @@
 import type { ProviderState } from "../types.js";
+import { effectiveMaxConcurrent } from "../providers/effective.js";
 
 export class ConcurrencyTracker {
   private sessions: Map<string, { providerId: string; timestamp: number }> =
     new Map();
 
   acquire(providerId: string, sessionId: string, provider: ProviderState): boolean {
-    const maxConcurrent = provider.config.limits?.maxConcurrent;
+    const maxConcurrent = effectiveMaxConcurrent(provider);
     if (maxConcurrent && provider.active >= maxConcurrent) {
       return false;
     }

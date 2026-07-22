@@ -33,6 +33,8 @@ export class ProviderRegistry {
       lastFailure: null,
       avgLatencyMs: 0,
       totalConnections: 0,
+      detectedKind: null,
+      discoveredMaxConcurrent: null,
     });
     this.capabilities.set(id, { status: "pending", capabilities: null });
     if (opts.autoProbe !== false) {
@@ -67,6 +69,8 @@ export class ProviderRegistry {
           status: allUnknown ? "failed" : "ready",
           capabilities: caps,
         });
+        provider.detectedKind = caps.providerKind === "browserserve" ? "browserserve" : null;
+        provider.discoveredMaxConcurrent = caps.advertisedMaxConcurrent;
       } catch {
         this.capabilities.set(id, { status: "failed", capabilities: null });
       } finally {

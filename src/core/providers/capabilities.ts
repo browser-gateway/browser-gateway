@@ -1,5 +1,5 @@
 import { WsCDPClient } from "../profile/cdp-client.js";
-import { resolveWsUrl } from "./cdp.js";
+import { fetchProviderIdentity, resolveWsUrl } from "./cdp.js";
 
 export type CapabilityState = "supported" | "unsupported" | "unknown";
 
@@ -10,6 +10,10 @@ export interface ProviderCapabilities {
   fetchInterception: CapabilityState;
   pageScreencast: CapabilityState;
   targetCreateLatencyMs: number | null;
+  /** Detected vendor: a browserserve instance, or a generic CDP provider. */
+  providerKind: "browserserve" | "generic";
+  /** The provider's self-reported concurrency ceiling, when it advertises one. */
+  advertisedMaxConcurrent: number | null;
   probedAt: string;
   probeDurationMs: number;
   errors: string[];
@@ -22,6 +26,8 @@ export const UNKNOWN_CAPABILITIES: Readonly<Omit<ProviderCapabilities, "probedAt
   fetchInterception: "unknown",
   pageScreencast: "unknown",
   targetCreateLatencyMs: null,
+  providerKind: "generic",
+  advertisedMaxConcurrent: null,
   probeDurationMs: 0,
   errors: [],
 });
@@ -49,6 +55,10 @@ export async function probeProviderCapabilities(
   };
   const deadline = started + total;
 
+  const identity = await fetchProviderIdentity(providerUrl, perStep);
+  caps.providerKind = identity.browserserveVersion === null ? "generic" : "browserserve";
+  caps.advertisedMaxConcurrent = identity.advertisedMaxConcurrent;
+
   let wsUrl: string;
   try {
     wsUrl = await resolveWsUrl(providerUrl);
@@ -60,7 +70,15 @@ export async function probeProviderCapabilities(
 
   const client = new WsCDPClient();
   try {
-    await raceStep(client.connect(wsUrl, perStep), perStep, "connect", caps);
+    await raceStep(
+      client.connect(wsUrl, perStep).catch((err: unknown) => {
+        caps.errors.push(`connect: ${errorMessage(err)}`);
+        return null;
+      }),
+      perStep,
+      "connect",
+      caps,
+    );
     if (caps.errors.length > 0) return finish(caps, started);
 
     await runStep(caps, "browserCookies", async () => {

@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-07-15
+Generated: 2026-07-22
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -171,14 +171,24 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **type** `type CapabilityState` (line 4)
 - **interface** `interface ProviderCapabilities` (line 6)
-- **const** `const UNKNOWN_CAPABILITIES: Readonly<Omit<ProviderCapabilities, "probedAt">>` (line 18)
-- **interface** `interface ProbeOptions` (line 29)
-- **fn** `probeProviderCapabilities(providerUrl: string, opts: ProbeOptions = {}) → Promise<ProviderCapabilities>` (line 38) — Probes a provider's CDP endpoint for features the gateway uses. Best-effort:
+- **const** `const UNKNOWN_CAPABILITIES: Readonly<Omit<ProviderCapabilities, "probedAt">>` (line 22)
+- **interface** `interface ProbeOptions` (line 35)
+- **fn** `probeProviderCapabilities(providerUrl: string, opts: ProbeOptions = {}) → Promise<ProviderCapabilities>` (line 44) — Probes a provider's CDP endpoint for features the gateway uses. Best-effort:
 ### `src/core/providers/cdp.ts`
 
-- **fn** `fetchCdpVersion(httpUrl: string, timeoutMs: number = 3000) → Promise<CdpVersionInfo>` (line 7)
-- **fn** `isHttpUrl(url: string) → boolean` (line 17)
-- **fn** `resolveWsUrl(providerUrl: string, timeoutMs: number = 3000) → Promise<string>` (line 21)
+- **interface** `interface ProviderIdentity` (line 8) — Vendor fields a provider may advertise on its CDP discovery endpoint.
+- **const** `const UNKNOWN_IDENTITY: Readonly<ProviderIdentity>` (line 15)
+- **fn** `httpDiscoveryUrl(providerUrl: string) → string` (line 25) — Derives the HTTP `/json/version` discovery URL for a provider URL of any
+- **fn** `fetchProviderIdentity(providerUrl: string, timeoutMs: number = 3000) → Promise<ProviderIdentity>` (line 36) — Reads a provider's vendor identity from its `/json/version` response.
+- **fn** `fetchCdpVersion(httpUrl: string, timeoutMs: number = 3000) → Promise<CdpVersionInfo>` (line 60)
+- **fn** `isHttpUrl(url: string) → boolean` (line 70)
+- **fn** `resolveWsUrl(providerUrl: string, timeoutMs: number = 3000) → Promise<string>` (line 74)
+### `src/core/providers/effective.ts`
+
+- **fn** `isEligibleForProfile(config: ProviderConfig, requestedProfile: string | null | undefined) → boolean` (line 10) — Given a provider's config and the caller's requested profile, decide whether
+- **fn** `isEligibleProviderForProfile(provider: ProviderState, requestedProfile: string | null | undefined) → boolean` (line 24) — Profile eligibility with vendor detection applied: a detected browserserve
+- **fn** `effectiveMaxConcurrent(provider: ProviderState) → number | undefined` (line 37) — The concurrency ceiling actually enforced for a provider: explicit
+- **fn** `hasFreeSlot(provider: ProviderState) → boolean` (line 42) — True when the provider has a free slot under its effective ceiling.
 ### `src/core/providers/health.ts`
 
 - **class** `class HealthChecker` (line 7)
@@ -197,13 +207,12 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class SessionTracker` (line 3)
 ### `src/core/router/selector.ts`
 
-- **type** `type Strategy` (line 5)
-- **interface** `interface SelectOptions` (line 12)
-- **fn** `isEligibleForProfile(config: ProviderConfig, requestedProfile: string | null | undefined) → boolean` (line 37) — Given a provider's config and the caller's requested profile, decide whether
-- **class** `class ProviderSelector` (line 46)
+- **type** `type Strategy` (line 8)
+- **interface** `interface SelectOptions` (line 15)
+- **class** `class ProviderSelector` (line 33)
 ### `src/core/tracking/concurrency.ts`
 
-- **class** `class ConcurrencyTracker` (line 3)
+- **class** `class ConcurrencyTracker` (line 4)
 ### `src/core/tracking/cooldown.ts`
 
 - **class** `class CooldownTracker` (line 9)
@@ -218,7 +227,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type ProviderConfig` (line 132)
 - **type** `type GatewayConfig` (line 133)
 - **interface** `interface ProviderState` (line 135)
-- **interface** `interface Session` (line 148)
+- **interface** `interface Session` (line 152)
 
 ## Server layer (src/server/)
 

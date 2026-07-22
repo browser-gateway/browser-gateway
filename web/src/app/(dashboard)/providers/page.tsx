@@ -182,6 +182,16 @@ export default function ProvidersPage() {
                       <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
                         Priority {provider.priority}
                       </Badge>
+                      {provider.detectedKind === "browserserve" && (
+                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
+                          browserserve
+                        </Badge>
+                      )}
+                      {provider.multiProfile && (
+                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
+                          Serves all profiles
+                        </Badge>
+                      )}
                       {provider.profile && (
                         <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
                           Serves: {provider.profile}
@@ -197,6 +207,7 @@ export default function ProvidersPage() {
                     <div className="flex items-center gap-5 text-xs text-muted-foreground flex-wrap">
                       <span>
                         Max connections: <span className="text-foreground font-mono">{provider.maxConcurrent ?? "unlimited"}</span>
+                        {provider.maxConcurrentSource === "discovered" && <span className="ml-1">(auto)</span>}
                       </span>
                       {provider.weight > 1 && (
                         <span>

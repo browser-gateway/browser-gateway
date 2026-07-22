@@ -18,6 +18,8 @@ function createProvider(id: string, maxConcurrent?: number): ProviderState {
     lastFailure: null,
     avgLatencyMs: 0,
     totalConnections: 0,
+    detectedKind: null,
+    discoveredMaxConcurrent: null,
   };
 }
 
