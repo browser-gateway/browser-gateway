@@ -219,6 +219,14 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/tracking/cooldown.ts`
 
 - **class** `class CooldownTracker` (line 9)
+### `src/core/transport.ts`
+
+- **type** `type RelayDirection` (line 18) — Environment-agnostic relay contract.
+- **type** `type RelayCloseReason` (line 21) — Terminal state of a relay attempt.
+- **interface** `interface RelayCallbacks` (line 30) — Callbacks the caller can supply to observe the relay's lifetime.
+- **interface** `interface RelayOptions` (line 42) — Options passed to `RelayTransport.relay()`.
+- **interface** `interface RelayResult` (line 76) — Result of a `relay()` invocation.
+- **interface** `interface RelayTransport` (line 103) — Bidirectional WebSocket relay between an accepted client and an upstream URL.
 ### `src/core/types.ts`
 
 - **const** `const ProviderConfigSchema` (line 4)

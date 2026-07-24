@@ -351,6 +351,62 @@ export class ReconnectRegistry {
     stopCleanup(): void;
 }
 
+// @public
+export interface RelayCallbacks {
+    onBytes?: (dir: RelayDirection, bytes: number) => void;
+    onClose?: (reason: RelayCloseReason) => void;
+    onMessage?: (dir: RelayDirection) => void;
+    onUpgrade?: (info: {
+        upstreamStatus: number;
+    }) => void;
+}
+
+// @public
+export type RelayCloseReason = {
+    kind: "client-closed";
+} | {
+    kind: "upstream-closed";
+} | {
+    kind: "client-error";
+    error: Error;
+} | {
+    kind: "upstream-error";
+    error: Error;
+} | {
+    kind: "upstream-rejected";
+    status: number;
+    body?: string;
+} | {
+    kind: "upstream-timeout";
+};
+
+// @public
+export type RelayDirection = "in" | "out";
+
+// @public
+export interface RelayOptions extends RelayCallbacks {
+    client: unknown;
+    clientMeta?: unknown;
+    connectionTimeoutMs?: number;
+    sessionId?: string;
+    upstreamHeaders?: Record<string, string>;
+    upstreamUrl: string;
+}
+
+// @public
+export interface RelayResult {
+    connected: boolean;
+    reason?: RelayCloseReason;
+}
+
+// @public
+export interface RelayTransport {
+    // (undocumented)
+    readonly name: string;
+    // (undocumented)
+    relay(opts: RelayOptions): Promise<RelayResult>;
+}
+
 // @public (undocumented)
 export interface Session {
     // (undocumented)

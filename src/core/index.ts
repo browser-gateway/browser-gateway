@@ -16,3 +16,11 @@ export type {
   ProviderState,
   Session,
 } from "./types.js";
+export type {
+  RelayCallbacks,
+  RelayCloseReason,
+  RelayDirection,
+  RelayOptions,
+  RelayResult,
+  RelayTransport,
+} from "./transport.js";
