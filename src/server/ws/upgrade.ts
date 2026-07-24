@@ -1,12 +1,12 @@
 import { IncomingMessage } from "node:http";
 import { Duplex } from "node:stream";
-import { createConnection } from "node:net";
-import { connect as tlsConnect } from "node:tls";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { ProviderState } from "../../core/types.js";
+import type { RelayTransport, RelayCloseReason } from "../../core/transport.js";
 import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
+import { NodeTcpPipeTransport } from "../transport/node.js";
 import { isEligibleForProfile } from "../../core/router/selector.js";
 import {
   LifecycleError,
@@ -107,6 +107,7 @@ export function createWebSocketHandler(
   reconnectRegistry?: ReconnectRegistry,
   profileLifecycle?: ProfileLifecycle,
   replayController?: ReplayController,
+  transport: RelayTransport = new NodeTcpPipeTransport(),
 ) {
 
   const liveHandler = createLiveUpgradeHandler({ gateway, logger, token, profileLifecycle, replayController });
@@ -251,7 +252,7 @@ export function createWebSocketHandler(
           logger.info({ sessionId: reconnectSessionId, providerId: provider.id }, "session reconnecting to same provider");
 
           const connected = await pipeToProvider(
-            gateway, logger, socket, head, req, reconnectSessionId, provider, reconnectRegistry,
+            gateway, logger, transport, socket, head, req, reconnectSessionId, provider, reconnectRegistry,
             profileLifecycle, acquired, replayController,
           );
 
@@ -296,7 +297,7 @@ export function createWebSocketHandler(
         }
 
         const connected = await pipeToProvider(
-          gateway, logger, socket, head, req, sessionId, provider, reconnectRegistry,
+          gateway, logger, transport, socket, head, req, sessionId, provider, reconnectRegistry,
           profileLifecycle, acquired, replayController,
         );
 
@@ -378,6 +379,7 @@ async function cachedResolveWsUrl(providerUrl: string, timeoutMs: number): Promi
 async function pipeToProvider(
   gateway: Gateway,
   logger: Logger,
+  transport: RelayTransport,
   clientSocket: Duplex,
   head: Buffer,
   req: IncomingMessage,
@@ -439,229 +441,145 @@ async function pipeToProvider(
     }
   }
 
-  return new Promise((resolve) => {
-    const providerUrl = new URL(resolvedUrl);
-    const isSecure = providerUrl.protocol === "wss:";
-    const port = parseInt(providerUrl.port || (isSecure ? "443" : "80"), 10);
-    const hostname = providerUrl.hostname;
+  logger.info({ sessionId, providerId: provider.id }, "connecting to provider");
 
-    logger.info({ sessionId, providerId: provider.id }, "connecting to provider");
+  const startTime = Date.now();
+  let cleanedUp = false;
 
-    const timeout = setTimeout(() => {
-      logger.warn({ sessionId, providerId: provider.id }, "provider connection timed out");
-      providerSocket.destroy();
-      resolve(false);
-    }, gateway.config.gateway.connectionTimeout);
+  const onTerminalClose = (reason: RelayCloseReason): void => {
+    if (cleanedUp) return;
+    cleanedUp = true;
 
-    const providerSocket = isSecure
-      ? tlsConnect({ host: hostname, port, servername: hostname }, onConnect)
-      : createConnection({ host: hostname, port }, onConnect);
+    const source = closeReasonToSource(reason);
+    const session = gateway.sessions.remove(sessionId);
+    gateway.releaseSlot(sessionId, provider.id);
 
-    function onConnect() {
-      clearTimeout(timeout);
-      logger.debug({ sessionId, providerId: provider.id }, "TCP connection established");
-
-      const upgradeReq = buildUpgradeRequest(providerUrl, req);
-      providerSocket.write(upgradeReq);
-
-      if (head.length > 0) {
-        providerSocket.write(head);
-      }
+    if (effectiveReplay) {
+      effectiveReplay.onSessionEnd(sessionId);
     }
 
-    let gotUpgradeResponse = false;
-    let cleanedUp = false;
-    const startTime = Date.now();
+    const durationMs = Date.now() - startTime;
+    gateway.recordSuccess(provider.id, durationMs);
 
-    let responseBuffer = Buffer.alloc(0);
+    if (reconnectRegistry && session) {
+      reconnectRegistry.park(
+        sessionId,
+        provider.id,
+        provider.config.url,
+        session.connectedAt,
+        session.messageCount,
+      );
+      logger.info({ sessionId, providerId: provider.id, durationMs }, "session parked for reconnection");
+    }
 
-    providerSocket.on("data", function onData(chunk) {
-      if (gotUpgradeResponse) return;
+    gateway.emit("session.ended", { sessionId, providerId: provider.id, durationMs });
 
-      responseBuffer = Buffer.concat([responseBuffer, chunk]);
-      const headerEnd = responseBuffer.indexOf("\r\n\r\n");
-      if (headerEnd === -1) return;
+    logger.info(
+      {
+        sessionId,
+        providerId: provider.id,
+        durationMs,
+        messageCount: session?.messageCount ?? 0,
+        source,
+      },
+      "session ended",
+    );
 
-      providerSocket.removeListener("data", onData);
-
-      const headerStr = responseBuffer.subarray(0, headerEnd).toString();
-
-      if (headerStr.startsWith("HTTP/1.1 101")) {
-        gotUpgradeResponse = true;
-
-        gateway.sessions.create(sessionId, provider.id, acquired?.profileId);
-        gateway.emit("session.created", { sessionId, providerId: provider.id });
-        logger.info({ sessionId, providerId: provider.id }, "session established");
-
-        if (effectiveReplay) {
-          effectiveReplay.onSessionStart({
-            sessionId,
-            providerId: provider.id,
-            providerWsUrl: resolvedUrl,
-            profileId: acquired?.profileId,
+    if (acquired && profileLifecycle) {
+      const capturedAcquired = acquired;
+      if (capturedAcquired.readOnly) {
+        void profileLifecycle.release(capturedAcquired);
+      } else if (isBrowserserve && browserserveToken) {
+        const token = browserserveToken;
+        const { base, authToken } = browserserveHttp(resolvedUrl);
+        pickUpProfile(base, authToken, token)
+          .then((captured) =>
+            captured
+              ? profileLifecycle.commitCaptured(capturedAcquired, fromBrowserservePayload(captured))
+              : profileLifecycle.release(capturedAcquired),
+          )
+          .catch((err) => {
+            logger.warn(
+              { profileId: capturedAcquired.profileId, error: err instanceof Error ? err.message : String(err) },
+              "browserserve profile pick-up failed",
+            );
+            profileLifecycle.release(capturedAcquired).catch(() => undefined);
           });
-        }
-
-        // Inject X-Session-Id header into the 101 response
-        const headerPart = responseBuffer.subarray(0, headerEnd).toString();
-        const afterHeaders = responseBuffer.subarray(headerEnd + 4); // skip \r\n\r\n
-        const modifiedResponse = `${headerPart}\r\nX-Session-Id: ${sessionId}\r\n\r\n`;
-
-        clientSocket.write(modifiedResponse);
-        if (afterHeaders.length > 0) {
-          clientSocket.write(afterHeaders);
-        }
-
-        clientSocket.pipe(providerSocket);
-        providerSocket.pipe(clientSocket);
-
-        clientSocket.on("data", () => gateway.sessions.recordActivity(sessionId));
-        providerSocket.on("data", () => gateway.sessions.recordActivity(sessionId));
-
-        resolve(true);
       } else {
-        logger.warn(
-          { sessionId, providerId: provider.id, response: headerStr.slice(0, 200) },
-          "provider rejected upgrade"
-        );
-        cdpUrlCache.delete(provider.config.url);
-        providerSocket.destroy();
-        resolve(false);
+        profileLifecycle.commit(capturedAcquired, resolvedUrl).catch((err) => {
+          logger.warn(
+            {
+              profileId: capturedAcquired.profileId,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            "profile commit failed",
+          );
+        });
       }
-    });
+    }
+  };
 
-    const cleanup = (source: string) => () => {
-      if (!gotUpgradeResponse || cleanedUp) return;
-      cleanedUp = true;
-
-      const session = gateway.sessions.remove(sessionId);
-      gateway.releaseSlot(sessionId, provider.id);
-
+  const relayResult = await transport.relay({
+    client: clientSocket,
+    clientMeta: { req, head },
+    upstreamUrl: resolvedUrl,
+    sessionId,
+    connectionTimeoutMs: gateway.config.gateway.connectionTimeout,
+    onUpgrade: () => {
+      gateway.sessions.create(sessionId, provider.id, acquired?.profileId);
+      gateway.emit("session.created", { sessionId, providerId: provider.id });
+      logger.info({ sessionId, providerId: provider.id }, "session established");
       if (effectiveReplay) {
-        effectiveReplay.onSessionEnd(sessionId);
-      }
-
-      const durationMs = Date.now() - startTime;
-      gateway.recordSuccess(provider.id, durationMs);
-
-      // Park session for reconnection
-      if (reconnectRegistry && session) {
-        reconnectRegistry.park(
-          sessionId,
-          provider.id,
-          provider.config.url,
-          session.connectedAt,
-          session.messageCount,
-        );
-        logger.info({ sessionId, providerId: provider.id, durationMs }, "session parked for reconnection");
-      }
-
-      gateway.emit("session.ended", { sessionId, providerId: provider.id, durationMs });
-
-      logger.info(
-        {
+        effectiveReplay.onSessionStart({
           sessionId,
           providerId: provider.id,
-          durationMs,
-          messageCount: session?.messageCount ?? 0,
-          source,
-        },
-        "session ended"
-      );
-
-      if (!clientSocket.destroyed) clientSocket.destroy();
-      if (!providerSocket.destroyed) providerSocket.destroy();
-
-      // Capture latest cookies, encrypt, save, release the profile lock.
-      // Fire-and-forget: don't block socket cleanup on remote CDP work.
-      if (acquired && profileLifecycle) {
-        const capturedAcquired = acquired;
-        if (capturedAcquired.readOnly) {
-          // Read-only: nothing to save. No lock was taken, so release is a no-op.
-          void profileLifecycle.release(capturedAcquired);
-        } else if (isBrowserserve && browserserveToken) {
-          const token = browserserveToken;
-          const { base, authToken } = browserserveHttp(resolvedUrl);
-          pickUpProfile(base, authToken, token)
-            .then((captured) =>
-              captured
-                ? profileLifecycle.commitCaptured(capturedAcquired, fromBrowserservePayload(captured))
-                : profileLifecycle.release(capturedAcquired),
-            )
-            .catch((err) => {
-              logger.warn(
-                { profileId: capturedAcquired.profileId, error: err instanceof Error ? err.message : String(err) },
-                "browserserve profile pick-up failed",
-              );
-              profileLifecycle.release(capturedAcquired).catch(() => undefined);
-            });
-        } else {
-          profileLifecycle.commit(capturedAcquired, resolvedUrl).catch((err) => {
-            logger.warn(
-              {
-                profileId: capturedAcquired.profileId,
-                error: err instanceof Error ? err.message : String(err),
-              },
-              "profile commit failed",
-            );
-          });
-        }
+          providerWsUrl: resolvedUrl,
+          profileId: acquired?.profileId,
+        });
       }
-    };
-
-    clientSocket.on("close", cleanup("client"));
-    clientSocket.on("error", cleanup("client-error"));
-    providerSocket.on("close", cleanup("provider"));
-
-    // L5 fix: defensive watchdog — if neither socket emits a close/error event
-    // (rare but real for abrupt destruction or VM suspend), poll periodically
-    // and force cleanup once both sockets are destroyed. Stops the profile lock
-    // and provider slot from being held indefinitely.
-    const watchdog = setInterval(() => {
-      if (cleanedUp) {
-        clearInterval(watchdog);
-        return;
-      }
-      if (clientSocket.destroyed && providerSocket.destroyed) {
-        clearInterval(watchdog);
-        cleanup("watchdog")();
-      }
-    }, 5_000);
-    watchdog.unref();
-
-    providerSocket.on("error", (err) => {
-      clearTimeout(timeout);
-      if (!gotUpgradeResponse) {
-        logger.warn(
-          { sessionId, providerId: provider.id, error: err.message },
-          "provider connection failed"
-        );
-        resolve(false);
-      } else {
-        cleanup("provider-error")();
-      }
-    });
+    },
+    onMessage: () => {
+      gateway.sessions.recordActivity(sessionId);
+    },
+    onClose: onTerminalClose,
   });
-}
 
-function buildUpgradeRequest(providerUrl: URL, originalReq: IncomingMessage): string {
-  const path = providerUrl.pathname + providerUrl.search;
-
-  let request = `GET ${path} HTTP/1.1\r\n`;
-  request += `Host: ${providerUrl.host}\r\n`;
-
-  const skipHeaders = new Set(["host", "connection", "upgrade", "authorization"]);
-
-  for (let i = 0; i < originalReq.rawHeaders.length; i += 2) {
-    const key = originalReq.rawHeaders[i];
-    if (!skipHeaders.has(key.toLowerCase())) {
-      request += `${key}: ${originalReq.rawHeaders[i + 1]}\r\n`;
+  if (!relayResult.connected) {
+    const reason = relayResult.reason;
+    if (reason?.kind === "upstream-rejected") {
+      logger.warn(
+        { sessionId, providerId: provider.id, status: reason.status, response: reason.body?.slice(0, 200) },
+        "provider rejected upgrade",
+      );
+      cdpUrlCache.delete(provider.config.url);
+    } else if (reason?.kind === "upstream-timeout") {
+      logger.warn({ sessionId, providerId: provider.id }, "provider connection timed out");
+    } else if (reason?.kind === "upstream-error") {
+      logger.warn(
+        { sessionId, providerId: provider.id, error: reason.error.message },
+        "provider connection failed",
+      );
     }
+    return false;
   }
 
-  request += `Connection: Upgrade\r\n`;
-  request += `Upgrade: websocket\r\n`;
-  request += `\r\n`;
-
-  return request;
+  return true;
 }
+
+function closeReasonToSource(reason: RelayCloseReason): string {
+  switch (reason.kind) {
+    case "client-closed":
+      return "client";
+    case "client-error":
+      return "client-error";
+    case "upstream-closed":
+      return "provider";
+    case "upstream-error":
+      return "provider-error";
+    case "upstream-rejected":
+      return "provider-rejected";
+    case "upstream-timeout":
+      return "provider-timeout";
+  }
+}
+

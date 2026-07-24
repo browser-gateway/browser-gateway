@@ -477,6 +477,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface BannerOptions` (line 53)
 - **fn** `printStartupBanner(opts: BannerOptions) → void` (line 69)
+### `src/server/transport/node.ts`
+
+- **class** `class NodeTcpPipeTransport` (line 32) — Node-native WebSocket relay: raw TCP/TLS + `Duplex.pipe`.
 ### `src/server/util/request.ts`
 
 - **fn** `getEffectiveProtocol(c: { req: { header: (name: string) => string | undefined; url: string } }) → "http" | "https"` (line 8) — Return the effective protocol the client used to reach us, honoring
@@ -498,7 +501,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController) → unknown` (line 103)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController, transport: RelayTransport = new NodeTcpPipeTransport()) → unknown` (line 103)
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 
