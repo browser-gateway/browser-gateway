@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Pencil, Trash2, Zap, Check, X, Loader2, Server, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Trash2, Zap, Check, X, Loader2, Server } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CapabilityStrip } from "@/components/capability-strip";
 import {
@@ -21,10 +20,20 @@ import {
   updateProvider,
   deleteProvider,
   testProvider,
+  setStrategy,
   type GatewayStatus,
   type ProviderConfigItem,
   type ProfileMetaItem,
+  type Strategy,
 } from "@/lib/api";
+
+const STRATEGY_OPTIONS: { value: Strategy; label: string; hint: string }[] = [
+  { value: "priority-chain", label: "Priority chain", hint: "Always use the highest-priority provider that has room." },
+  { value: "round-robin", label: "Round robin", hint: "Spread sessions evenly across providers." },
+  { value: "least-connections", label: "Least busy", hint: "Send to whichever provider has the fewest active sessions." },
+  { value: "latency-optimized", label: "Fastest", hint: "Prefer the provider with the lowest recent latency." },
+  { value: "weighted", label: "Weighted", hint: "Split traffic by each provider's weight." },
+];
 
 interface TestResult {
   ok: boolean;
@@ -42,6 +51,7 @@ export default function ProvidersPage() {
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
   const [testingId, setTestingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savingStrategy, setSavingStrategy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -59,6 +69,14 @@ export default function ProvidersPage() {
     const interval = setInterval(refresh, 5000);
     return () => clearInterval(interval);
   }, [refresh]);
+
+  const handleStrategyChange = async (next: Strategy) => {
+    setSavingStrategy(true);
+    const res = await setStrategy(next);
+    setSavingStrategy(false);
+    if (res.ok) await refresh();
+    else setError(res.error ?? "Could not change routing strategy");
+  };
 
   const handleTest = async (id: string) => {
     setTestingId(id);
@@ -100,6 +118,27 @@ export default function ProvidersPage() {
           </Button>
         )}
       </div>
+
+      {providers.length > 0 && status && (
+        <Card className="glass">
+          <CardContent className="px-5 py-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="text-xs font-medium text-foreground">Routing</span>
+            <select
+              value={status.strategy}
+              onChange={(e) => handleStrategyChange(e.target.value as Strategy)}
+              disabled={savingStrategy}
+              className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+            >
+              {STRATEGY_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <span className="text-xs text-muted-foreground">
+              {STRATEGY_OPTIONS.find((o) => o.value === status.strategy)?.hint ?? "How the gateway picks which provider handles each session."}
+            </span>
+          </CardContent>
+        </Card>
+      )}
 
       {error && (
         <Card className="border-destructive/50">
@@ -175,69 +214,82 @@ export default function ProvidersPage() {
             <Card key={provider.id} className="glass">
               <CardContent className="px-5 py-4">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <div className={`h-2 w-2 rounded-full shrink-0 ${live?.healthy !== false ? "bg-foreground" : "bg-destructive animate-pulse"}`} />
+                  <div className="flex-1 min-w-0 space-y-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`h-2 w-2 rounded-full shrink-0 ${
+                        live?.cooldownUntil || live?.healthy === false
+                          ? "bg-destructive animate-pulse"
+                          : live
+                          ? "bg-foreground"
+                          : "bg-muted-foreground/40"
+                      }`} />
                       <span className="text-sm font-semibold font-mono truncate">{provider.id}</span>
-                      <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
-                        Priority {provider.priority}
-                      </Badge>
-                      {provider.detectedKind === "browserserve" && (
-                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
-                          browserserve
-                        </Badge>
-                      )}
-                      {provider.multiProfile && (
-                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
-                          Serves all profiles
-                        </Badge>
-                      )}
-                      {provider.profile && (
-                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal shrink-0">
-                          Serves: {provider.profile}
-                        </Badge>
-                      )}
-                      {live?.cooldownUntil && (
-                        <Badge variant="destructive" className="text-[10px] h-5 px-1.5 shrink-0">cooldown</Badge>
-                      )}
+                      <span className="text-[11px] text-muted-foreground shrink-0">
+                        {live?.cooldownUntil
+                          ? "Paused"
+                          : live?.healthy === false
+                          ? "Not reachable"
+                          : live
+                          ? "Ready"
+                          : "Checking…"}
+                      </span>
                     </div>
 
                     <p className="text-xs text-muted-foreground font-mono truncate">{provider.url}</p>
 
-                    <div className="flex items-center gap-5 text-xs text-muted-foreground flex-wrap">
-                      <span>
-                        Max connections: <span className="text-foreground font-mono">{provider.maxConcurrent ?? "unlimited"}</span>
-                        {provider.maxConcurrentSource === "discovered" && <span className="ml-1">(auto)</span>}
-                      </span>
-                      {provider.weight > 1 && (
-                        <span>
-                          Weight: <span className="text-foreground font-mono">{provider.weight}</span>
-                        </span>
-                      )}
-                      {live && (
+                    <dl className="grid grid-cols-[5.5rem_1fr] gap-x-4 gap-y-1.5 text-xs">
+                      <dt className="text-muted-foreground">Type</dt>
+                      <dd className="text-foreground">
+                        {provider.detectedKind === "browserserve" ? "Self-hosted browserserve" : "External browser service"}
+                      </dd>
+
+                      <dt className="text-muted-foreground">Priority</dt>
+                      <dd className="text-foreground">
+                        {provider.priority}
+                        <span className="text-muted-foreground"> · {provider.priority === 1 ? "tried first" : "used as fallback"}</span>
+                      </dd>
+
+                      <dt className="text-muted-foreground">Serves</dt>
+                      <dd className="text-foreground">
+                        {provider.multiProfile ? (
+                          "Any profile"
+                        ) : provider.profile ? (
+                          <>Only the <span className="font-mono">{provider.profile}</span> profile</>
+                        ) : (
+                          "Sessions with no profile"
+                        )}
+                      </dd>
+
+                      <dt className="text-muted-foreground">Capacity</dt>
+                      <dd className="text-foreground">
+                        {live?.active ?? 0} in use / {provider.maxConcurrent ?? "no limit"}
+                        {provider.maxConcurrentSource === "discovered" && <span className="text-muted-foreground"> · set automatically</span>}
+                        {provider.weight > 1 && <span className="text-muted-foreground"> · weight {provider.weight}</span>}
+                      </dd>
+
+                      {live && live.totalConnections > 0 && (
                         <>
-                          <span>
-                            Active: <span className="text-foreground font-mono">{live.active}</span>
-                          </span>
-                          <span>
-                            Avg latency: <span className="text-foreground font-mono">{live.avgLatencyMs}ms</span>
-                          </span>
-                          <span>
-                            Total routed: <span className="text-foreground font-mono">{live.totalConnections}</span>
-                          </span>
+                          <dt className="text-muted-foreground">Traffic</dt>
+                          <dd className="text-foreground">{live.totalConnections} sent here · {live.avgLatencyMs}ms average</dd>
                         </>
                       )}
-                    </div>
+                    </dl>
+
+                    {live?.cooldownUntil && (
+                      <p className="text-xs text-destructive">
+                        Paused after repeated failures. It will be retried automatically.
+                      </p>
+                    )}
 
                     {test && (
                       <div className={`flex items-center gap-1.5 text-xs ${test.ok ? "text-foreground" : "text-destructive"}`}>
                         {test.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                        {test.ok ? `Connected successfully in ${test.latencyMs}ms` : `Connection failed: ${test.error}`}
+                        {test.ok ? `Connected in ${test.latencyMs}ms` : `Could not connect: ${test.error}`}
                       </div>
                     )}
 
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                      <span className="shrink-0">Supports:</span>
+                    <div className="space-y-1.5 pt-0.5">
+                      <div className="text-[11px] text-muted-foreground">Supports</div>
                       <CapabilityStrip providerId={provider.id} />
                     </div>
                   </div>
@@ -281,7 +333,7 @@ export default function ProvidersPage() {
                 if (result.ok) { setModalOpen(false); await refresh(); }
                 else setError(result.error ?? "Failed to update");
               } else {
-                const result = await addProvider(data as { id: string; url: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null });
+                const result = await addProvider(data as { id: string; url: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null; multiProfile?: boolean });
                 if (result.ok) { setModalOpen(false); await refresh(); }
                 else setError(result.error ?? "Failed to add");
               }
@@ -306,7 +358,7 @@ function ProviderForm({
   initial?: ProviderConfigItem | null;
   availableProfiles: ProfileMetaItem[];
   profilesEnabled: boolean;
-  onSave: (data: { id?: string; url: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null }) => Promise<void>;
+  onSave: (data: { id?: string; url: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null; multiProfile?: boolean }) => Promise<void>;
   onCancel: () => void;
   onTest: (url: string) => Promise<{ ok: boolean; latencyMs: number; error?: string }>;
 }) {
@@ -315,7 +367,7 @@ function ProviderForm({
   const [maxConcurrent, setMaxConcurrent] = useState(initial?.maxConcurrent?.toString() ?? "");
   const [priority, setPriority] = useState(initial?.priority?.toString() ?? "1");
   const [weight, setWeight] = useState(initial?.weight?.toString() ?? "1");
-  const [profile, setProfile] = useState(initial?.profile ?? "");
+  const [profile, setProfile] = useState(initial?.multiProfile ? "*" : (initial?.profile ?? ""));
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; latencyMs: number; error?: string } | null>(null);
@@ -340,13 +392,15 @@ function ProviderForm({
     e.preventDefault();
     if (!validate()) return;
     setSaving(true);
+    const servesAll = profile === "*";
     await onSave({
       ...(isEdit ? {} : { id: id.trim() }),
       url: url.trim(),
       maxConcurrent: maxConcurrent ? Number(maxConcurrent) : undefined,
       priority: priority ? Number(priority) : undefined,
       weight: weight ? Number(weight) : undefined,
-      profile: profile.trim() ? profile.trim() : null,
+      profile: servesAll ? null : (profile.trim() ? profile.trim() : null),
+      multiProfile: servesAll,
     });
     setSaving(false);
   };
@@ -409,26 +463,28 @@ function ProviderForm({
 
       {profilesEnabled && (
         <div>
-          <label className="text-sm font-medium block mb-1.5">Serves profile</label>
+          <label className="text-sm font-medium block mb-1.5">Which profiles it serves</label>
           <select
             value={profile}
             onChange={(e) => setProfile(e.target.value)}
             className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-            disabled={availableProfiles.length === 0 && !profile}
           >
-            <option value="">— stateless traffic only —</option>
-            {profile && !availableProfiles.some((p) => p.id === profile) && (
-              <option value={profile}>{profile} (not yet created)</option>
+            <option value="">Sessions with no profile</option>
+            <option value="*">Any profile</option>
+            {profile && profile !== "*" && !availableProfiles.some((p) => p.id === profile) && (
+              <option value={profile}>Only {profile} (not created yet)</option>
             )}
             {availableProfiles.map((p) => (
-              <option key={p.id} value={p.id}>{p.id}</option>
+              <option key={p.id} value={p.id}>Only {p.id}</option>
             ))}
           </select>
           <p className="text-xs text-muted-foreground mt-1.5">
-            {availableProfiles.length === 0 ? (
-              <>No profiles yet. Create one at <span className="font-mono text-foreground/70">Profiles → New Profile</span>, then come back to assign it to a slot.</>
+            {profile === "*" ? (
+              <>Loads any profile a client asks for. Best for providers that start a fresh browser each session, like browserserve. Detected browserserve providers do this automatically.</>
+            ) : profile ? (
+              <>Only sessions that connect with <span className="font-mono text-foreground/70">?profile={profile}</span> are sent here.</>
             ) : (
-              <>This slot serves only the selected profile. Clients connecting with <span className="font-mono text-foreground/70">?profile=&lt;name&gt;</span> matching the selection are routed here. Leave as stateless to serve requests with no <span className="font-mono text-foreground/70">?profile=</span>.</>
+              <>Only sessions with no <span className="font-mono text-foreground/70">?profile=</span> are sent here. Pick a profile to dedicate this provider to it.</>
             )}
           </p>
         </div>

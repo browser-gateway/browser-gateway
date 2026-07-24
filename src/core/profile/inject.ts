@@ -1,6 +1,6 @@
 import type { CDPClient, RuntimeEvaluateResponse } from "./cdp.js";
 import { navigateAndWait, resolveProfileOptions, withTimeout } from "./cdp-utils.js";
-import { prepareCookieForInject } from "./cookie-helpers.js";
+import { sanitizeCookiesForInject } from "./cookie-helpers.js";
 import type { CapturedProfile, OriginStorage, SkippedOrigin } from "./types.js";
 
 export interface InjectOptions {
@@ -41,7 +41,7 @@ export async function injectState(
   let cookiesSet = 0;
   if (profile.cookies.length > 0) {
     await cdp.send("Network.setCookies", {
-      cookies: profile.cookies.map(prepareCookieForInject),
+      cookies: sanitizeCookiesForInject(profile.cookies),
     });
     cookiesSet = profile.cookies.length;
   }

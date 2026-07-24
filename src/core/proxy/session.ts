@@ -3,10 +3,11 @@ import type { Session } from "../types.js";
 export class SessionTracker {
   private sessions: Map<string, Session> = new Map();
 
-  create(id: string, providerId: string): Session {
+  create(id: string, providerId: string, profileId?: string): Session {
     const session: Session = {
       id,
       providerId,
+      profileId,
       connectedAt: Date.now(),
       lastActivity: Date.now(),
       messageCount: 0,

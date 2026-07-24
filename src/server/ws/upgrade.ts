@@ -13,10 +13,22 @@ import {
   type ProfileLifecycle,
   type AcquiredProfile,
 } from "../profile/lifecycle.js";
+import {
+  browserserveHttp,
+  dropOffProfile,
+  fromBrowserservePayload,
+  pickUpProfile,
+  toBrowserservePayload,
+  withProfileToken,
+} from "../profile/browserserve-channel.js";
 import { createLiveUpgradeHandler } from "../live/upgrade.js";
 import { getEffectiveProtocolNode } from "../util/request.js";
 import { parseAllowedOrigins } from "../util/request.js";
 import type { ReplayController } from "../replay/controller.js";
+
+/** How long to wait for a held profile lock to release before returning 409. */
+const PROFILE_LOCK_WAIT_MS = 15_000;
+const PROFILE_LOCK_POLL_MS = 500;
 
 function safeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -143,38 +155,80 @@ export function createWebSocketHandler(
     // Profile acquisition — lock + decrypt happen BEFORE provider selection so we
     // fail-fast on contention. Inject happens after we have a wsUrl.
     const profileId = url.searchParams.get("profile");
+    const readOnly = ["1", "true", "yes"].includes(
+      (url.searchParams.get("readOnly") ?? "").toLowerCase(),
+    );
     let acquired: AcquiredProfile | null = null;
     if (profileId !== null) {
       if (!profileLifecycle) {
         respondError(socket, 400, { error: "profiles are not enabled on this gateway" });
         return;
       }
-      try {
-        acquired = await profileLifecycle.acquire(profileId);
-        logger.info(
-          { profileId, isExisting: acquired.isExisting, cookies: acquired.cookies.length },
-          "profile lifecycle: acquired",
-        );
-      } catch (err) {
-        if (err instanceof LifecycleError) {
-          if (err.reason === "INVALID_ID") {
+      if (readOnly) {
+        // Read-only: load WITHOUT locking so many sessions can share the profile
+        // at once; nothing is written back.
+        try {
+          acquired = await profileLifecycle.acquireReadOnly(profileId);
+          logger.info(
+            { profileId, readOnly: true, isExisting: acquired.isExisting, cookies: acquired.cookies.length },
+            "profile lifecycle: acquired (read-only)",
+          );
+        } catch (err) {
+          if (err instanceof LifecycleError && err.reason === "INVALID_ID") {
             respondError(socket, 400, { error: err.message });
             return;
           }
-          if (err.reason === "LOCK_HELD") {
-            respondError(socket, 409, { error: err.message });
-            return;
-          }
-          logger.error({ profileId, reason: err.reason, error: err.message }, "profile acquire failed");
+          logger.error(
+            { profileId, error: err instanceof Error ? err.message : String(err) },
+            "profile acquire failed",
+          );
           respondError(socket, 500, { error: "profile acquire failed" });
           return;
         }
-        logger.error(
-          { profileId, error: err instanceof Error ? err.message : String(err) },
-          "profile acquire failed",
-        );
-        respondError(socket, 500, { error: "profile acquire failed" });
-        return;
+      } else {
+      // A held lock is usually the previous session's async commit finishing.
+      // Wait for it to release (bounded) rather than failing fast with 409.
+      const lockDeadline = Date.now() + PROFILE_LOCK_WAIT_MS;
+      let acquireFailed = false;
+      for (;;) {
+        try {
+          acquired = await profileLifecycle.acquire(profileId);
+          logger.info(
+            { profileId, isExisting: acquired.isExisting, cookies: acquired.cookies.length },
+            "profile lifecycle: acquired",
+          );
+          break;
+        } catch (err) {
+          if (err instanceof LifecycleError) {
+            if (err.reason === "INVALID_ID") {
+              respondError(socket, 400, { error: err.message });
+              acquireFailed = true;
+              break;
+            }
+            if (err.reason === "LOCK_HELD") {
+              if (Date.now() < lockDeadline) {
+                await new Promise((r) => setTimeout(r, PROFILE_LOCK_POLL_MS));
+                continue;
+              }
+              respondError(socket, 409, { error: err.message });
+              acquireFailed = true;
+              break;
+            }
+            logger.error({ profileId, reason: err.reason, error: err.message }, "profile acquire failed");
+            respondError(socket, 500, { error: "profile acquire failed" });
+            acquireFailed = true;
+            break;
+          }
+          logger.error(
+            { profileId, error: err instanceof Error ? err.message : String(err) },
+            "profile acquire failed",
+          );
+          respondError(socket, 500, { error: "profile acquire failed" });
+          acquireFailed = true;
+          break;
+        }
+      }
+      if (acquireFailed) return;
       }
     }
 
@@ -345,19 +399,43 @@ async function pipeToProvider(
     resolvedUrl = provider.config.url;
   }
 
+  // browserserve providers seed/capture the full profile (incl. IndexedDB) over
+  // their own channel: drop the profile off, connect with a one-shot token, and
+  // pick the captured profile up on close. External providers use CDP inject.
+  const isBrowserserve = provider.detectedKind === "browserserve";
+  let browserserveToken: string | null = null;
+
   if (acquired && profileLifecycle) {
-    try {
-      await profileLifecycle.inject(acquired, resolvedUrl);
-    } catch (err) {
-      logger.warn(
-        {
-          sessionId,
-          providerId: provider.id,
-          error: err instanceof Error ? err.message : String(err),
-        },
-        "profile inject failed, trying next provider",
-      );
-      return false;
+    if (isBrowserserve) {
+      try {
+        const { base, authToken } = browserserveHttp(resolvedUrl);
+        browserserveToken = await dropOffProfile(base, authToken, toBrowserservePayload(acquired));
+        resolvedUrl = withProfileToken(resolvedUrl, browserserveToken);
+        if (acquired.readOnly) {
+          // Tells browserserve to skip capture on close (faster teardown).
+          resolvedUrl += "&readOnly=1";
+        }
+      } catch (err) {
+        logger.warn(
+          { sessionId, providerId: provider.id, error: err instanceof Error ? err.message : String(err) },
+          "browserserve profile drop-off failed, trying next provider",
+        );
+        return false;
+      }
+    } else {
+      try {
+        await profileLifecycle.inject(acquired, resolvedUrl);
+      } catch (err) {
+        logger.warn(
+          {
+            sessionId,
+            providerId: provider.id,
+            error: err instanceof Error ? err.message : String(err),
+          },
+          "profile inject failed, trying next provider",
+        );
+        return false;
+      }
     }
   }
 
@@ -411,7 +489,7 @@ async function pipeToProvider(
       if (headerStr.startsWith("HTTP/1.1 101")) {
         gotUpgradeResponse = true;
 
-        gateway.sessions.create(sessionId, provider.id);
+        gateway.sessions.create(sessionId, provider.id, acquired?.profileId);
         gateway.emit("session.created", { sessionId, providerId: provider.id });
         logger.info({ sessionId, providerId: provider.id }, "session established");
 
@@ -498,15 +576,36 @@ async function pipeToProvider(
       // Fire-and-forget: don't block socket cleanup on remote CDP work.
       if (acquired && profileLifecycle) {
         const capturedAcquired = acquired;
-        profileLifecycle.commit(capturedAcquired, resolvedUrl).catch((err) => {
-          logger.warn(
-            {
-              profileId: capturedAcquired.profileId,
-              error: err instanceof Error ? err.message : String(err),
-            },
-            "profile commit failed",
-          );
-        });
+        if (capturedAcquired.readOnly) {
+          // Read-only: nothing to save. No lock was taken, so release is a no-op.
+          void profileLifecycle.release(capturedAcquired);
+        } else if (isBrowserserve && browserserveToken) {
+          const token = browserserveToken;
+          const { base, authToken } = browserserveHttp(resolvedUrl);
+          pickUpProfile(base, authToken, token)
+            .then((captured) =>
+              captured
+                ? profileLifecycle.commitCaptured(capturedAcquired, fromBrowserservePayload(captured))
+                : profileLifecycle.release(capturedAcquired),
+            )
+            .catch((err) => {
+              logger.warn(
+                { profileId: capturedAcquired.profileId, error: err instanceof Error ? err.message : String(err) },
+                "browserserve profile pick-up failed",
+              );
+              profileLifecycle.release(capturedAcquired).catch(() => undefined);
+            });
+        } else {
+          profileLifecycle.commit(capturedAcquired, resolvedUrl).catch((err) => {
+            logger.warn(
+              {
+                profileId: capturedAcquired.profileId,
+                error: err instanceof Error ? err.message : String(err),
+              },
+              "profile commit failed",
+            );
+          });
+        }
       }
     };
 

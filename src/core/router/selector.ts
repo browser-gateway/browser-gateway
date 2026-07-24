@@ -40,6 +40,11 @@ export class ProviderSelector {
     private defaultStrategy: Strategy
   ) {}
 
+  /** Changes the active routing strategy for subsequent selections. */
+  setStrategy(strategy: Strategy): void {
+    this.defaultStrategy = strategy;
+  }
+
   getCandidates(opts: SelectOptions = {}): ProviderState[] {
     if (opts.targetProviderId !== undefined) {
       const pinned = this.registry.get(opts.targetProviderId);

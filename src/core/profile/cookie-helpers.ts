@@ -54,7 +54,7 @@ export async function injectCookiesViaTransient(
       (async () => {
         await client.connect(wsUrl, timeoutMs);
         await client.send("Storage.setCookies", {
-          cookies: cookies.map(prepareCookieForInject),
+          cookies: sanitizeCookiesForInject(cookies),
         });
       })(),
       timeoutMs,
@@ -63,6 +63,46 @@ export async function injectCookiesViaTransient(
   } finally {
     await client.close().catch(() => undefined);
   }
+}
+
+/** Approximate per-cookie byte ceiling (name + value); Chrome rejects around 4 KB. */
+const MAX_COOKIE_BYTES = 4096;
+
+/**
+ * Whether a captured cookie can be faithfully and safely re-injected.
+ *
+ * Returns false only for cookies Chrome would itself reject or evict, or that
+ * cannot be reproduced without weakening their scope. Never mutates a cookie to
+ * make it "fit" — a security attribute is preserved or the cookie is dropped.
+ * Rejects: `SameSite=None` without `secure` (Chrome excludes it); a persistent
+ * cookie already past `expires`; an opaque partition key (not serializable —
+ * re-injecting unpartitioned would broaden scope); a `__Host-`/`__Secure-`
+ * cookie violating its prefix rules (would fail the whole setCookies batch);
+ * an oversized cookie.
+ */
+export function isInjectableCookie(c: CdpCookie, nowSecs: number = Date.now() / 1000): boolean {
+  if (c.sameSite === "None" && !c.secure) return false;
+  if (c.expires !== undefined && c.expires > 0 && c.expires < nowSecs) return false;
+  if (c.partitionKeyOpaque === true) return false;
+  if (c.name.startsWith("__Host-")) {
+    if (!c.secure || c.path !== "/" || c.domain.startsWith(".")) return false;
+  } else if (c.name.startsWith("__Secure-")) {
+    if (!c.secure) return false;
+  }
+  if (c.name.length + c.value.length > MAX_COOKIE_BYTES) return false;
+  return true;
+}
+
+/**
+ * Filter a captured cookie jar to the safely-injectable subset, then map each
+ * survivor to setCookies input. Every inject path uses this so one malformed or
+ * un-restorable cookie can't downgrade another or fail the whole batch.
+ */
+export function sanitizeCookiesForInject(
+  cookies: CdpCookie[],
+  nowSecs: number = Date.now() / 1000,
+): Record<string, unknown>[] {
+  return cookies.filter((c) => isInjectableCookie(c, nowSecs)).map(prepareCookieForInject);
 }
 
 /**

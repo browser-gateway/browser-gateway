@@ -184,8 +184,10 @@ async function startServer() {
   const gateway = new Gateway(config, logger);
   const token = process.env.BG_TOKEN;
 
+  // Always wire the notifier so webhooks added later via the API take effect
+  // live (the notifier holds a reference to config.webhooks and re-reads it).
+  WebhookNotifier.fromGateway(gateway, config.webhooks, logger);
   if (config.webhooks.length > 0) {
-    WebhookNotifier.fromGateway(gateway, config.webhooks, logger);
     logger.info({ count: config.webhooks.length }, "webhooks configured");
   }
 
@@ -237,6 +239,10 @@ async function startServer() {
     : undefined;
   replayRetention?.start();
 
+  const reconnectRegistry = new ReconnectRegistry();
+  const reconnectTtl = config.gateway.sessions?.reconnectTimeoutMs ?? 300000;
+  reconnectRegistry.startCleanup(reconnectTtl);
+
   const webDir = findWebDir();
   const app = createApp(
     gateway,
@@ -254,6 +260,7 @@ async function startServer() {
     profileBootstrapError,
     replayStore,
     resolveDataDir(),
+    reconnectRegistry,
   );
 
   if (token) {
@@ -269,10 +276,6 @@ async function startServer() {
 
   const sessionManager = createSessionManager(gateway, logger);
   logger.info("mcp server initialized (Streamable HTTP at /mcp)");
-
-  const reconnectRegistry = new ReconnectRegistry();
-  const reconnectTtl = config.gateway.sessions?.reconnectTimeoutMs ?? 300000;
-  reconnectRegistry.startCleanup(reconnectTtl);
 
   const { handleUpgrade } = createWebSocketHandler(
     gateway,

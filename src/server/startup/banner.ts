@@ -150,8 +150,6 @@ export function printStartupBanner(opts: BannerOptions): void {
   lines.push("");
   lines.push(`  ${c.dim}Press Ctrl+C to stop${c.reset}`);
   lines.push("");
-  lines.push(`  ${c.dim}by Monostellar Labs · https://monostellar.com${c.reset}`);
-  lines.push("");
 
   process.stdout.write(lines.join("\n") + "\n");
 }

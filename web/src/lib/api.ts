@@ -39,6 +39,13 @@ export async function fetchSessions(): Promise<SessionsResponse> {
   return res.json();
 }
 
+export async function fetchParkedSessions(): Promise<ParkedSessionsResponse> {
+  const res = await fetch(`${API_BASE}/v1/sessions/parked`, fetchOpts);
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) throw new Error(`Parked sessions API error: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchProviders(): Promise<ProviderListResponse> {
   const res = await fetch(`${API_BASE}/v1/providers`, fetchOpts);
   if (res.status === 401) throw new AuthError();
@@ -91,6 +98,7 @@ export async function addProvider(data: {
   priority?: number;
   weight?: number;
   profile?: string | null;
+  multiProfile?: boolean;
 }): Promise<{ ok: boolean; error?: string; details?: string[] }> {
   const res = await fetch(`${API_BASE}/v1/providers`, {
     method: "POST",
@@ -103,7 +111,7 @@ export async function addProvider(data: {
 
 export async function updateProvider(
   id: string,
-  data: { url?: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null },
+  data: { url?: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null; multiProfile?: boolean },
 ): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`${API_BASE}/v1/providers/${id}`, {
     method: "PUT",
@@ -117,6 +125,74 @@ export async function updateProvider(
 export async function deleteProvider(id: string): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`${API_BASE}/v1/providers/${id}`, {
     method: "DELETE",
+    credentials: "include",
+  });
+  return res.json();
+}
+
+export type Strategy = "priority-chain" | "round-robin" | "least-connections" | "latency-optimized" | "weighted";
+
+export async function setStrategy(strategy: Strategy): Promise<{ ok: boolean; strategy?: string; error?: string; allowed?: string[] }> {
+  const res = await fetch(`${API_BASE}/v1/config/strategy`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ strategy }),
+    credentials: "include",
+  });
+  if (res.status === 401) throw new AuthError();
+  return res.json();
+}
+
+export interface WebhookItem {
+  index: number;
+  url: string;
+  events: string[] | null;
+}
+
+export interface WebhookListResponse {
+  webhooks: WebhookItem[];
+}
+
+export async function fetchWebhooks(): Promise<WebhookListResponse> {
+  const res = await fetch(`${API_BASE}/v1/webhooks`, fetchOpts);
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) throw new Error(`Webhooks API error: ${res.status}`);
+  return res.json();
+}
+
+export async function addWebhook(data: { url: string; events?: string[] }): Promise<{ ok: boolean; index?: number; error?: string; details?: string[] }> {
+  const res = await fetch(`${API_BASE}/v1/webhooks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+  return res.json();
+}
+
+export async function updateWebhook(index: number, data: { url: string; events?: string[] }): Promise<{ ok: boolean; error?: string; details?: string[] }> {
+  const res = await fetch(`${API_BASE}/v1/webhooks/${index}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    credentials: "include",
+  });
+  return res.json();
+}
+
+export async function deleteWebhook(index: number): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`${API_BASE}/v1/webhooks/${index}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  return res.json();
+}
+
+export async function testWebhook(url: string): Promise<{ ok: boolean; status?: number; latencyMs: number; error?: string }> {
+  const res = await fetch(`${API_BASE}/v1/webhooks/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
     credentials: "include",
   });
   return res.json();
@@ -206,10 +282,25 @@ export interface ProviderListResponse {
 export interface SessionInfo {
   id: string;
   providerId: string;
+  profileId: string | null;
   connectedAt: string;
   lastActivity: string;
   durationMs: number;
   messageCount: number;
+}
+
+export interface ParkedSessionInfo {
+  sessionId: string;
+  providerId: string;
+  parkedAt: string;
+  originalConnectedAt: string;
+  messageCount: number;
+  expiresAt: string;
+}
+
+export interface ParkedSessionsResponse {
+  count: number;
+  parked: ParkedSessionInfo[];
 }
 
 export interface GatewayStatus {
@@ -357,10 +448,19 @@ export interface ReplayDetail extends ReplayMeta {
   targets: ReplayTargetSummary[];
 }
 
+export interface ReplayConfigInfo {
+  retentionDays: number;
+  maxBytesPerSession: number;
+  format: "png" | "jpeg";
+  quality: number;
+  everyNthFrame: number;
+}
+
 export interface ReplayListResponse {
   enabled: boolean;
   count: number;
   replays: ReplayMeta[];
+  config?: ReplayConfigInfo;
   reason?: string;
 }
 

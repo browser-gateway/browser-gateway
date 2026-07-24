@@ -26,6 +26,7 @@ import { fetchStatus } from "@/lib/api";
 export default function OverviewPage() {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const authEnabled = useAuthEnabled();
 
   useEffect(() => {
     const load = async () => {
@@ -163,7 +164,7 @@ export default function OverviewPage() {
               to the URL.
             </p>
           </div>
-          <IntegrationTabs authEnabled />
+          <IntegrationTabs authEnabled={authEnabled} />
         </CardContent>
       </Card>
     </div>

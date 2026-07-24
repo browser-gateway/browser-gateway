@@ -91,6 +91,39 @@ export class WsCDPClient extends TypedCdpEventEmitter implements CDPClient {
     });
   }
 
+  private relayMessage: ((data: Buffer) => void) | null = null;
+  private relayClose: (() => void) | null = null;
+
+  /**
+   * Forwards a raw client CDP message straight to the provider, unparsed. Used
+   * by the gateway's single-connection profile relay so the client's session
+   * rides the SAME socket that inject/capture use — no second browser.
+   */
+  rawSend(data: Buffer | string): void {
+    this.ws?.send(data);
+  }
+
+  /**
+   * Relay mode: forward every provider message to `onMessage` and the socket
+   * close to `onClose`, in addition to the normal command/event handling.
+   * Provider replies to the client's own command ids have no pending call here,
+   * so `handleMessage` ignores them — only the relay forwards them onward.
+   */
+  startRelay(onMessage: (data: Buffer) => void, onClose: () => void): void {
+    if (!this.ws) return;
+    this.relayMessage = (data: Buffer) => onMessage(data);
+    this.relayClose = onClose;
+    this.ws.on("message", this.relayMessage);
+    this.ws.once("close", this.relayClose);
+  }
+
+  stopRelay(): void {
+    if (this.ws && this.relayMessage) this.ws.off("message", this.relayMessage);
+    if (this.ws && this.relayClose) this.ws.off("close", this.relayClose);
+    this.relayMessage = null;
+    this.relayClose = null;
+  }
+
   async close(): Promise<void> {
     if (!this.ws) return;
     if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {

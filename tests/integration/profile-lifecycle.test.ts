@@ -248,21 +248,34 @@ describe("Phase 3: ?profile= lifecycle wiring", () => {
     }
   }, 15_000);
 
-  it("returns 409 when the same profile is in use", async () => {
+  it("serializes concurrent same-profile connections: the second waits for the lock, then succeeds", async () => {
     provider.cookies = [];
     provider.resetCallLog();
 
     const ws1 = await connectGateway("acme-locked");
 
-    // Second connect attempt while first is held should fail with 409.
-    const res = await expectConnectFails("acme-locked").catch((e) => e as Error);
-    if (res instanceof Error) {
-      expect(res.message).toMatch(/4\d\d|unexpected/i);
-    } else {
-      expect(res.status).toBe(409);
-    }
+    // A second connect while the first holds the lock must WAIT (bounded), not
+    // fail fast with 409 and not run concurrently.
+    let settled: "pending" | "open" | "error" = "pending";
+    const secondConnect = connectGateway("acme-locked").then(
+      (ws) => {
+        settled = "open";
+        return ws;
+      },
+      (err: unknown) => {
+        settled = "error";
+        throw err;
+      },
+    );
 
+    await sleep(2_000);
+    expect(settled).toBe("pending");
+
+    // Release the holder; the waiter should acquire the freed lock and connect.
     ws1.close();
+    const ws2 = await secondConnect;
+    expect(settled).toBe("open");
+    ws2.close();
     await sleep(500);
-  }, 15_000);
+  }, 20_000);
 });

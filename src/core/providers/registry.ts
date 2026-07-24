@@ -4,6 +4,10 @@ import {
   type ProviderCapabilities,
 } from "./capabilities.js";
 
+/** Bounded re-probe of a failed/warming provider: 2s, 4s, 8s, 16s, 32s. */
+const MAX_REPROBE_ATTEMPTS = 5;
+const REPROBE_BASE_MS = 2_000;
+
 export type CapabilityProbeStatus = "pending" | "probing" | "ready" | "failed";
 
 export interface CapabilityRecord {
@@ -20,6 +24,7 @@ export class ProviderRegistry {
   private providers: Map<string, ProviderState> = new Map();
   private capabilities: Map<string, CapabilityRecord> = new Map();
   private inflightProbes: Map<string, Promise<void>> = new Map();
+  private reprobeAttempts: Map<string, number> = new Map();
 
   register(id: string, config: ProviderConfig, opts: RegisterOptions = {}): void {
     this.providers.set(id, {
@@ -71,8 +76,14 @@ export class ProviderRegistry {
         });
         provider.detectedKind = caps.providerKind === "browserserve" ? "browserserve" : null;
         provider.discoveredMaxConcurrent = caps.advertisedMaxConcurrent;
+        if (allUnknown) {
+          this.scheduleReprobe(id);
+        } else {
+          this.reprobeAttempts.delete(id);
+        }
       } catch {
         this.capabilities.set(id, { status: "failed", capabilities: null });
+        this.scheduleReprobe(id);
       } finally {
         this.inflightProbes.delete(id);
       }
@@ -80,6 +91,23 @@ export class ProviderRegistry {
 
     this.inflightProbes.set(id, run);
     return run;
+  }
+
+  /**
+   * Re-runs a failed probe with exponential backoff, up to a bounded number of
+   * attempts. A provider that is still warming (its `/json/version` returns 503)
+   * probes as all-unknown; this lets it be detected once it is ready instead of
+   * staying `detectedKind: null` forever.
+   */
+  private scheduleReprobe(id: string): void {
+    const attempts = this.reprobeAttempts.get(id) ?? 0;
+    if (attempts >= MAX_REPROBE_ATTEMPTS) return;
+    this.reprobeAttempts.set(id, attempts + 1);
+    const delayMs = REPROBE_BASE_MS * 2 ** attempts;
+    const timer = setTimeout(() => {
+      if (this.providers.has(id)) void this.probe(id);
+    }, delayMs);
+    if (typeof timer.unref === "function") timer.unref();
   }
 
   getCapabilityRecord(id: string): CapabilityRecord | undefined {

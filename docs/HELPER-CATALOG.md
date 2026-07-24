@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-07-22
+Generated: 2026-07-24
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -77,13 +77,15 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface CDPClient` (line 10) — Minimal CDP client interface.
 - **interface** `interface CdpCookie` (line 17) — A cookie as returned by Network.getAllCookies and accepted by Network.setCookies.
-- **interface** `interface GetAllCookiesResponse` (line 35)
-- **interface** `interface RuntimeEvaluateResponse` (line 39)
+- **interface** `interface GetAllCookiesResponse` (line 36)
+- **interface** `interface RuntimeEvaluateResponse` (line 40)
 ### `src/core/profile/cookie-helpers.ts`
 
 - **fn** `captureCookiesViaTransient(wsUrl: string, timeoutMs = 10_000) → Promise<CdpCookie[]>` (line 20) — Capture all browser-level cookies via a transient CDP WebSocket.
 - **fn** `injectCookiesViaTransient(wsUrl: string, cookies: CdpCookie[], timeoutMs = 10_000) → Promise<void>` (line 45) — Inject cookies via a transient CDP WebSocket using Storage.setCookies.
-- **fn** `prepareCookieForInject(c: CdpCookie) → Record<string, unknown>` (line 75) — Strip fields the CDP setCookies API doesn't accept on injection. The shape returned
+- **fn** `isInjectableCookie(c: CdpCookie, nowSecs: number = Date.now() / 1000) → boolean` (line 83) — Whether a captured cookie can be faithfully and safely re-injected.
+- **fn** `sanitizeCookiesForInject(cookies: CdpCookie[], nowSecs: number = Date.now() / 1000) → Record<string, unknown>[]` (line 101) — Filter a captured cookie jar to the safely-injectable subset, then map each
+- **fn** `prepareCookieForInject(c: CdpCookie) → Record<string, unknown>` (line 115) — Strip fields the CDP setCookies API doesn't accept on injection. The shape returned
 ### `src/core/profile/encryption.ts`
 
 - **interface** `interface AeadParts` (line 8)
@@ -158,15 +160,16 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type ProfileId` (line 10)
 - **const** `const PROFILE_VERSION` (line 12)
 - **interface** `interface CapturedProfile` (line 21) — Captured browser state suitable for cross-session replay.
-- **interface** `interface OriginStorage` (line 29)
-- **interface** `interface ProfileCaptureMeta` (line 40)
-- **interface** `interface SkippedOrigin` (line 47)
-- **interface** `interface ProfileMeta` (line 52)
-- **interface** `interface KdfParams` (line 59)
-- **const** `const DEFAULT_KDF_PARAMS: KdfParams` (line 68)
-- **interface** `interface WrappedDek` (line 77)
-- **interface** `interface Keycheck` (line 84)
-- **const** `const KeycheckSchema` (line 94)
+- **interface** `interface BrowserserveFile` (line 36) — One file in a browserserve native-layer manifest (relative path + base64).
+- **interface** `interface OriginStorage` (line 41)
+- **interface** `interface ProfileCaptureMeta` (line 52)
+- **interface** `interface SkippedOrigin` (line 59)
+- **interface** `interface ProfileMeta` (line 64)
+- **interface** `interface KdfParams` (line 71)
+- **const** `const DEFAULT_KDF_PARAMS: KdfParams` (line 80)
+- **interface** `interface WrappedDek` (line 89)
+- **interface** `interface Keycheck` (line 96)
+- **const** `const KeycheckSchema` (line 106)
 ### `src/core/providers/capabilities.ts`
 
 - **type** `type CapabilityState` (line 4)
@@ -194,10 +197,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class HealthChecker` (line 7)
 ### `src/core/providers/registry.ts`
 
-- **type** `type CapabilityProbeStatus` (line 7)
-- **interface** `interface CapabilityRecord` (line 9)
-- **interface** `interface RegisterOptions` (line 14)
-- **class** `class ProviderRegistry` (line 19)
+- **type** `type CapabilityProbeStatus` (line 11)
+- **interface** `interface CapabilityRecord` (line 13)
+- **interface** `interface RegisterOptions` (line 18)
+- **class** `class ProviderRegistry` (line 23)
 ### `src/core/proxy/reconnect.ts`
 
 - **interface** `interface ParkedSession` (line 1)
@@ -219,6 +222,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/types.ts`
 
 - **const** `const ProviderConfigSchema` (line 4)
+- **const** `const WebhookSchema` (line 68)
 - **const** `const ProfilesConfigSchema` (line 81)
 - **type** `type ProfilesConfig` (line 97)
 - **const** `const ReplayConfigSchema` (line 109)
@@ -233,8 +237,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 40)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string) → unknown` (line 118)
+- **interface** `interface ProfileAppDeps` (line 43)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 138)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
@@ -309,6 +313,19 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class ProfileBootstrapError` (line 26)
 - **fn** `bootstrapProfiles(config: ProfilesConfig, logger: Logger) → Promise<ProfileBootstrapResult>` (line 44) — Bootstrap the profile subsystem from gateway config.
 - **fn** `resolveStorePath(configPath: string) → string` (line 115) — Resolve the profile store path with `BG_DATA_DIR` env override.
+### `src/server/profile/browserserve-channel.ts`
+
+- **interface** `interface BrowserservePayload` (line 6) — The profile shape browserserve's `/v1/profile` accepts and returns.
+- **fn** `browserserveHttp(wsUrl: string) → { base: string; authToken: string | null }` (line 13) — Derives the HTTP base and auth token from a provider `ws(s)://…?token=` URL.
+- **fn** `withProfileToken(wsUrl: string, token: string) → string` (line 20) — Adds `?profileToken=` to a provider connect URL.
+- **fn** `toBrowserservePayload(acquired: AcquiredProfile) → BrowserservePayload` (line 31) — Maps the gateway's acquired profile to browserserve's payload shape.
+- **fn** `fromBrowserservePayload(payload: BrowserservePayload) → {
+  cookies: CdpCookie[];
+  storage: Record<string, OriginStorage>;
+  indexeddb: BrowserserveFile[];
+}` (line 40) — Maps a browserserve captured payload back to the gateway's stored shape.
+- **fn** `dropOffProfile(base: string, authToken: string | null, payload: BrowserservePayload, timeoutMs = 15_000) → Promise<string>` (line 55) — Drops a profile at browserserve and returns its one-shot token.
+- **fn** `pickUpProfile(base: string, authToken: string | null, token: string, timeoutMs = 20_000) → Promise<BrowserservePayload | null>` (line 76) — Picks up the captured profile once the session ends, polling past 404 until
 ### `src/server/profile/filesystem-store.ts`
 
 - **interface** `interface FilesystemStoreOptions` (line 24)
@@ -325,11 +342,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `rewrapKeycheck(storePath: string, oldPassword: string, newPassword: string) → Promise<void>` (line 107)
 ### `src/server/profile/lifecycle.ts`
 
-- **interface** `interface LifecycleOptions` (line 21)
-- **interface** `interface AcquiredProfile` (line 36)
-- **type** `type LifecycleFailureReason` (line 47)
-- **class** `class LifecycleError` (line 54)
-- **class** `class ProfileLifecycle` (line 65) — Orchestrates acquire/inject/commit/release for a profile around one session.
+- **interface** `interface LifecycleOptions` (line 22)
+- **interface** `interface AcquiredProfile` (line 37)
+- **type** `type LifecycleFailureReason` (line 53)
+- **class** `class LifecycleError` (line 60)
+- **class** `class ProfileLifecycle` (line 71) — Orchestrates acquire/inject/commit/release for a profile around one session.
 ### `src/server/replay/capture.ts`
 
 - **interface** `interface ReplayCaptureOpts` (line 10)
@@ -460,19 +477,20 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `parseAllowedOrigins(value: string | undefined) → Set<string>` (line 44) — Parse `BG_ALLOWED_ORIGINS` (comma-separated). Empty / unset returns
 ### `src/server/validation.ts`
 
-- **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 14) — Format a Zod error into a human-readable list of "path: message" strings.
-- **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 25) — Parse a provider config body (from POST or PUT /v1/providers/...).
+- **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 15) — Format a Zod error into a human-readable list of "path: message" strings.
+- **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 26) — Parse a provider config body (from POST or PUT /v1/providers/...).
+- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 56) — Validate a webhook request body against {@link WebhookSchema}.
 - **fn** `parseYamlGatewayConfig(yaml: string) → Promise<
   | { kind: "parse-error"; message: string }
   | { kind: "validation-error"; errors: string[] }
   | { kind: "ok"; data: GatewayConfig }
->` (line 62) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
+>` (line 74) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/probe.ts`
 
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController) → unknown` (line 91)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController) → unknown` (line 103)
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 

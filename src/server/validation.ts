@@ -2,6 +2,7 @@ import type { z } from "zod";
 import {
   GatewayConfigSchema,
   ProviderConfigSchema,
+  WebhookSchema,
   type GatewayConfig,
   type ProviderConfig,
 } from "../core/types.js";
@@ -45,6 +46,17 @@ export function parseProviderConfigBody(
   };
 
   const parsed = ProviderConfigSchema.safeParse(candidate);
+  if (!parsed.success) {
+    return { errors: formatZodErrors(parsed.error) };
+  }
+  return { data: parsed.data };
+}
+
+/** Validate a webhook request body against {@link WebhookSchema}. */
+export function parseWebhookBody(
+  body: Record<string, unknown>,
+): { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] } {
+  const parsed = WebhookSchema.safeParse(body);
   if (!parsed.success) {
     return { errors: formatZodErrors(parsed.error) };
   }

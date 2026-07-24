@@ -211,3 +211,30 @@ describe("C4: rapid commit-then-acquire churn (M1 reconnect window)", () => {
     expect(store.locks.size).toBe(0);
   });
 });
+
+describe("C5: external commit preserves the browserserve IndexedDB layer", () => {
+  it("using a full profile on an external provider does not wipe its IndexedDB files", async () => {
+    const idb = [{ path: "IndexedDB/https_app_0.indexeddb.leveldb/000003.log", bytes: Buffer.from("leveldb").toString("base64") }];
+
+    const seed = await lifecycle.acquire("idb-profile");
+    await lifecycle.commitCaptured(seed, {
+      cookies: [{ name: "sid", value: "seed", domain: ".app", path: "/", secure: true, httpOnly: true }],
+      storage: {},
+      indexeddb: idb,
+    });
+
+    const afterSeed = await lifecycle.acquireReadOnly("idb-profile");
+    expect(afterSeed.indexeddb).toHaveLength(1);
+
+    cdp.setCookies([{ name: "sid", value: "external", domain: ".app", path: "/", secure: true, httpOnly: true }]);
+    const ext = await lifecycle.acquire("idb-profile");
+    await lifecycle.commit(ext, cdp.wsUrl);
+    await lifecycle.drain(5_000);
+
+    const afterExternal = await lifecycle.acquireReadOnly("idb-profile");
+    expect(afterExternal.indexeddb).toHaveLength(1);
+    expect(afterExternal.indexeddb[0]!.path).toBe(idb[0]!.path);
+    expect(afterExternal.indexeddb[0]!.bytes).toBe(idb[0]!.bytes);
+    expect(afterExternal.cookies.some((c) => c.value === "external")).toBe(true);
+  });
+});

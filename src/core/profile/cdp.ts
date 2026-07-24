@@ -30,6 +30,7 @@ export interface CdpCookie {
   sourceScheme?: "Unset" | "NonSecure" | "Secure";
   sourcePort?: number;
   partitionKey?: unknown;
+  partitionKeyOpaque?: boolean;
 }
 
 export interface GetAllCookiesResponse {

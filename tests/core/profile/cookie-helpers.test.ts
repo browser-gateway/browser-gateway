@@ -11,7 +11,9 @@ import type { AddressInfo } from "node:net";
 import {
   captureCookiesViaTransient,
   injectCookiesViaTransient,
+  isInjectableCookie,
   prepareCookieForInject,
+  sanitizeCookiesForInject,
 } from "../../../src/core/profile/cookie-helpers.js";
 import type { CdpCookie } from "../../../src/core/profile/cdp.js";
 
@@ -176,6 +178,58 @@ describe("prepareCookieForInject", () => {
     const out = prepareCookieForInject(fromGet);
     expect(out).not.toHaveProperty("size");
     expect(out).not.toHaveProperty("session");
+  });
+});
+
+describe("isInjectableCookie / sanitizeCookiesForInject", () => {
+  const NOW = 1_000_000;
+
+  it("keeps a normal secure cookie", () => {
+    expect(isInjectableCookie(baseCookie(), NOW)).toBe(true);
+  });
+
+  it("drops SameSite=None without secure, keeps it with secure", () => {
+    expect(isInjectableCookie(baseCookie({ sameSite: "None", secure: false }), NOW)).toBe(false);
+    expect(isInjectableCookie(baseCookie({ sameSite: "None", secure: true }), NOW)).toBe(true);
+  });
+
+  it("drops a persistent cookie already past expiry, keeps future and session", () => {
+    expect(isInjectableCookie(baseCookie({ expires: NOW - 1 }), NOW)).toBe(false);
+    expect(isInjectableCookie(baseCookie({ expires: NOW + 1 }), NOW)).toBe(true);
+    expect(isInjectableCookie(baseCookie({ expires: -1 }), NOW)).toBe(true);
+  });
+
+  it("drops an opaque partition key", () => {
+    expect(isInjectableCookie(baseCookie({ partitionKeyOpaque: true }), NOW)).toBe(false);
+  });
+
+  it("enforces __Host- prefix rules (secure + root path + host-only)", () => {
+    expect(isInjectableCookie(baseCookie({ name: "__Host-s", domain: "example.com" }), NOW)).toBe(
+      true,
+    );
+    expect(isInjectableCookie(baseCookie({ name: "__Host-s", secure: false }), NOW)).toBe(false);
+    expect(isInjectableCookie(baseCookie({ name: "__Host-s", path: "/app" }), NOW)).toBe(false);
+    // default baseCookie domain is ".example.com" (leading dot) → not host-only
+    expect(isInjectableCookie(baseCookie({ name: "__Host-s" }), NOW)).toBe(false);
+  });
+
+  it("enforces __Secure- prefix (must be secure)", () => {
+    expect(isInjectableCookie(baseCookie({ name: "__Secure-s", secure: false }), NOW)).toBe(false);
+    expect(isInjectableCookie(baseCookie({ name: "__Secure-s", secure: true }), NOW)).toBe(true);
+  });
+
+  it("drops an oversized cookie", () => {
+    expect(isInjectableCookie(baseCookie({ value: "x".repeat(4096) }), NOW)).toBe(false);
+  });
+
+  it("filters unsafe cookies without dropping the safe ones, and maps survivors", () => {
+    const jar = [
+      baseCookie({ name: "good" }),
+      baseCookie({ name: "bad", sameSite: "None", secure: false }),
+    ];
+    const out = sanitizeCookiesForInject(jar, NOW);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ name: "good", secure: true, httpOnly: true });
   });
 });
 

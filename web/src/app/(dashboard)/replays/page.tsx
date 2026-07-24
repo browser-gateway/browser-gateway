@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Power, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -49,6 +48,7 @@ function ReplaysList() {
   const [error, setError] = useState<string | null>(null);
   const [toggling, setToggling] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,11 +61,12 @@ function ReplaysList() {
 
   async function handleEnable() {
     setToggling(true);
+    setActionError(null);
     try {
       const r = await enableReplays();
       setNotice(r.restartRequired ? "Replays enabled in gateway.yml." : null);
     } catch (e: unknown) {
-      alert(`Enable failed: ${e instanceof Error ? e.message : String(e)}`);
+      setActionError(`Could not enable replays: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setToggling(false);
     }
@@ -74,11 +75,12 @@ function ReplaysList() {
   async function handleDisable() {
     if (!confirm("Disable replays? In-progress captures stop. Existing replays stay on disk.")) return;
     setToggling(true);
+    setActionError(null);
     try {
       const r = await disableReplays();
       setNotice(r.restartRequired ? "Replays disabled in gateway.yml." : null);
     } catch (e: unknown) {
-      alert(`Disable failed: ${e instanceof Error ? e.message : String(e)}`);
+      setActionError(`Could not disable replays: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setToggling(false);
     }
@@ -120,8 +122,22 @@ function ReplaysList() {
   return (
     <div className="space-y-4">
       {notice && <RestartNotice message={notice} />}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">{data.count} {data.count === 1 ? "replay" : "replays"} captured</p>
+      {actionError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          {actionError}
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-xs text-muted-foreground">
+          {data.count} {data.count === 1 ? "replay" : "replays"} captured
+          {data.config && (
+            <span className="text-muted-foreground/70">
+              {" · kept "}{data.config.retentionDays} {data.config.retentionDays === 1 ? "day" : "days"}
+              {" · "}{data.config.format.toUpperCase()} quality {data.config.quality}
+              {data.config.everyNthFrame > 1 ? ` · every ${data.config.everyNthFrame} frames` : ""}
+            </span>
+          )}
+        </p>
         <Button variant="outline" size="sm" onClick={handleDisable} disabled={toggling || notice !== null} className="gap-2">
           <Power className="size-4" />
           {toggling ? "Disabling..." : "Disable"}
@@ -164,7 +180,14 @@ function ReplaysList() {
                     <TableCell className="tabular-nums">{formatBytes(r.sizeBytes)}</TableCell>
                     <TableCell className="text-muted-foreground">{formatWhen(r.startedAt)}</TableCell>
                     <TableCell>
-                      {r.complete ? <Badge variant="outline">Complete</Badge> : <Badge>Recording</Badge>}
+                      {r.complete ? (
+                        <span className="text-xs text-muted-foreground">Complete</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-foreground">
+                          <span className="size-1.5 rounded-full bg-foreground animate-pulse" />
+                          Recording
+                        </span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -181,6 +204,7 @@ function ReplayDetailView({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const [detail, setDetail] = useState<ReplayDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [activeTarget, setActiveTarget] = useState<string | null>(null);
 
   useEffect(() => {
@@ -200,11 +224,12 @@ function ReplayDetailView({ sessionId }: { sessionId: string }) {
 
   async function handleDelete() {
     if (!confirm(`Delete replay ${sessionId}? This cannot be undone.`)) return;
+    setDeleteError(null);
     try {
       await deleteReplay(sessionId);
       router.push("/replays/");
     } catch (e: unknown) {
-      alert(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
+      setDeleteError(`Could not delete replay: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -230,6 +255,12 @@ function ReplayDetailView({ sessionId }: { sessionId: string }) {
           Delete
         </Button>
       </div>
+
+      {deleteError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          {deleteError}
+        </div>
+      )}
 
       <Card>
         <CardContent className="space-y-4 p-6">
@@ -307,11 +338,11 @@ function ReplaysRouter() {
 
 export default function ReplaysPage() {
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Replays</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Replays</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Frame-accurate visual record of every routed session.
+          A visual recording of each routed session, so you can see what an agent saw.
         </p>
       </div>
       <Suspense fallback={<Card><CardContent className="p-6 text-sm text-muted-foreground">Loading...</CardContent></Card>}>

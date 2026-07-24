@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { RefreshCw, Loader2, Check, X, Minus } from "lucide-react";
 import {
   fetchProviderCapabilities,
   revalidateProviderCapabilities,
@@ -20,13 +20,13 @@ type FeatureKey = keyof Pick<
 >;
 
 const FEATURES: { key: FeatureKey; label: string; description: string }[] = [
-  { key: "browserCookies", label: "Cookies", description: "Storage.setCookies / getCookies" },
-  { key: "targetCreate", label: "Tabs", description: "Open helper pages via Target.createTarget" },
-  { key: "fetchInterception", label: "Fetch", description: "Fetch.fulfillRequest on attached sessions (used by profile inject)" },
-  { key: "pageScreencast", label: "Live view", description: "Page.startScreencast — used by /v1/live playground" },
+  { key: "browserCookies", label: "Cookies", description: "Saves and restores cookies. Needed for profiles." },
+  { key: "targetCreate", label: "Multiple tabs", description: "Can open extra tabs while loading a profile." },
+  { key: "fetchInterception", label: "Storage restore", description: "Restores saved site storage when loading a profile." },
+  { key: "pageScreencast", label: "Live view", description: "Streams the screen for the live playground." },
 ];
 
-function FeatureChip({
+function FeatureItem({
   label,
   state,
   title,
@@ -35,20 +35,13 @@ function FeatureChip({
   state: CapabilityState | "unknown";
   title: string;
 }) {
-  const stateLabel = state === "supported" ? "ok" : state === "unsupported" ? "no" : "?";
-  const chipClass =
-    state === "supported"
-      ? "bg-muted/40 text-foreground/80"
-      : state === "unsupported"
-      ? "bg-destructive/10 text-destructive"
-      : "bg-muted/40 text-muted-foreground/60";
+  const Icon = state === "supported" ? Check : state === "unsupported" ? X : Minus;
   return (
-    <span
-      title={title}
-      className={`inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10.5px] font-mono ${chipClass}`}
-    >
-      <span>{label}</span>
-      <span className="opacity-70 uppercase tracking-wider text-[9.5px]">{stateLabel}</span>
+    <span title={title} className="inline-flex items-center gap-1.5">
+      <Icon
+        className={`size-3.5 shrink-0 ${state === "supported" ? "text-foreground" : "text-muted-foreground/40"}`}
+      />
+      <span className={state === "supported" ? "text-foreground/90" : "text-muted-foreground"}>{label}</span>
     </span>
   );
 }
@@ -95,9 +88,9 @@ export function CapabilityStrip({ providerId }: Props) {
 
   if (!data) {
     return (
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap text-xs">
         {FEATURES.map((f) => (
-          <FeatureChip key={f.key} label={f.label} state="unknown" title={`${f.label}: unknown`} />
+          <FeatureItem key={f.key} label={f.label} state="unknown" title={`${f.label}: not tested yet`} />
         ))}
       </div>
     );
@@ -107,34 +100,41 @@ export function CapabilityStrip({ providerId }: Props) {
     return (
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <Loader2 className="size-3 animate-spin" />
-        Probing…
+        Checking…
       </div>
     );
   }
 
+  const noResult = data.capabilities === null;
+  const failureNote = data.capabilities?.errors?.length ? data.capabilities.errors.join("; ") : null;
+
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <div className="flex items-center gap-1 flex-wrap">
-        {FEATURES.map((f) => {
-          const state = data.capabilities?.[f.key];
-          return (
-            <FeatureChip
-              key={f.key}
-              label={f.label}
-              state={state ?? "unknown"}
-              title={`${f.label}: ${state ?? "unknown"} — ${f.description}`}
-            />
-          );
-        })}
-      </div>
+    <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap text-xs">
+      {FEATURES.map((f) => {
+        const state = data.capabilities?.[f.key];
+        return (
+          <FeatureItem
+            key={f.key}
+            label={f.label}
+            state={state ?? "unknown"}
+            title={`${f.label}: ${state ?? (noResult ? "could not check" : "not tested yet")}. ${f.description}`}
+          />
+        );
+      })}
+      {noResult && (
+        <span className="text-muted-foreground" title={failureNote ?? "Try again, or use Test to check the connection."}>
+          Could not check
+        </span>
+      )}
       <button
         type="button"
         onClick={onRevalidate}
         disabled={busy}
-        className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-        title="Re-probe this provider's capabilities"
+        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+        title="Check again what this provider supports"
       >
         {busy ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+        <span>Check again</span>
       </button>
     </div>
   );

@@ -1,6 +1,6 @@
 import type { CdpCookie } from "./cdp.js";
 import { WsCDPClient } from "./cdp-client.js";
-import { prepareCookieForInject } from "./cookie-helpers.js";
+import { sanitizeCookiesForInject } from "./cookie-helpers.js";
 import {
   navigateAndEvaluate,
   runHelperPool,
@@ -101,7 +101,7 @@ export async function injectStateEagerViaTransient(
 async function injectCookies(client: WsCDPClient, cookies: CdpCookie[]): Promise<number> {
   await client.send("Storage.clearCookies", {}).catch(() => undefined);
   if (cookies.length === 0) return 0;
-  await client.send("Storage.setCookies", { cookies: cookies.map(prepareCookieForInject) });
+  await client.send("Storage.setCookies", { cookies: sanitizeCookiesForInject(cookies) });
   return cookies.length;
 }
 

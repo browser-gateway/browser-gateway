@@ -300,6 +300,7 @@ export class ProviderSelector {
     //
     // (undocumented)
     getCandidates(opts?: SelectOptions): ProviderState[];
+    setStrategy(strategy: Strategy): void;
 }
 
 // @public (undocumented)
@@ -361,6 +362,8 @@ export interface Session {
     // (undocumented)
     messageCount: number;
     // (undocumented)
+    profileId?: string;
+    // (undocumented)
     providerId: string;
 }
 
@@ -385,7 +388,7 @@ export class SessionTracker {
     // (undocumented)
     count(): number;
     // (undocumented)
-    create(id: string, providerId: string): Session;
+    create(id: string, providerId: string, profileId?: string): Session;
     // (undocumented)
     get(id: string): Session | undefined;
     // (undocumented)

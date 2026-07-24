@@ -24,6 +24,18 @@ export interface CapturedProfile {
   cookies: CdpCookie[];
   storage: Record<string, OriginStorage>;
   meta: ProfileCaptureMeta;
+  /**
+   * browserserve-native layer (IndexedDB + service-worker files), as an opaque
+   * relative-path/base64 manifest. Only populated by browserserve providers;
+   * external providers cannot carry it. Absent on older profiles.
+   */
+  indexeddb?: BrowserserveFile[];
+}
+
+/** One file in a browserserve native-layer manifest (relative path + base64). */
+export interface BrowserserveFile {
+  path: string;
+  bytes: string;
 }
 
 export interface OriginStorage {

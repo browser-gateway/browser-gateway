@@ -16,10 +16,11 @@
  * works without manual substitution.
  */
 
-export function buildConnectUrl(profileId?: string, token?: string | null): string {
+export function buildConnectUrl(profileId?: string, token?: string | null, readOnly?: boolean): string {
   const base = wsBase();
   const params: string[] = [];
   if (profileId) params.push(`profile=${encodeURIComponent(profileId)}`);
+  if (readOnly) params.push("readOnly=1");
   if (token) params.push(`token=${token}`);
   const query = params.length > 0 ? "?" + params.join("&") : "";
   return `${base}/v1/connect${query}`;

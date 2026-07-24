@@ -65,7 +65,7 @@ const LoggingSchema = z.object({
   level: z.enum(["debug", "info", "warn", "error"]).default("info"),
 });
 
-const WebhookSchema = z.object({
+export const WebhookSchema = z.object({
   url: z.string().url(),
   events: z.array(z.string()).optional(),
 });
@@ -152,6 +152,7 @@ export interface ProviderState {
 export interface Session {
   id: string;
   providerId: string;
+  profileId?: string;
   connectedAt: number;
   lastActivity: number;
   messageCount: number;

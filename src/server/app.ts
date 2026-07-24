@@ -9,15 +9,18 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Logger } from "pino";
 import type { Gateway } from "../core/index.js";
+import type { GatewayConfig } from "../core/types.js";
 import { isHttpUrl, fetchCdpVersion } from "../core/providers/cdp.js";
 import { writeConfig } from "./config/writer.js";
-import { parseProviderConfigBody, parseYamlGatewayConfig } from "./validation.js";
+import { parseProviderConfigBody, parseWebhookBody, parseYamlGatewayConfig } from "./validation.js";
 import { loadedConfigPath } from "./config/loader.js";
 import type { SessionPool } from "../core/pool/index.js";
 import { createRestRoutes } from "./rest/index.js";
 import { createDisabledProfileRoutes, createProfileRoutes } from "./rest/profiles.js";
 import { createReplayRoutes } from "./rest/replays.js";
 import type { ReplayStore } from "./replay/index.js";
+import type { ReconnectRegistry } from "../core/proxy/reconnect.js";
+import type { Strategy } from "../core/router/selector.js";
 import type { FilesystemProfileStore } from "./profile/filesystem-store.js";
 import type { ProfileLifecycle } from "./profile/lifecycle.js";
 import { getEffectiveHost, getEffectiveProtocol, parseAllowedOrigins } from "./util/request.js";
@@ -115,6 +118,23 @@ function isAuthenticated(c: { req: { header: (name: string) => string | undefine
   return false;
 }
 
+/**
+ * Persists the config to disk. On failure, runs `rollback` to undo the caller's
+ * in-memory change and returns a 500 body; returns null on success.
+ */
+function persistConfigOrRollback(
+  config: GatewayConfig,
+  rollback: () => void,
+): { error: string; details: string[] } | null {
+  try {
+    writeConfig(config);
+    return null;
+  } catch (err) {
+    rollback();
+    return { error: "Cannot persist to disk", details: [err instanceof Error ? err.message : String(err)] };
+  }
+}
+
 export function createApp(
   gateway: Gateway,
   token?: string,
@@ -125,6 +145,7 @@ export function createApp(
   profileBootstrapError?: string,
   replayStore?: ReplayStore,
   dataDir?: string,
+  reconnectRegistry?: ReconnectRegistry,
 ) {
   const app = new Hono();
   const sessionSecret = getSessionSecret(token);
@@ -219,6 +240,7 @@ export function createApp(
     const sessions = gateway.sessions.getAll().map((s) => ({
       id: s.id,
       providerId: s.providerId,
+      profileId: s.profileId ?? null,
       connectedAt: new Date(s.connectedAt).toISOString(),
       lastActivity: new Date(s.lastActivity).toISOString(),
       durationMs: Date.now() - s.connectedAt,
@@ -229,6 +251,116 @@ export function createApp(
       count: sessions.length,
       sessions,
     });
+  });
+
+  app.get("/v1/sessions/parked", (c) => {
+    if (!reconnectRegistry) return c.json({ count: 0, parked: [] });
+    const ttlMs = gateway.config.gateway.sessions?.reconnectTimeoutMs ?? 300000;
+    const parked = reconnectRegistry.getAll().map((p) => ({
+      sessionId: p.sessionId,
+      providerId: p.providerId,
+      parkedAt: new Date(p.parkedAt).toISOString(),
+      originalConnectedAt: new Date(p.originalConnectedAt).toISOString(),
+      messageCount: p.messageCount,
+      expiresAt: new Date(p.parkedAt + ttlMs).toISOString(),
+    }));
+    return c.json({ count: parked.length, parked });
+  });
+
+  const STRATEGIES: Strategy[] = ["priority-chain", "round-robin", "least-connections", "latency-optimized", "weighted"];
+  app.put("/v1/config/strategy", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const strategy = body.strategy as string | undefined;
+    if (!strategy || !STRATEGIES.includes(strategy as Strategy)) {
+      return c.json({ error: "Invalid routing strategy", allowed: STRATEGIES }, 400);
+    }
+    const previous = gateway.config.gateway.defaultStrategy;
+    gateway.config.gateway.defaultStrategy = strategy as Strategy;
+    gateway.selector.setStrategy(strategy as Strategy);
+    const failed = persistConfigOrRollback(gateway.config, () => {
+      gateway.config.gateway.defaultStrategy = previous;
+      gateway.selector.setStrategy(previous);
+    });
+    if (failed) return c.json(failed, 500);
+    return c.json({ ok: true, strategy });
+  });
+
+  const redactWebhookUrl = (url: string): string =>
+    url.replace(/([?&])(token|apiKey|key|secret|password)=[^&]*/gi, "$1$2=***");
+
+  app.get("/v1/webhooks", (c) => {
+    const webhooks = gateway.config.webhooks.map((w, index) => ({
+      index,
+      url: redactWebhookUrl(w.url),
+      events: w.events ?? null,
+    }));
+    return c.json({ webhooks });
+  });
+
+  app.post("/v1/webhooks", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsed = parseWebhookBody(body);
+    if (parsed.errors) {
+      return c.json({ error: "Invalid webhook", details: parsed.errors }, 400);
+    }
+    gateway.config.webhooks.push(parsed.data);
+    const failed = persistConfigOrRollback(gateway.config, () => gateway.config.webhooks.pop());
+    if (failed) return c.json(failed, 500);
+    return c.json({ ok: true, index: gateway.config.webhooks.length - 1 }, 201);
+  });
+
+  app.put("/v1/webhooks/:index", async (c) => {
+    const index = Number(c.req.param("index"));
+    if (!Number.isInteger(index) || index < 0 || index >= gateway.config.webhooks.length) {
+      return c.json({ error: "Webhook not found" }, 404);
+    }
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsed = parseWebhookBody(body);
+    if (parsed.errors) {
+      return c.json({ error: "Invalid webhook", details: parsed.errors }, 400);
+    }
+    const previous = gateway.config.webhooks[index];
+    gateway.config.webhooks[index] = parsed.data;
+    const failed = persistConfigOrRollback(gateway.config, () => { gateway.config.webhooks[index] = previous; });
+    if (failed) return c.json(failed, 500);
+    return c.json({ ok: true });
+  });
+
+  app.delete("/v1/webhooks/:index", (c) => {
+    const index = Number(c.req.param("index"));
+    if (!Number.isInteger(index) || index < 0 || index >= gateway.config.webhooks.length) {
+      return c.json({ error: "Webhook not found" }, 404);
+    }
+    const [removed] = gateway.config.webhooks.splice(index, 1);
+    const failed = persistConfigOrRollback(gateway.config, () => gateway.config.webhooks.splice(index, 0, removed));
+    if (failed) return c.json(failed, 500);
+    return c.json({ ok: true });
+  });
+
+  app.post("/v1/webhooks/test", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const url = body.url as string | undefined;
+    if (!url) return c.json({ error: "url required" }, 400);
+    const payload = {
+      version: "1",
+      timestamp: new Date().toISOString(),
+      event: "test",
+      status: "firing",
+      source: "browser-gateway",
+      data: {},
+    };
+    const start = Date.now();
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(5000),
+      });
+      return c.json({ ok: res.ok, status: res.status, latencyMs: Date.now() - start });
+    } catch (err) {
+      return c.json({ ok: false, error: err instanceof Error ? err.message : String(err), latencyMs: Date.now() - start });
+    }
   });
 
   if (pool) {

@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Copy, Download, Info, Power, Trash2, Upload } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, Download, Eye, Info, Power, Trash2, Upload } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -72,11 +78,11 @@ export default function ProfilesPage() {
   }
   const realToken = useGatewayToken();
 
-  async function handleCopyUrl(profileId: string) {
-    const url = buildConnectUrl(profileId, authEnabled ? realToken : null);
+  async function handleCopyUrl(profileId: string, readOnly = false) {
+    const url = buildConnectUrl(profileId, authEnabled ? realToken : null, readOnly);
     try {
       await navigator.clipboard.writeText(url);
-      setCopiedId(profileId);
+      setCopiedId(readOnly ? `${profileId}:ro` : profileId);
       setTimeout(() => setCopiedId(null), 1500);
     } catch {
       setMessage({ type: "error", text: "Could not copy to clipboard" });
@@ -142,7 +148,7 @@ export default function ProfilesPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Profiles</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Encrypted snapshots of browser cookies and per-origin storage. Saved automatically when a session ends, replayed on the next session that connects with the same id.
+            Reusable logins for your sessions. Cookies and site storage are saved when a session ends and loaded on the next one with the same id, encrypted at rest. Use read-only mode to share one profile across many sessions at once.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -183,7 +189,7 @@ export default function ProfilesPage() {
               Disable
             </Button>
           )}
-          {enabled && <NewProfileDialog authEnabled onCreated={reload} />}
+          {enabled && <NewProfileDialog authEnabled={authEnabled} onCreated={reload} />}
         </div>
       </div>
       {restartNotice && <RestartNotice message={restartNotice} />}
@@ -247,26 +253,36 @@ export default function ProfilesPage() {
             {introOpen && (
               <div id="profiles-howto" className="pt-2 pl-6 text-[13px] text-muted-foreground space-y-3">
                 <p>
-                  <span className="text-foreground font-medium">How it works.</span>{" "}
-                  Connect with{" "}
+                  <span className="text-foreground font-medium">What it does.</span>{" "}
+                  Add{" "}
                   <code className="bg-muted px-1.5 py-0.5 rounded text-[12px] text-foreground">?profile=&lt;id&gt;</code>{" "}
-                  on the WebSocket URL. The gateway captures cookies and per-origin storage when your session ends, and replays them on the next connection with the same id. Profiles are encrypted at rest with your{" "}
-                  <code className="bg-muted px-1.5 py-0.5 rounded text-[12px] text-foreground">BG_ENCRYPTION_KEY</code>{" "}
-                  using AES-256-GCM.
+                  to the connect URL. The gateway saves the session login when you disconnect, and loads it again on the next connection with the same id. Saved data is encrypted at rest with your key.
+                </p>
+                <p>
+                  <span className="text-foreground font-medium">What gets saved.</span>{" "}
+                  Cookies and site storage (localStorage) on any provider. On <span className="text-foreground">browserserve</span>, a profile also keeps IndexedDB and service workers, the full logged-in state that apps like Firebase or Supabase rely on.
+                </p>
+                <p>
+                  <span className="text-foreground font-medium">Read-only mode.</span>{" "}
+                  Add{" "}
+                  <code className="bg-muted px-1.5 py-0.5 rounded text-[12px] text-foreground">&amp;readOnly=1</code>{" "}
+                  to load a profile without locking it. Any number of sessions can use the same profile at the same time, and nothing is written back. Use it to run many workers from one logged-in profile. The <span className="text-foreground">Copy URL</span> menu on each row gives you a read-only link.
+                </p>
+                <p>
+                  <span className="text-foreground font-medium">One writer at a time.</span>{" "}
+                  Without read-only, a profile is used by one session at a time so saved changes do not clash. A second session waits a few seconds for the first to finish, then takes over.
                 </p>
                 <p>
                   <span className="text-foreground font-medium">Create.</span>{" "}
-                  Click <em className="not-italic font-medium text-foreground">+ New Profile</em> at the top to generate a connect URL with a new id, or connect with any new <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] text-foreground">?profile=&lt;id&gt;</code>. The blob is created on first disconnect.{" "}
+                  Click <em className="not-italic font-medium text-foreground">+ New Profile</em>, or just connect with a new id. The profile appears in this list after the first session ends.{" "}
                   <span className="text-foreground font-medium">Rename.</span>{" "}
-                  Not currently supported; the id is bound into the encryption (anti-swap). To rename, export, then import as a new id and delete the original.{" "}
-                  <span className="text-foreground font-medium">Password.</span>{" "}
-                  One global key (BG_ENCRYPTION_KEY) protects every profile via envelope encryption.
+                  Not supported. Export it, then import under a new id and delete the old one.
                 </p>
                 <div className="pt-1">
                   <p className="text-foreground/90 font-medium text-[12px] mb-2">
                     Quick start by client
                   </p>
-                  <IntegrationTabs authEnabled />
+                  <IntegrationTabs authEnabled={authEnabled} />
                 </div>
               </div>
             )}
@@ -345,19 +361,25 @@ export default function ProfilesPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1.5">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busy !== null}
-                          onClick={() => handleCopyUrl(p.id)}
-                          title={`Copy the WebSocket URL to use ${p.id} from your code`}
-                        >
-                          {copiedId === p.id ? (
-                            <><Check className="size-3.5 mr-1.5" />Copied</>
-                          ) : (
-                            <><Copy className="size-3.5 mr-1.5" />Copy WS URL</>
-                          )}
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={busy !== null} />}>
+                            {copiedId === p.id || copiedId === `${p.id}:ro` ? (
+                              <><Check className="size-3.5 mr-1.5" />Copied</>
+                            ) : (
+                              <><Copy className="size-3.5 mr-1.5" />Copy URL<ChevronDown className="size-3 ml-1 opacity-60" /></>
+                            )}
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-72">
+                            <DropdownMenuItem onClick={() => handleCopyUrl(p.id)} className="flex-col items-start gap-0.5 py-2">
+                              <span className="flex items-center gap-1.5 text-[13px]"><Copy className="size-3.5" />Copy connect URL</span>
+                              <span className="text-[11px] text-muted-foreground pl-5">Loads {p.id} and saves changes back on disconnect. One session at a time.</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleCopyUrl(p.id, true)} className="flex-col items-start gap-0.5 py-2">
+                              <span className="flex items-center gap-1.5 text-[13px]"><Eye className="size-3.5" />Copy read-only URL</span>
+                              <span className="text-[11px] text-muted-foreground pl-5">Loads {p.id} without locking it. Many sessions can share it at once. Nothing is saved back.</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <a
                           href={exportProfileUrl(p.id)}
                           download

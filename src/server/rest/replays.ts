@@ -81,7 +81,21 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
     }
 
     const replays = deps.store.list({ sinceMs, limit });
-    return c.json({ enabled: true, count: replays.length, replays });
+    const rc = deps.config?.replay;
+    return c.json({
+      enabled: true,
+      count: replays.length,
+      replays,
+      config: rc
+        ? {
+            retentionDays: rc.retentionDays,
+            maxBytesPerSession: rc.maxBytesPerSession,
+            format: rc.capture.format,
+            quality: rc.capture.quality,
+            everyNthFrame: rc.capture.everyNthFrame,
+          }
+        : undefined,
+    });
   });
 
   app.get("/replays/:id", (c) => {
