@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-07-24
+Generated: 2026-07-25
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -197,10 +197,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class HealthChecker` (line 7)
 ### `src/core/providers/registry.ts`
 
-- **type** `type CapabilityProbeStatus` (line 11)
-- **interface** `interface CapabilityRecord` (line 13)
-- **interface** `interface RegisterOptions` (line 18)
-- **class** `class ProviderRegistry` (line 23)
+- **interface** `interface ProviderStore` (line 13) — Read-only view of provider state that the selector needs. Any store —
+- **type** `type CapabilityProbeStatus` (line 22)
+- **interface** `interface CapabilityRecord` (line 24)
+- **interface** `interface RegisterOptions` (line 29)
+- **class** `class ProviderRegistry` (line 34)
 ### `src/core/proxy/reconnect.ts`
 
 - **interface** `interface ParkedSession` (line 1)

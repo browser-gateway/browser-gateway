@@ -1,5 +1,5 @@
 import type { ProviderState } from "../types.js";
-import type { ProviderRegistry } from "../providers/registry.js";
+import type { ProviderStore } from "../providers/registry.js";
 import type { CooldownTracker } from "../tracking/cooldown.js";
 import { hasFreeSlot, isEligibleProviderForProfile } from "../providers/effective.js";
 
@@ -35,7 +35,7 @@ export class ProviderSelector {
   private weightedState: Map<string, number> = new Map();
 
   constructor(
-    private registry: ProviderRegistry,
+    private registry: ProviderStore,
     private cooldown: CooldownTracker,
     private defaultStrategy: Strategy
   ) {}

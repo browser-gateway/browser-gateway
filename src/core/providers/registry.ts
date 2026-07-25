@@ -4,6 +4,17 @@ import {
   type ProviderCapabilities,
 } from "./capabilities.js";
 
+/**
+ * Read-only view of provider state that the selector needs. Any store —
+ * the built-in in-memory ProviderRegistry, or an adapter over an external
+ * store (D1, KV, Postgres) — can satisfy this by producing hydrated
+ * ProviderState objects.
+ */
+export interface ProviderStore {
+  get(id: string): ProviderState | undefined;
+  getAllSortedByPriority(): ProviderState[];
+}
+
 /** Bounded re-probe of a failed/warming provider: 2s, 4s, 8s, 16s, 32s. */
 const MAX_REPROBE_ATTEMPTS = 5;
 const REPROBE_BASE_MS = 2_000;
@@ -20,7 +31,7 @@ export interface RegisterOptions {
   autoProbe?: boolean;
 }
 
-export class ProviderRegistry {
+export class ProviderRegistry implements ProviderStore {
   private providers: Map<string, ProviderState> = new Map();
   private capabilities: Map<string, CapabilityRecord> = new Map();
   private inflightProbes: Map<string, Promise<void>> = new Map();

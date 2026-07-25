@@ -265,8 +265,10 @@ export const ProviderConfigSchema: z.ZodObject<{
     multiProfile: z.ZodDefault<z.ZodBoolean>;
 }, z.core.$strip>;
 
+// Warning: (ae-forgotten-export) The symbol "ProviderStore" needs to be exported by the entry point index.d.ts
+//
 // @public (undocumented)
-export class ProviderRegistry {
+export class ProviderRegistry implements ProviderStore {
     // (undocumented)
     get(id: string): ProviderState | undefined;
     // (undocumented)
@@ -295,7 +297,7 @@ export class ProviderRegistry {
 // @public (undocumented)
 export class ProviderSelector {
     // Warning: (ae-forgotten-export) The symbol "Strategy" needs to be exported by the entry point index.d.ts
-    constructor(registry: ProviderRegistry, cooldown: CooldownTracker, defaultStrategy: Strategy);
+    constructor(registry: ProviderStore, cooldown: CooldownTracker, defaultStrategy: Strategy);
     // Warning: (ae-forgotten-export) The symbol "SelectOptions" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
