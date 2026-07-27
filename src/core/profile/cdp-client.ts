@@ -1,6 +1,7 @@
 import WebSocket from "ws";
 import type { CDPClient } from "./cdp.js";
 import { TypedCdpEventEmitter, assertCdpConnected } from "./cdp-event-base.js";
+import { dispatchCdpResponse } from "../cdp/dispatch.js";
 
 interface CDPMessage {
   id?: number;
@@ -162,17 +163,7 @@ export class WsCDPClient extends TypedCdpEventEmitter implements CDPClient {
       return;
     }
 
-    if (typeof msg.id === "number") {
-      const call = this.pending.get(msg.id);
-      if (!call) return;
-      this.pending.delete(msg.id);
-      if (msg.error) {
-        call.reject(new Error(`CDP error: ${msg.error.message}`));
-      } else {
-        call.resolve(msg.result ?? null);
-      }
-      return;
-    }
+    if (dispatchCdpResponse(msg, this.pending)) return;
 
     if (typeof msg.method === "string") {
       // Listeners can read `__sessionId` off the params object to scope event

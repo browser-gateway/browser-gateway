@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-07-26
+Generated: 2026-07-27
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -13,6 +13,20 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ## Core engine (src/core/)
 
+### `src/core/cdp/dispatch.ts`
+
+- **interface** `interface PendingCall` (line 5) — Pure CDP response dispatch — shared between `WsCDPClient` (Node ws) and
+- **fn** `dispatchCdpResponse(msg: { id?: unknown; error?: { message: string }; result?: unknown }, pending: Map<number, PendingCall>) → boolean` (line 13) — Given a decoded CDP message and a pending-call map, dispatch a response and
+### `src/core/cdp/protocol.ts`
+
+- **interface** `interface CdpTransport` (line 3) — Pure CDP protocol layer — request/response matching + event emission over a pluggable transport. Isomorphic.
+- **interface** `interface CdpEnvelope` (line 12)
+- **interface** `interface CdpResponse` (line 19)
+- **interface** `interface CdpEventMessage` (line 26)
+- **type** `type CdpIncoming` (line 32)
+- **fn** `encodeCommand(env: CdpEnvelope) → string` (line 35) — Serialize a command envelope for the wire.
+- **fn** `decodeIncoming(data: string) → CdpIncoming | null` (line 46) — Parse an incoming CDP frame. Returns null when the payload isn't valid JSON.
+- **class** `class CdpProtocolClient` (line 62) — CDP protocol client. Composes a transport with call/response matching + event dispatch.
 ### `src/core/gateway.ts`
 
 - **interface** `interface GatewayEvents` (line 18) — Map of events emitted by the {@link Gateway} class. Useful for typing
@@ -65,7 +79,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `captureState(cdp: CDPClient, opts: CaptureOptions = {}) → Promise<CapturedProfile>` (line 58) — Capture browser state from a CDP session for cross-session replay.
 ### `src/core/profile/cdp-client.ts`
 
-- **class** `class WsCDPClient` (line 26) — Minimal raw-CDP client over a single WebSocket.
+- **class** `class WsCDPClient` (line 27) — Minimal raw-CDP client over a single WebSocket.
 ### `src/core/profile/cdp-event-base.ts`
 
 - **fn** `assertCdpConnected(ws: WebSocket | null) → asserts ws is WebSocket` (line 9) — Assert that a WebSocket is open. Used by every CDP send() implementation —
@@ -176,13 +190,24 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface WrappedDek` (line 91)
 - **interface** `interface Keycheck` (line 98)
 - **const** `const KeycheckSchema` (line 108)
+### `src/core/providers/capabilities-shared.ts`
+
+- **interface** `interface ProbeInit` (line 9)
+- **fn** `initCapsFromIdentity(providerUrl: string, opts: ProbeOptions = {}) → Promise<ProbeInit>` (line 20) — Read the provider's `/json/version` identity headers, stamp the capabilities
+- **interface** `interface CapabilityProbeClient` (line 43) — Minimum shape the probe needs from a connected client. Both {@link WsCDPClient}
+- **interface** `interface RunProbeStepsOptions` (line 51)
+- **fn** `runCapabilityProbeSteps(client: CapabilityProbeClient, caps: ProviderCapabilities, opts: RunProbeStepsOptions) → Promise<ProviderCapabilities>` (line 60) — Runs the CDP step sequence (browserCookies → targetCreate → targetGetTargets →
+- **fn** `errorMessage(err: unknown) → string` (line 196)
+### `src/core/providers/capabilities-with-client.ts`
+
+- **fn** `probeCapabilitiesWithClient(client: CapabilityProbeClient, providerUrl: string, opts: ProbeOptions = {}) → Promise<ProviderCapabilities>` (line 18) — Runs the capability probes against an already-connected client. Best-effort:
 ### `src/core/providers/capabilities.ts`
 
-- **type** `type CapabilityState` (line 4)
-- **interface** `interface ProviderCapabilities` (line 6)
-- **const** `const UNKNOWN_CAPABILITIES: Readonly<Omit<ProviderCapabilities, "probedAt">>` (line 22)
-- **interface** `interface ProbeOptions` (line 35)
-- **fn** `probeProviderCapabilities(providerUrl: string, opts: ProbeOptions = {}) → Promise<ProviderCapabilities>` (line 44) — Probes a provider's CDP endpoint for features the gateway uses. Best-effort:
+- **type** `type CapabilityState` (line 5)
+- **interface** `interface ProviderCapabilities` (line 7)
+- **const** `const UNKNOWN_CAPABILITIES: Readonly<Omit<ProviderCapabilities, "probedAt">>` (line 23)
+- **interface** `interface ProbeOptions` (line 36)
+- **fn** `probeProviderCapabilities(providerUrl: string, opts: ProbeOptions = {}) → Promise<ProviderCapabilities>` (line 45) — Probes a provider's CDP endpoint for features the gateway uses. Best-effort:
 ### `src/core/providers/cdp.ts`
 
 - **interface** `interface ProviderIdentity` (line 8) — Vendor fields a provider may advertise on its CDP discovery endpoint.
@@ -208,6 +233,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface CapabilityRecord` (line 24)
 - **interface** `interface RegisterOptions` (line 29)
 - **class** `class ProviderRegistry` (line 34)
+### `src/core/providers/test-connection.ts`
+
+- **interface** `interface TestConnectionClient` (line 6) — Isomorphic provider-connection probe. Callers supply a pre-connected CDP client;
+- **interface** `interface TestConnectionResult` (line 15)
+- **fn** `testConnectionWithClient(client: TestConnectionClient, timeoutMs = 5_000) → Promise<TestConnectionResult>` (line 23) — Runs one CDP command (`Browser.getVersion`) against an already-connected client.
 ### `src/core/proxy/reconnect.ts`
 
 - **interface** `interface ParkedSession` (line 1)
