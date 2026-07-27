@@ -1,6 +1,6 @@
 {
   "name": "browser-gateway",
-  "version": "0.3.8",
+  "version": "0.4.0",
   "description": "OpenRouter for browsers. One endpoint, any provider: failover, load balancing, persistent profiles, session replay, REST API, MCP server, dashboard.",
   "mcpName": "io.github.browser-gateway/browser-gateway",
   "keywords": [
@@ -47,6 +47,30 @@
     "./transport": {
       "types": "./dist/core/transport.d.ts",
       "default": "./dist/core/transport.js"
+    },
+    "./types": {
+      "types": "./dist/core/types.d.ts",
+      "default": "./dist/core/types.js"
+    },
+    "./webhooks": {
+      "types": "./dist/core/webhooks.d.ts",
+      "default": "./dist/core/webhooks.js"
+    },
+    "./auto-detect": {
+      "types": "./dist/core/auto-detect.d.ts",
+      "default": "./dist/core/auto-detect.js"
+    },
+    "./profile/types": {
+      "types": "./dist/core/profile/types.d.ts",
+      "default": "./dist/core/profile/types.js"
+    },
+    "./profile/crypto": {
+      "types": "./dist/core/profile/crypto.d.ts",
+      "default": "./dist/core/profile/crypto.js"
+    },
+    "./replay/types": {
+      "types": "./dist/server/replay/types.d.ts",
+      "default": "./dist/server/replay/types.js"
     }
   },
   "bin": {

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { CdpCookie } from "./cdp.js";
 
+export type { CdpCookie, CDPClient } from "./cdp.js";
+
 export const PROFILE_ID_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
 
 export const ProfileIdSchema = z

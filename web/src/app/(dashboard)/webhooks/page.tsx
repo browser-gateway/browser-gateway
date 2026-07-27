@@ -90,7 +90,7 @@ export default function WebhooksPage() {
       )}
 
       {webhooks && webhooks.length === 0 && (
-        <Card className="glass">
+        <Card>
           <CardContent className="p-8 flex flex-col items-center text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
               <Webhook className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
@@ -110,7 +110,7 @@ export default function WebhooksPage() {
       {webhooks && webhooks.length > 0 && (
         <div className="space-y-3">
           {webhooks.map((w) => (
-            <Card key={w.index} className="glass">
+            <Card key={w.index}>
               <CardContent className="px-5 py-4 flex items-start justify-between gap-4">
                 <div className="min-w-0 space-y-1.5">
                   <p className="text-sm font-mono text-foreground truncate">{w.url}</p>

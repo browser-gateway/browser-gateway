@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-07-25
+Generated: 2026-07-26
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -17,9 +17,15 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface GatewayEvents` (line 18) — Map of events emitted by the {@link Gateway} class. Useful for typing
 - **class** `class Gateway` (line 41)
+### `src/core/notifications/deliver.ts`
+
+- **interface** `interface WebhookPayload` (line 3) — Pure webhook delivery with retry. Isomorphic — Node, Cloudflare Workers, Bun, Deno.
+- **interface** `interface WebhookDeliverOptions` (line 12)
+- **interface** `interface WebhookDeliverResult` (line 25)
+- **fn** `deliverWebhook(url: string, payload: WebhookPayload, opts: WebhookDeliverOptions = {}) → Promise<WebhookDeliverResult>` (line 33)
 ### `src/core/notifications/webhooks.ts`
 
-- **class** `class WebhookNotifier` (line 18)
+- **class** `class WebhookNotifier` (line 10)
 ### `src/core/pool/session-pool.ts`
 
 - **class** `class SessionPool` (line 16)
@@ -155,21 +161,21 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface ProfileStore` (line 5)
 ### `src/core/profile/types.ts`
 
-- **const** `const PROFILE_ID_REGEX` (line 4)
-- **const** `const ProfileIdSchema` (line 6)
-- **type** `type ProfileId` (line 10)
-- **const** `const PROFILE_VERSION` (line 12)
-- **interface** `interface CapturedProfile` (line 21) — Captured browser state suitable for cross-session replay.
-- **interface** `interface BrowserserveFile` (line 36) — One file in a browserserve native-layer manifest (relative path + base64).
-- **interface** `interface OriginStorage` (line 41)
-- **interface** `interface ProfileCaptureMeta` (line 52)
-- **interface** `interface SkippedOrigin` (line 59)
-- **interface** `interface ProfileMeta` (line 64)
-- **interface** `interface KdfParams` (line 71)
-- **const** `const DEFAULT_KDF_PARAMS: KdfParams` (line 80)
-- **interface** `interface WrappedDek` (line 89)
-- **interface** `interface Keycheck` (line 96)
-- **const** `const KeycheckSchema` (line 106)
+- **const** `const PROFILE_ID_REGEX` (line 6)
+- **const** `const ProfileIdSchema` (line 8)
+- **type** `type ProfileId` (line 12)
+- **const** `const PROFILE_VERSION` (line 14)
+- **interface** `interface CapturedProfile` (line 23) — Captured browser state suitable for cross-session replay.
+- **interface** `interface BrowserserveFile` (line 38) — One file in a browserserve native-layer manifest (relative path + base64).
+- **interface** `interface OriginStorage` (line 43)
+- **interface** `interface ProfileCaptureMeta` (line 54)
+- **interface** `interface SkippedOrigin` (line 61)
+- **interface** `interface ProfileMeta` (line 66)
+- **interface** `interface KdfParams` (line 73)
+- **const** `const DEFAULT_KDF_PARAMS: KdfParams` (line 82)
+- **interface** `interface WrappedDek` (line 91)
+- **interface** `interface Keycheck` (line 98)
+- **const** `const KeycheckSchema` (line 108)
 ### `src/core/providers/capabilities.ts`
 
 - **type** `type CapabilityState` (line 4)

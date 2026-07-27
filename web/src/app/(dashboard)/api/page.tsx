@@ -117,7 +117,7 @@ function EndpointSection(props: {
     <>
       {/* Primary feature panel. Elevated styling and dense content to read as
           the real product surface, not a sandbox. */}
-      <Card className="glass border-border/60">
+      <Card className="border-border/60">
         <CardContent className="px-5 py-5 space-y-4">
           <div className="space-y-1">
             <h2 className="text-base font-semibold tracking-tight">{props.featureTitle}</h2>

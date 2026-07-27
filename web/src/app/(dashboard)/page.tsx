@@ -47,7 +47,7 @@ export default function OverviewPage() {
     return (
       <div className="space-y-6">
         <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
-        <Card className="glass">
+        <Card>
           <CardContent className="p-6">
             <p className="text-sm text-destructive">Unable to connect to gateway API</p>
             <p className="text-sm text-muted-foreground mt-1">{error}</p>
@@ -63,7 +63,7 @@ export default function OverviewPage() {
         <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
         <div className="grid gap-4 sm:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <Card key={i} className="glass">
+            <Card key={i}>
               <CardContent className="p-5">
                 <div className="h-4 w-24 bg-muted rounded animate-pulse" />
                 <div className="h-8 w-16 bg-muted rounded mt-3 animate-pulse" />
@@ -86,7 +86,7 @@ export default function OverviewPage() {
             Gateway status, active connections, and provider health at a glance.
           </p>
         </div>
-        <Card className="glass">
+        <Card>
           <CardContent className="p-8 flex flex-col items-center text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
               <Server className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
@@ -148,7 +148,7 @@ export default function OverviewPage() {
 
       <ConnectionEndpoint />
 
-      <Card className="glass">
+      <Card>
         <CardContent className="px-5 py-4 space-y-3 min-w-0">
           <div>
             <p className="text-xs uppercase tracking-wider text-muted-foreground">Quick start</p>
@@ -179,7 +179,7 @@ function StatCard(props: {
   hint?: string;
 }) {
   return (
-    <Card className="glass">
+    <Card>
       <CardContent className="p-5">
         <p className="text-xs uppercase tracking-wider text-muted-foreground">{props.label}</p>
         {props.valueText ? (
@@ -218,7 +218,7 @@ function ConnectionEndpoint() {
   }
 
   return (
-    <Card className="glass">
+    <Card>
       <CardContent className="px-5 py-4 space-y-3">
         <div>
           <p className="text-xs uppercase tracking-wider text-muted-foreground">Connection Endpoint</p>

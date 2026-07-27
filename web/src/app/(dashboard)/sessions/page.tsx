@@ -57,7 +57,7 @@ export default function SessionsPage() {
         )}
       </div>
 
-      <Card className="glass overflow-hidden">
+      <Card className="overflow-hidden">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -116,7 +116,7 @@ export default function SessionsPage() {
               These sessions dropped but are held open so a client can reconnect and pick up where it left off. They are released when the timer runs out.
             </p>
           </div>
-          <Card className="glass overflow-hidden">
+          <Card className="overflow-hidden">
             <CardContent className="p-0">
               <Table>
                 <TableHeader>

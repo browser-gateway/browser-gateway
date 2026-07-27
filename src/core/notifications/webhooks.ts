@@ -1,26 +1,16 @@
 import type { Logger } from "pino";
 import type { Gateway } from "../gateway.js";
+import { deliverWebhook, type WebhookPayload } from "./deliver.js";
 
 interface WebhookConfig {
   url: string;
   events?: string[];
 }
 
-interface WebhookPayload {
-  version: string;
-  timestamp: string;
-  event: string;
-  status: "firing" | "resolved";
-  source: string;
-  data: Record<string, unknown>;
-}
-
 export class WebhookNotifier {
-  private retryDelays = [1000, 5000, 15000];
-
   constructor(
     private webhooks: WebhookConfig[],
-    private logger: Logger
+    private logger: Logger,
   ) {}
 
   static fromGateway(gateway: Gateway, webhooks: WebhookConfig[], logger: Logger): WebhookNotifier {
@@ -62,36 +52,23 @@ export class WebhookNotifier {
     for (const webhook of this.webhooks) {
       if (webhook.events && !webhook.events.includes(event)) continue;
 
-      this.deliver(webhook.url, payload).catch(() => {});
-    }
-  }
-
-  private async deliver(url: string, payload: WebhookPayload, attempt = 0): Promise<void> {
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      this.logger.debug({ url: url.slice(0, 50), event: payload.event }, "webhook delivered");
-    } catch (err: any) {
-      if (attempt < this.retryDelays.length) {
-        const delay = this.retryDelays[attempt];
-        this.logger.debug({ url: url.slice(0, 50), attempt: attempt + 1, delay }, "webhook retry");
-        await new Promise((r) => setTimeout(r, delay));
-        return this.deliver(url, payload, attempt + 1);
-      }
-
-      this.logger.warn(
-        { url: url.slice(0, 50), event: payload.event, error: err.message },
-        "webhook delivery failed after retries"
-      );
+      deliverWebhook(webhook.url, payload, {
+        onSuccess: () => {
+          this.logger.debug({ url: webhook.url.slice(0, 50), event }, "webhook delivered");
+        },
+        onAttemptFailed: (attempt, err) => {
+          this.logger.debug(
+            { url: webhook.url.slice(0, 50), attempt: attempt + 1, error: err.message },
+            "webhook retry",
+          );
+        },
+        onFailure: (err) => {
+          this.logger.warn(
+            { url: webhook.url.slice(0, 50), event, error: err.message },
+            "webhook delivery failed after retries",
+          );
+        },
+      }).catch(() => {});
     }
   }
 }

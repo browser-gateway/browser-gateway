@@ -387,7 +387,7 @@ export default function PlaygroundPage() {
         </p>
       </div>
 
-      <Card className="glass border-border/40">
+      <Card className="border-border/40">
         <CardContent className="px-5 py-4 space-y-4">
           {/* Top control bar: provider + profile + status + start/stop */}
           <div className="flex flex-wrap items-center gap-3">

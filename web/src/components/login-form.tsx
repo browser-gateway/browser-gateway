@@ -23,7 +23,7 @@ export function LoginForm() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-sm glass">
+      <Card className="w-full max-w-sm">
         <CardContent className="px-6 py-8">
           <div className="flex flex-col items-center mb-6">
             <div className="flex h-8 w-8 items-center justify-center rounded bg-foreground text-background text-xs font-bold mb-3">

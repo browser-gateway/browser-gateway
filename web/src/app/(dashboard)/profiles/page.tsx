@@ -208,7 +208,7 @@ export default function ProfilesPage() {
       )}
 
       {!enabled && (
-        <Card className="glass border-border/40">
+        <Card className="border-border/40">
           <CardContent className="py-4 space-y-4">
             <div className="flex items-start gap-3">
               <Info className="size-4 text-muted-foreground shrink-0 mt-0.5" />
@@ -230,7 +230,7 @@ export default function ProfilesPage() {
       )}
 
       {enabled && (
-        <Card className="glass border-border/40">
+        <Card className="border-border/40">
           <CardContent className={introOpen ? "py-3" : "py-1"}>
             <button
               onClick={() => setIntroOpen((v) => !v)}
@@ -290,7 +290,7 @@ export default function ProfilesPage() {
         </Card>
       )}
 
-      <Card className="glass overflow-hidden">
+      <Card className="overflow-hidden">
         <CardContent className="p-0">
           <Table>
             <TableHeader>

@@ -120,7 +120,7 @@ export default function ProvidersPage() {
       </div>
 
       {providers.length > 0 && status && (
-        <Card className="glass">
+        <Card>
           <CardContent className="px-5 py-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span className="text-xs font-medium text-foreground">Routing</span>
             <select
@@ -152,7 +152,7 @@ export default function ProvidersPage() {
       )}
 
       {providers.length === 0 && (
-        <Card className="glass">
+        <Card>
           <CardContent className="p-8 space-y-6">
             <div className="flex flex-col items-center text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted mb-4">
@@ -211,7 +211,7 @@ export default function ProvidersPage() {
           const test = testResults[provider.id];
 
           return (
-            <Card key={provider.id} className="glass">
+            <Card key={provider.id}>
               <CardContent className="px-5 py-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0 space-y-3">

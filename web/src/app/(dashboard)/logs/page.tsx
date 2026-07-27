@@ -13,7 +13,7 @@ export default function LogsPage() {
         </p>
       </div>
 
-      <Card className="glass">
+      <Card>
         <CardContent className="px-4 py-12 flex flex-col items-center text-center">
           <FileText className="h-8 w-8 text-muted-foreground/40 mb-3" strokeWidth={1} />
           <p className="text-sm text-muted-foreground">

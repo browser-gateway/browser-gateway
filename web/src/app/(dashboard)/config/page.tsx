@@ -161,7 +161,7 @@ export default function ConfigPage() {
         </Card>
       )}
 
-      <Card className="glass overflow-hidden">
+      <Card className="overflow-hidden">
         <CardContent className="p-0">
           {loading ? (
             <div className="p-8 flex items-center justify-center">
