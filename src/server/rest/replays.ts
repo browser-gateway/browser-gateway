@@ -4,8 +4,7 @@ import type { Logger } from "pino";
 import type { ReplayStore } from "../replay/index.js";
 import type { GatewayConfig } from "../../core/types.js";
 
-const SESSION_ID_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
-const PART_NAME_REGEX = /^([0-9]{3,6})\.bin$/;
+import { PART_NAME_REGEX, SESSION_ID_REGEX } from "../replay/constants.js";
 
 function serveFile(path: string, contentType: string, cacheControl?: string): Response {
   const body = readFileSync(path);

@@ -388,6 +388,13 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface ReplayCaptureOpts` (line 10)
 - **class** `class ReplayCapture` (line 33)
+### `src/server/replay/constants.ts`
+
+- **const** `const SESSION_ID_REGEX` (line 1)
+- **const** `const TARGET_ID_REGEX` (line 3)
+- **const** `const PART_NAME_REGEX` (line 5)
+- **const** `const CHUNK_MAX_BYTES` (line 7)
+- **const** `const CHUNK_MAX_ELAPSED_MS` (line 9)
 ### `src/server/replay/controller.ts`
 
 - **interface** `interface ReplayControllerOpts` (line 6)
@@ -436,7 +443,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 116) — Profile management REST routes.
 ### `src/server/rest/replays.ts`
 
-- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 27)
+- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 26)
 ### `src/server/rest/rest-helpers.ts`
 
 - **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body

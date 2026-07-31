@@ -26,9 +26,9 @@ interface TargetState {
   lastFrameHash?: string;
 }
 
+import { CHUNK_MAX_BYTES, CHUNK_MAX_ELAPSED_MS } from "./constants.js";
+
 const QUEUE_MAX = 200;
-const CHUNK_MAX_BYTES = 25 * 1024 * 1024;
-const CHUNK_MAX_ELAPSED_MS = 5 * 60 * 1000;
 
 export class ReplayCapture {
   private readonly cdp = new CdpClient();
