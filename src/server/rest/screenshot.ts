@@ -50,7 +50,7 @@ export async function handleScreenshot(
     { tolerateGotoTimeout: true },
   );
 
-  return new Response(result.data, {
+  return new Response(result.data as unknown as BodyInit, {
     status: 200,
     headers: {
       "Content-Type": `image/${body.format}`,
