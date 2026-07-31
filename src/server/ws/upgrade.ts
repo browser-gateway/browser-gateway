@@ -392,6 +392,7 @@ async function pipeToProvider(
 ): Promise<boolean> {
   const reqUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   const isInternalPool = reqUrl.searchParams.get("__pool") === "1";
+  const sessionRecord = reqUrl.searchParams.get("session_record") === "true";
   const effectiveReplay = isInternalPool ? undefined : replayController;
 
   let resolvedUrl: string;
@@ -535,6 +536,7 @@ async function pipeToProvider(
           providerId: provider.id,
           providerWsUrl: resolvedUrl,
           profileId: acquired?.profileId,
+          sessionRecord,
         });
       }
     },

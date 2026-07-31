@@ -390,7 +390,6 @@ export function createApp(
     app.route("/v1", createReplayRoutes({
       store: replayStore,
       logger: replayLogger,
-      enabled: gateway.config.replay.enabled,
       config: gateway.config,
       dataDir,
     }));

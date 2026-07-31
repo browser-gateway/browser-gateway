@@ -171,7 +171,6 @@ export const GatewayConfigSchema: z.ZodObject<{
         commitTimeoutMs: z.ZodDefault<z.ZodNumber>;
     }, z.core.$strip>>;
     replay: z.ZodDefault<z.ZodObject<{
-        enabled: z.ZodDefault<z.ZodBoolean>;
         store: z.ZodDefault<z.ZodEnum<{
             filesystem: "filesystem";
         }>>;
@@ -188,7 +187,7 @@ export const GatewayConfigSchema: z.ZodObject<{
             quality: z.ZodDefault<z.ZodNumber>;
             everyNthFrame: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>>;
-    }, z.core.$strip>>;
+    }, z.core.$loose>>;
 }, z.core.$strip>;
 
 // @public (undocumented)

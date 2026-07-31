@@ -107,13 +107,12 @@ const ReplayCaptureSchema = z.object({
 });
 
 export const ReplayConfigSchema = z.object({
-  enabled: z.boolean().default(false),
   store: z.enum(["filesystem"]).default("filesystem"),
   filesystem: ReplayFilesystemSchema.default(() => ReplayFilesystemSchema.parse({})),
   retentionDays: z.number().int().min(0).default(7),
   maxBytesPerSession: z.number().int().min(1_048_576).default(500 * 1024 * 1024),
   capture: ReplayCaptureSchema.default(() => ReplayCaptureSchema.parse({})),
-});
+}).passthrough();
 
 export type ReplayConfig = z.infer<typeof ReplayConfigSchema>;
 

@@ -20,8 +20,9 @@ export class ReplayController {
     providerId: string;
     providerWsUrl: string;
     profileId?: string;
+    sessionRecord: boolean;
   }): void {
-    if (!this.opts.config.enabled) return;
+    if (!input.sessionRecord) return;
 
     const caps = this.opts.registry.getCapabilityRecord(input.providerId)?.capabilities;
     if (!caps || caps.pageScreencast !== "supported") {

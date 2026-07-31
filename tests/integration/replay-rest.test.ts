@@ -65,29 +65,12 @@ function seed(opts: {
   }
 }
 
-describe("REST routes with replay disabled", () => {
-  it("GET /replays returns enabled: false + empty list", async () => {
-    const app = createReplayRoutes({ store, logger, enabled: false });
-    const res = await app.request("/replays");
-    expect(res.status).toBe(200);
-    const body = await res.json() as { enabled: boolean; replays: unknown[] };
-    expect(body.enabled).toBe(false);
-    expect(body.replays).toEqual([]);
-  });
-
-  it("GET /replays/:id returns 404 with disabled reason", async () => {
-    const app = createReplayRoutes({ store, logger, enabled: false });
-    const res = await app.request("/replays/some-id");
-    expect(res.status).toBe(404);
-  });
-});
-
 describe("REST routes with replay enabled", () => {
   it("GET /replays lists newest-first", async () => {
     seed({ id: "a", startedAt: 1000, endedAt: 1500 });
     seed({ id: "b", startedAt: 3000, endedAt: 3500 });
     seed({ id: "c", startedAt: 2000, endedAt: 2500 });
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays");
     expect(res.status).toBe(200);
     const body = await res.json() as { count: number; replays: Array<{ sessionId: string }> };
@@ -98,14 +81,14 @@ describe("REST routes with replay enabled", () => {
   it("GET /replays accepts ?since= and ?limit=", async () => {
     seed({ id: "old", startedAt: 1000 });
     seed({ id: "fresh", startedAt: 50_000 });
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request(`/replays?since=${new Date(2000).toISOString()}&limit=1`);
     const body = await res.json() as { replays: Array<{ sessionId: string }> };
     expect(body.replays.map((r) => r.sessionId)).toEqual(["fresh"]);
   });
 
   it("GET /replays returns 400 on a malformed since", async () => {
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays?since=not-a-date");
     expect(res.status).toBe(400);
   });
@@ -119,7 +102,7 @@ describe("REST routes with replay enabled", () => {
         { id: "T1", frames: [1, 2], payloads: [Buffer.from("x"), Buffer.from("y")] },
       ],
     });
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays/s1");
     expect(res.status).toBe(200);
     const body = await res.json() as { sessionId: string; targets: Array<{ targetId: string; frameCount: number }> };
@@ -130,27 +113,27 @@ describe("REST routes with replay enabled", () => {
   });
 
   it("GET /replays/:id returns 404 for unknown sessions", async () => {
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays/nope");
     expect(res.status).toBe(404);
   });
 
   it("GET /replays/:id rejects invalid session ids", async () => {
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays/bad%20id%21");
     expect(res.status).toBe(400);
   });
 
   it("DELETE /replays/:id purges the session", async () => {
     seed({ id: "s1", startedAt: 1000, endedAt: 2000 });
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays/s1", { method: "DELETE" });
     expect(res.status).toBe(200);
     expect(store.get("s1")).toBeNull();
   });
 
   it("DELETE /replays/:id returns 404 when unknown", async () => {
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays/nope", { method: "DELETE" });
     expect(res.status).toBe(404);
   });
@@ -162,7 +145,7 @@ describe("REST routes with replay enabled", () => {
       endedAt: 2000,
       targets: [{ id: "T1", frames: [1, 2, 3], payloads: [Buffer.from(""), Buffer.from(""), Buffer.from("")] }],
     });
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays/s1/targets/T1/manifest");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("application/jsonlines");
@@ -178,7 +161,7 @@ describe("REST routes with replay enabled", () => {
       endedAt: 2000,
       targets: [{ id: "T1", frames: [1], payloads: [png] }],
     });
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays/s1/targets/T1/frames/000001.png");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/png");
@@ -189,14 +172,14 @@ describe("REST routes with replay enabled", () => {
 
   it("GET .../frames returns 404 for missing frames", async () => {
     seed({ id: "s1", startedAt: 1000, endedAt: 2000, targets: [{ id: "T1", frames: [], payloads: [] }] });
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays/s1/targets/T1/frames/000099.png");
     expect(res.status).toBe(404);
   });
 
   it("GET .../frames rejects invalid frame names", async () => {
     seed({ id: "s1", startedAt: 1000, endedAt: 2000, targets: [{ id: "T1", frames: [], payloads: [] }] });
-    const app = createReplayRoutes({ store, logger, enabled: true });
+    const app = createReplayRoutes({ store, logger });
     const res = await app.request("/replays/s1/targets/T1/frames/not-a-frame.gif");
     expect(res.status).toBe(400);
   });

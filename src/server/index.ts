@@ -221,23 +221,19 @@ async function startServer() {
 
   const replayStorePath = resolve(resolveDataDir(), config.replay.filesystem.path);
   const replayStore = new ReplayStore(replayStorePath);
-  const replayController = config.replay.enabled
-    ? new ReplayController({
-        storePath: replayStorePath,
-        config: config.replay,
-        registry: gateway.registry,
-        logger,
-      })
-    : undefined;
-  const replayRetention = config.replay.enabled
-    ? new ReplayRetention({
-        store: replayStore,
-        storePath: replayStorePath,
-        retentionDays: config.replay.retentionDays,
-        logger,
-      })
-    : undefined;
-  replayRetention?.start();
+  const replayController = new ReplayController({
+    storePath: replayStorePath,
+    config: config.replay,
+    registry: gateway.registry,
+    logger,
+  });
+  const replayRetention = new ReplayRetention({
+    store: replayStore,
+    storePath: replayStorePath,
+    retentionDays: config.replay.retentionDays,
+    logger,
+  });
+  replayRetention.start();
 
   const reconnectRegistry = new ReconnectRegistry();
   const reconnectTtl = config.gateway.sessions?.reconnectTimeoutMs ?? 300000;
@@ -395,7 +391,7 @@ async function startServer() {
         headers,
         body,
         duplex: body ? "half" : undefined,
-      })
+      } as RequestInit & { duplex?: "half" })
     );
 
     res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
@@ -452,10 +448,8 @@ async function startServer() {
       await profileBootstrap.lifecycle.drain(config.gateway.shutdownDrainMs ?? 30_000);
     }
 
-    replayRetention?.stop();
-    if (replayController) {
-      await replayController.shutdown();
-    }
+    replayRetention.stop();
+    await replayController.shutdown();
 
     logger.info("server stopped");
     process.exit(0);

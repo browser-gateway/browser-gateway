@@ -13,8 +13,6 @@ import {
   isFfmpegStaticInstalled,
 } from "../replay/export-mp4.js";
 import type { GatewayConfig } from "../../core/types.js";
-import { disableReplayFlow, enableReplayFlow } from "../setup/replay-setup.js";
-import { makeToggleHandler } from "./toggle-handler.js";
 
 const SESSION_ID_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
 const TARGET_ID_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
@@ -36,39 +34,12 @@ function serveFile(path: string, contentType: string, cacheControl?: string): Re
 interface ReplayRoutesDeps {
   store: ReplayStore;
   logger: Logger;
-  enabled: boolean;
   config?: GatewayConfig;
-  dataDir: string;
+  dataDir?: string;
 }
-
-const DISABLED_REASON = "Replay capture is disabled. Click 'Enable Replays' in the dashboard or set replay.enabled: true in gateway.yml, then restart.";
 
 export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
   const app = new Hono();
-
-  const MISSING_CONFIG = "Cannot toggle replays without a loaded config";
-  app.post(
-    "/replays/setup",
-    makeToggleHandler(() => deps.config, enableReplayFlow, MISSING_CONFIG, "Setup failed"),
-  );
-  app.post(
-    "/replays/disable",
-    makeToggleHandler(() => deps.config, disableReplayFlow, MISSING_CONFIG, "Disable failed"),
-  );
-
-  if (!deps.enabled) {
-    app.get("/replays", (c) => c.json({ enabled: false, replays: [], reason: DISABLED_REASON }));
-    app.get("/replays/:id", (c) => c.json({ error: "Replay not found", reason: DISABLED_REASON }, 404));
-    app.delete("/replays/:id", (c) => c.json({ error: "Replays disabled", reason: DISABLED_REASON }, 400));
-    app.get("/replays/:id/manifest", (c) => c.json({ error: "Replays disabled", reason: DISABLED_REASON }, 400));
-    app.get("/replays/:id/targets/:targetId/manifest", (c) =>
-      c.json({ error: "Replays disabled", reason: DISABLED_REASON }, 400),
-    );
-    app.get("/replays/:id/targets/:targetId/frames/:frame{[0-9]+\\.(png|jpeg)}", (c) =>
-      c.json({ error: "Replays disabled", reason: DISABLED_REASON }, 400),
-    );
-    return app;
-  }
 
   app.get("/replays", (c) => {
     const sinceRaw = c.req.query("since");
@@ -145,6 +116,7 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
   });
 
   app.get("/replays/:id/targets/:targetId/export.mp4", async (c) => {
+    if (!deps.dataDir) return c.json({ error: "MP4 export unavailable in this runtime" }, 503);
     const id = c.req.param("id");
     const targetId = c.req.param("targetId");
     if (!SESSION_ID_REGEX.test(id) || !TARGET_ID_REGEX.test(targetId)) {
@@ -194,6 +166,7 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
   });
 
   app.get("/replays/ffmpeg/status", async (c) => {
+    if (!deps.dataDir) return c.json({ available: false, source: null, installing: false, localInstalled: false });
     const bin = await findFfmpegBinary(deps.dataDir);
     const localInstalled = await isFfmpegStaticInstalled(deps.dataDir);
     return c.json({
@@ -205,6 +178,7 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
   });
 
   app.post("/replays/ffmpeg/install", async (c) => {
+    if (!deps.dataDir) return c.json({ ok: false, error: "MP4 export unavailable in this runtime" }, 503);
     if (ffmpegInstallInflight) {
       try {
         await ffmpegInstallInflight;

@@ -39,52 +39,61 @@ function makeRegistry(opts: { providerId: string; supportsScreencast: boolean })
   return r;
 }
 
+function makeController(dir: string, registry: ProviderRegistry): ReplayController {
+  return new ReplayController({
+    storePath: dir,
+    config: ReplayConfigSchema.parse({}),
+    registry,
+    logger,
+  });
+}
+
 describe("ReplayController capability gate", () => {
-  it("skips capture when replay.enabled = false", () => {
+  it("skips capture when sessionRecord = false", () => {
     const registry = makeRegistry({ providerId: "p1", supportsScreencast: true });
-    const controller = new ReplayController({
-      storePath: dir,
-      config: ReplayConfigSchema.parse({ enabled: false }),
-      registry,
-      logger,
+    const controller = makeController(dir, registry);
+    controller.onSessionStart({
+      sessionId: "s1",
+      providerId: "p1",
+      providerWsUrl: "ws://invalid",
+      sessionRecord: false,
     });
-    controller.onSessionStart({ sessionId: "s1", providerId: "p1", providerWsUrl: "ws://invalid" });
     expect(controller.activeCount()).toBe(0);
   });
 
   it("skips capture when provider does not support pageScreencast", () => {
     const registry = makeRegistry({ providerId: "p1", supportsScreencast: false });
-    const controller = new ReplayController({
-      storePath: dir,
-      config: ReplayConfigSchema.parse({ enabled: true }),
-      registry,
-      logger,
+    const controller = makeController(dir, registry);
+    controller.onSessionStart({
+      sessionId: "s1",
+      providerId: "p1",
+      providerWsUrl: "ws://invalid",
+      sessionRecord: true,
     });
-    controller.onSessionStart({ sessionId: "s1", providerId: "p1", providerWsUrl: "ws://invalid" });
     expect(controller.activeCount()).toBe(0);
   });
 
-  it("kicks off capture when enabled + provider supports screencast", () => {
+  it("kicks off capture when sessionRecord=true + provider supports screencast", () => {
     const registry = makeRegistry({ providerId: "p1", supportsScreencast: true });
-    const controller = new ReplayController({
-      storePath: dir,
-      config: ReplayConfigSchema.parse({ enabled: true }),
-      registry,
-      logger,
+    const controller = makeController(dir, registry);
+    controller.onSessionStart({
+      sessionId: "s1",
+      providerId: "p1",
+      providerWsUrl: "ws://127.0.0.1:1",
+      sessionRecord: true,
     });
-    controller.onSessionStart({ sessionId: "s1", providerId: "p1", providerWsUrl: "ws://127.0.0.1:1" });
     expect(controller.activeCount()).toBe(1);
   });
 
   it("onSessionEnd removes from active map even when start failed", async () => {
     const registry = makeRegistry({ providerId: "p1", supportsScreencast: true });
-    const controller = new ReplayController({
-      storePath: dir,
-      config: ReplayConfigSchema.parse({ enabled: true }),
-      registry,
-      logger,
+    const controller = makeController(dir, registry);
+    controller.onSessionStart({
+      sessionId: "s1",
+      providerId: "p1",
+      providerWsUrl: "ws://127.0.0.1:1",
+      sessionRecord: true,
     });
-    controller.onSessionStart({ sessionId: "s1", providerId: "p1", providerWsUrl: "ws://127.0.0.1:1" });
     controller.onSessionEnd("s1");
     await new Promise((r) => setTimeout(r, 50));
     expect(controller.activeCount()).toBe(0);
@@ -92,14 +101,19 @@ describe("ReplayController capability gate", () => {
 
   it("shutdown waits for in-flight captures", async () => {
     const registry = makeRegistry({ providerId: "p1", supportsScreencast: true });
-    const controller = new ReplayController({
-      storePath: dir,
-      config: ReplayConfigSchema.parse({ enabled: true }),
-      registry,
-      logger,
+    const controller = makeController(dir, registry);
+    controller.onSessionStart({
+      sessionId: "s1",
+      providerId: "p1",
+      providerWsUrl: "ws://127.0.0.1:1",
+      sessionRecord: true,
     });
-    controller.onSessionStart({ sessionId: "s1", providerId: "p1", providerWsUrl: "ws://127.0.0.1:1" });
-    controller.onSessionStart({ sessionId: "s2", providerId: "p1", providerWsUrl: "ws://127.0.0.1:1" });
+    controller.onSessionStart({
+      sessionId: "s2",
+      providerId: "p1",
+      providerWsUrl: "ws://127.0.0.1:1",
+      sessionRecord: true,
+    });
     await controller.shutdown();
     expect(controller.activeCount()).toBe(0);
   });

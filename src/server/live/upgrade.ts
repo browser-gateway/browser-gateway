@@ -201,6 +201,7 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
             providerId,
             providerWsUrl,
             profileId: acquired?.profileId ?? undefined,
+            sessionRecord: url.searchParams.get("session_record") === "true",
           });
           replayStarted = true;
         }

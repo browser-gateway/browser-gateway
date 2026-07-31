@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-07-27
+Generated: 2026-07-31
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -271,12 +271,12 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **const** `const ProfilesConfigSchema` (line 81)
 - **type** `type ProfilesConfig` (line 97)
 - **const** `const ReplayConfigSchema` (line 109)
-- **type** `type ReplayConfig` (line 118)
-- **const** `const GatewayConfigSchema` (line 120)
-- **type** `type ProviderConfig` (line 132)
-- **type** `type GatewayConfig` (line 133)
-- **interface** `interface ProviderState` (line 135)
-- **interface** `interface Session` (line 152)
+- **type** `type ReplayConfig` (line 117)
+- **const** `const GatewayConfigSchema` (line 119)
+- **type** `type ProviderConfig` (line 131)
+- **type** `type GatewayConfig` (line 132)
+- **interface** `interface ProviderState` (line 134)
+- **interface** `interface Session` (line 151)
 
 ## Server layer (src/server/)
 
@@ -304,14 +304,6 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface BridgeOptions` (line 10)
 - **class** `class ScreencastBridge` (line 54)
-### `src/server/live/types.ts`
-
-- **const** `const ClientMessageSchema` (line 27)
-- **type** `type ClientMessage` (line 49)
-- **interface** `interface ServerFrameMetaMessage` (line 52) — Server→client metadata frame (binary frames carry image bytes only).
-- **interface** `interface ServerUrlMessage` (line 61) — Server→client URL change announcement.
-- **interface** `interface ServerErrorMessage` (line 67) — Server→client error notification before close.
-- **type** `type ServerControlMessage` (line 73)
 ### `src/server/live/upgrade.ts`
 
 - **interface** `interface CreateLiveHandlerDeps` (line 36)
@@ -460,7 +452,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 116) — Profile management REST routes.
 ### `src/server/rest/replays.ts`
 
-- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 46)
+- **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 41)
 ### `src/server/rest/rest-helpers.ts`
 
 - **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body
@@ -504,12 +496,6 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface ProfilesSetupResult` (line 10)
 - **fn** `enableProfilesFlow(input: ProfilesSetupInput) → ProfilesSetupResult` (line 36)
 - **fn** `disableProfilesFlow(input: ProfilesSetupInput) → ProfilesSetupResult` (line 82)
-### `src/server/setup/replay-setup.ts`
-
-- **interface** `interface ReplaySetupInput` (line 4)
-- **interface** `interface ReplaySetupResult` (line 9)
-- **fn** `enableReplayFlow(input: ReplaySetupInput) → ReplaySetupResult` (line 16)
-- **fn** `disableReplayFlow(input: ReplaySetupInput) → ReplaySetupResult` (line 26)
 ### `src/server/startup/banner.ts`
 
 - **interface** `interface BannerOptions` (line 53)

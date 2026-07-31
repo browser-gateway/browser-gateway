@@ -550,14 +550,6 @@ async function postAction<T>(path: string, fallbackLabel: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export function enableReplays(): Promise<ToggleResult> {
-  return postAction<ToggleResult>("/v1/replays/setup", "Enable failed");
-}
-
-export function disableReplays(): Promise<ToggleResult> {
-  return postAction<ToggleResult>("/v1/replays/disable", "Disable failed");
-}
-
 export function disableProfiles(): Promise<ToggleResult> {
   return postAction<ToggleResult>("/v1/profiles/disable", "Disable failed");
 }
