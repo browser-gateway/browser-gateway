@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync, openSync, fsyncSync, closeSync, writeSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Logger } from "pino";
 import type { ReplayConfig } from "../../core/types.js";
 import type { CdpEvent } from "../live/cdp-client.js";
 import { CdpClient } from "../live/cdp-client.js";
-import type { ReplayMeta } from "./types.js";
+import type { ReplayFrameRecord, ReplayManifest, ReplayMeta } from "./types.js";
 
 export interface ReplayCaptureOpts {
   sessionId: string;
@@ -22,32 +22,39 @@ interface TargetState {
   attachSessionId: string;
   frameCount: number;
   sizeBytes: number;
-  manifestFd: number;
-  dir: string;
   lastUrl?: string;
   lastFrameHash?: string;
 }
 
 const QUEUE_MAX = 200;
+const CHUNK_MAX_BYTES = 25 * 1024 * 1024;
+const CHUNK_MAX_ELAPSED_MS = 5 * 60 * 1000;
 
 export class ReplayCapture {
   private readonly cdp = new CdpClient();
   private readonly sessionDir: string;
+  private readonly partsDir: string;
   private readonly targets = new Map<string, TargetState>();
+  private readonly frames: ReplayFrameRecord[] = [];
   private writeQueue = 0;
   private droppedFrames = 0;
   private duplicatesSkipped = 0;
   private totalBytes = 0;
   private capStopped = false;
   private cleanupFns: Array<() => void> = [];
+  private chunkIndex = 0;
+  private chunkBuffer: Buffer[] = [];
+  private chunkBufferBytes = 0;
+  private chunkOpenedAt = 0;
 
   constructor(private readonly opts: ReplayCaptureOpts) {
     this.sessionDir = join(opts.storePath, opts.sessionId);
+    this.partsDir = join(this.sessionDir, "parts");
   }
 
   async start(): Promise<void> {
     mkdirSync(this.sessionDir, { recursive: true });
-    mkdirSync(join(this.sessionDir, "targets"), { recursive: true });
+    mkdirSync(this.partsDir, { recursive: true });
 
     const meta: ReplayMeta = {
       sessionId: this.opts.sessionId,
@@ -60,6 +67,7 @@ export class ReplayCapture {
       format: this.opts.config.capture.format,
     };
     writeFileSync(join(this.sessionDir, "meta.json"), JSON.stringify(meta));
+    this.chunkOpenedAt = Date.now();
 
     try {
       await this.cdp.connect(this.opts.providerWsUrl, 10_000);
@@ -102,24 +110,28 @@ export class ReplayCapture {
   }
 
   async finish(): Promise<{ frameCount: number; sizeBytes: number; droppedFrames: number; duplicatesSkipped: number }> {
-    if (this.capStopped) {
-      return { frameCount: 0, sizeBytes: this.totalBytes, droppedFrames: this.droppedFrames, duplicatesSkipped: this.duplicatesSkipped };
-    }
+    const alreadyStopped = this.capStopped;
     this.capStopped = true;
 
-    let totalFrames = 0;
     for (const target of this.targets.values()) {
       this.cdp.sendMayFail("Page.stopScreencast", {}, target.attachSessionId);
-      totalFrames += target.frameCount;
-      try {
-        fsyncSync(target.manifestFd);
-        closeSync(target.manifestFd);
-      } catch { /* ok */ }
     }
 
     for (const off of this.cleanupFns) off();
     this.cleanupFns = [];
+
+    while (this.writeQueue > 0) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+
     this.cdp.close();
+
+    if (!alreadyStopped) {
+      this.flushChunk();
+      this.writeManifest();
+    }
+
+    const totalFrames = this.frames.length;
 
     const endedAt = Date.now();
     try {
@@ -156,17 +168,11 @@ export class ReplayCapture {
       return;
     }
 
-    const dir = join(this.sessionDir, "targets", targetId);
-    mkdirSync(dir, { recursive: true });
-    const manifestFd = openSync(join(dir, "manifest.jsonl"), "a");
-
     const state: TargetState = {
       targetId,
       attachSessionId,
       frameCount: 0,
       sizeBytes: 0,
-      manifestFd,
-      dir,
     };
     this.targets.set(targetId, state);
 
@@ -199,7 +205,6 @@ export class ReplayCapture {
       const params = event.params as { sessionId?: string };
       for (const [, target] of this.targets) {
         if (target.attachSessionId === params.sessionId) {
-          try { closeSync(target.manifestFd); } catch { /* ok */ }
           this.targets.delete(target.targetId);
           break;
         }
@@ -268,17 +273,17 @@ export class ReplayCapture {
     target.lastFrameHash = hash;
 
     this.writeQueue++;
-    target.frameCount++;
-    const frameNum = target.frameCount;
-
-    void this.persistFrame(target, frameNum, buf, params.metadata ?? {})
-      .catch((err) => this.opts.logger.debug({ err: errMsg(err) }, "replay: persist failed"))
-      .finally(() => { this.writeQueue--; });
+    try {
+      this.appendFrameToBuffer(target, buf, params.metadata ?? {});
+    } catch (err) {
+      this.opts.logger.debug({ err: errMsg(err) }, "replay: append failed");
+    } finally {
+      this.writeQueue--;
+    }
   }
 
-  private async persistFrame(
+  private appendFrameToBuffer(
     target: TargetState,
-    frameNum: number,
     buf: Buffer,
     metadata: {
       timestamp?: number;
@@ -287,15 +292,17 @@ export class ReplayCapture {
       scrollOffsetX?: number;
       scrollOffsetY?: number;
     },
-  ): Promise<void> {
-    const padded = String(frameNum).padStart(6, "0");
-    const ext = this.opts.config.capture.format === "jpeg" ? "jpeg" : "png";
-    const framePath = join(target.dir, `${padded}.${ext}`);
+  ): void {
+    const frameNumber = this.frames.length + 1;
+    const byteOffset = this.chunkBufferBytes;
 
-    writeFileSync(framePath, buf);
+    const lenPrefix = Buffer.alloc(4);
+    lenPrefix.writeUInt32BE(buf.length, 0);
+    this.chunkBuffer.push(lenPrefix, buf);
+    this.chunkBufferBytes += 4 + buf.length;
 
-    const record = {
-      frame: frameNum,
+    this.frames.push({
+      frame: frameNumber,
       ts: typeof metadata.timestamp === "number" ? metadata.timestamp * 1000 : Date.now(),
       url: target.lastUrl ?? "",
       deviceWidth: metadata.deviceWidth ?? 0,
@@ -303,12 +310,48 @@ export class ReplayCapture {
       scrollX: metadata.scrollOffsetX ?? 0,
       scrollY: metadata.scrollOffsetY ?? 0,
       sizeBytes: buf.length,
-    };
-    const line = JSON.stringify(record) + "\n";
-    writeSync(target.manifestFd, line);
+      targetId: target.targetId,
+      chunkIndex: this.chunkIndex,
+      byteOffset,
+      length: buf.length,
+    });
 
+    target.frameCount++;
     target.sizeBytes += buf.length;
     this.totalBytes += buf.length;
+
+    const elapsed = Date.now() - this.chunkOpenedAt;
+    if (this.chunkBufferBytes >= CHUNK_MAX_BYTES || elapsed >= CHUNK_MAX_ELAPSED_MS) {
+      this.flushChunk();
+    }
+  }
+
+  private flushChunk(): void {
+    if (this.chunkBufferBytes === 0) return;
+    const partPath = join(this.partsDir, `${String(this.chunkIndex).padStart(3, "0")}.bin`);
+    try {
+      writeFileSync(partPath, Buffer.concat(this.chunkBuffer));
+    } catch (err) {
+      this.opts.logger.warn({ err: errMsg(err), partPath }, "replay: chunk flush failed");
+    }
+    this.chunkBuffer = [];
+    this.chunkBufferBytes = 0;
+    this.chunkIndex++;
+    this.chunkOpenedAt = Date.now();
+  }
+
+  private writeManifest(): void {
+    const manifest: ReplayManifest = {
+      sessionId: this.opts.sessionId,
+      format: this.opts.config.capture.format,
+      targets: Array.from(this.targets.keys()),
+      frames: this.frames,
+    };
+    try {
+      writeFileSync(join(this.sessionDir, "manifest.json"), JSON.stringify(manifest));
+    } catch (err) {
+      this.opts.logger.warn({ err: errMsg(err) }, "replay: manifest write failed");
+    }
   }
 
   private targetForSession(cdpSessionId: string | undefined): TargetState | null {

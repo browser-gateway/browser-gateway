@@ -5,6 +5,7 @@ import { join } from "node:path";
 import pino from "pino";
 import { ReplayStore } from "../../src/server/replay/index.js";
 import { createReplayRoutes } from "../../src/server/rest/replays.js";
+import type { ReplayFrameRecord, ReplayManifest } from "../../src/server/replay/types.js";
 
 let dir: string;
 let store: ReplayStore;
@@ -19,14 +20,74 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+function encodePart(frames: Buffer[]): { part: Buffer; offsets: number[] } {
+  const chunks: Buffer[] = [];
+  const offsets: number[] = [];
+  let off = 0;
+  for (const f of frames) {
+    offsets.push(off);
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(f.length, 0);
+    chunks.push(len, f);
+    off += 4 + f.length;
+  }
+  return { part: Buffer.concat(chunks), offsets };
+}
+
 function seed(opts: {
   id: string;
   startedAt: number;
   endedAt?: number;
-  targets?: Array<{ id: string; frames: number[]; payloads: Buffer[] }>;
+  format?: "png" | "jpeg";
+  targets?: Array<{ id: string; frames: Array<{ ts: number; url: string; payload: Buffer }> }>;
 }): void {
   const sd = join(dir, opts.id);
   mkdirSync(sd, { recursive: true });
+  const format = opts.format ?? "png";
+
+  const frames: ReplayFrameRecord[] = [];
+  const partsDir = join(sd, "parts");
+  mkdirSync(partsDir, { recursive: true });
+  let frameNumber = 0;
+  let chunkIndex = 0;
+  const targetIds = (opts.targets ?? []).map((t) => t.id);
+
+  for (const target of opts.targets ?? []) {
+    const payloads = target.frames.map((f) => f.payload);
+    const { part, offsets } = encodePart(payloads);
+    if (part.length > 0) {
+      const partPath = join(partsDir, `${String(chunkIndex).padStart(3, "0")}.bin`);
+      writeFileSync(partPath, part);
+    }
+    for (let i = 0; i < target.frames.length; i++) {
+      frameNumber++;
+      const f = target.frames[i];
+      frames.push({
+        frame: frameNumber,
+        ts: f.ts,
+        url: f.url,
+        deviceWidth: 1280,
+        deviceHeight: 720,
+        scrollX: 0,
+        scrollY: 0,
+        sizeBytes: f.payload.length,
+        targetId: target.id,
+        chunkIndex,
+        byteOffset: offsets[i],
+        length: f.payload.length,
+      });
+    }
+    chunkIndex++;
+  }
+
+  const manifest: ReplayManifest = {
+    sessionId: opts.id,
+    format,
+    targets: targetIds,
+    frames,
+  };
+  writeFileSync(join(sd, "manifest.json"), JSON.stringify(manifest));
+
   writeFileSync(
     join(sd, "meta.json"),
     JSON.stringify({
@@ -34,34 +95,17 @@ function seed(opts: {
       providerId: "p1",
       startedAt: opts.startedAt,
       endedAt: opts.endedAt,
-      frameCount: opts.targets?.reduce((a, t) => a + t.frames.length, 0) ?? 0,
-      sizeBytes: 0,
+      frameCount: frames.length,
+      sizeBytes: frames.reduce((a, f) => a + f.sizeBytes, 0),
       complete: opts.endedAt !== undefined,
+      format,
     }),
   );
   if (opts.endedAt !== undefined) {
-    writeFileSync(join(sd, "complete.json"), JSON.stringify({ endedAt: opts.endedAt, frameCount: 0, sizeBytes: 0 }));
-  }
-  const targetsDir = join(sd, "targets");
-  mkdirSync(targetsDir, { recursive: true });
-  for (const t of opts.targets ?? []) {
-    const td = join(targetsDir, t.id);
-    mkdirSync(td, { recursive: true });
-    const manifest = t.frames.map((f) => JSON.stringify({
-      frame: f,
-      ts: opts.startedAt + f * 100,
-      url: `https://example.com/${f}`,
-      deviceWidth: 1280,
-      deviceHeight: 720,
-      scrollX: 0,
-      scrollY: 0,
-      sizeBytes: t.payloads[f - 1]?.length ?? 0,
-    })).join("\n");
-    writeFileSync(join(td, "manifest.jsonl"), manifest);
-    for (let i = 0; i < t.frames.length; i++) {
-      const padded = String(t.frames[i]).padStart(6, "0");
-      writeFileSync(join(td, `${padded}.png`), t.payloads[i]);
-    }
+    writeFileSync(
+      join(sd, "complete.json"),
+      JSON.stringify({ endedAt: opts.endedAt, frameCount: frames.length, sizeBytes: 0 }),
+    );
   }
 }
 
@@ -93,13 +137,19 @@ describe("REST routes with replay enabled", () => {
     expect(res.status).toBe(400);
   });
 
-  it("GET /replays/:id returns detail with targets", async () => {
+  it("GET /replays/:id returns detail with target summaries derived from manifest", async () => {
     seed({
       id: "s1",
       startedAt: 1000,
       endedAt: 2000,
       targets: [
-        { id: "T1", frames: [1, 2], payloads: [Buffer.from("x"), Buffer.from("y")] },
+        {
+          id: "T1",
+          frames: [
+            { ts: 1100, url: "https://example.com/1", payload: Buffer.from("x") },
+            { ts: 1200, url: "https://example.com/2", payload: Buffer.from("y") },
+          ],
+        },
       ],
     });
     const app = createReplayRoutes({ store, logger });
@@ -138,31 +188,67 @@ describe("REST routes with replay enabled", () => {
     expect(res.status).toBe(404);
   });
 
-  it("GET .../manifest streams the manifest.jsonl as application/jsonlines", async () => {
+  it("GET /replays/:id/manifest returns the full manifest json", async () => {
     seed({
       id: "s1",
       startedAt: 1000,
       endedAt: 2000,
-      targets: [{ id: "T1", frames: [1, 2, 3], payloads: [Buffer.from(""), Buffer.from(""), Buffer.from("")] }],
+      targets: [
+        {
+          id: "T1",
+          frames: [
+            { ts: 1100, url: "https://example.com/1", payload: Buffer.from("aaa") },
+            { ts: 1200, url: "https://example.com/2", payload: Buffer.from("bbb") },
+            { ts: 1300, url: "https://example.com/3", payload: Buffer.from("ccc") },
+          ],
+        },
+      ],
     });
     const app = createReplayRoutes({ store, logger });
-    const res = await app.request("/replays/s1/targets/T1/manifest");
+    const res = await app.request("/replays/s1/manifest");
     expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toBe("application/jsonlines");
-    const lines = (await res.text()).split("\n").filter((l) => l.length > 0);
-    expect(lines).toHaveLength(3);
+    const body = await res.json() as ReplayManifest;
+    expect(body.sessionId).toBe("s1");
+    expect(body.frames).toHaveLength(3);
+    expect(body.frames[0].chunkIndex).toBe(0);
   });
 
-  it("GET .../frames/000001.png serves the binary PNG with caching headers", async () => {
+  it("GET /replays/:id/parts/000.bin serves the binary chunk", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    seed({
+      id: "s1",
+      startedAt: 1000,
+      endedAt: 2000,
+      targets: [{ id: "T1", frames: [{ ts: 1100, url: "https://example.com", payload: png }] }],
+    });
+    const app = createReplayRoutes({ store, logger });
+    const res = await app.request("/replays/s1/parts/000.bin");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/octet-stream");
+    expect(res.headers.get("cache-control")).toContain("immutable");
+    const ab = await res.arrayBuffer();
+    const bytes = new Uint8Array(ab);
+    expect(bytes.byteLength).toBe(4 + png.length);
+    expect(new DataView(ab).getUint32(0)).toBe(png.length);
+  });
+
+  it("GET /replays/:id/parts/999.bin returns 404 for missing part", async () => {
+    seed({ id: "s1", startedAt: 1000, endedAt: 2000 });
+    const app = createReplayRoutes({ store, logger });
+    const res = await app.request("/replays/s1/parts/999.bin");
+    expect(res.status).toBe(404);
+  });
+
+  it("GET /replays/:id/frames/:N.png extracts a single frame from the chunk", async () => {
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     seed({
       id: "s1",
       startedAt: 1000,
       endedAt: 2000,
-      targets: [{ id: "T1", frames: [1], payloads: [png] }],
+      targets: [{ id: "T1", frames: [{ ts: 1100, url: "https://example.com", payload: png }] }],
     });
     const app = createReplayRoutes({ store, logger });
-    const res = await app.request("/replays/s1/targets/T1/frames/000001.png");
+    const res = await app.request("/replays/s1/frames/1.png");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/png");
     expect(res.headers.get("cache-control")).toContain("immutable");
@@ -170,17 +256,17 @@ describe("REST routes with replay enabled", () => {
     expect(new Uint8Array(ab)).toEqual(new Uint8Array(png));
   });
 
-  it("GET .../frames returns 404 for missing frames", async () => {
-    seed({ id: "s1", startedAt: 1000, endedAt: 2000, targets: [{ id: "T1", frames: [], payloads: [] }] });
+  it("GET /replays/:id/frames returns 404 for missing frame number", async () => {
+    seed({ id: "s1", startedAt: 1000, endedAt: 2000 });
     const app = createReplayRoutes({ store, logger });
-    const res = await app.request("/replays/s1/targets/T1/frames/000099.png");
+    const res = await app.request("/replays/s1/frames/999.png");
     expect(res.status).toBe(404);
   });
 
-  it("GET .../frames rejects invalid frame names", async () => {
-    seed({ id: "s1", startedAt: 1000, endedAt: 2000, targets: [{ id: "T1", frames: [], payloads: [] }] });
+  it("GET /replays/:id/frames rejects invalid frame names", async () => {
+    seed({ id: "s1", startedAt: 1000, endedAt: 2000 });
     const app = createReplayRoutes({ store, logger });
-    const res = await app.request("/replays/s1/targets/T1/frames/not-a-frame.gif");
+    const res = await app.request("/replays/s1/frames/not-a-frame.gif");
     expect(res.status).toBe(400);
   });
 });

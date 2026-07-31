@@ -2,15 +2,15 @@ import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs
 import { join } from "node:path";
 import type {
   ReplayDetail,
-  ReplayFrameRecord,
+  ReplayManifest,
   ReplayMeta,
   ReplayTargetSummary,
 } from "./types.js";
 
 const META_FILE = "meta.json";
 const COMPLETE_FILE = "complete.json";
-const TARGETS_DIR = "targets";
-const MANIFEST_FILE = "manifest.jsonl";
+const MANIFEST_FILE = "manifest.json";
+const PARTS_DIR = "parts";
 
 export interface ListOpts {
   sinceMs?: number;
@@ -44,33 +44,58 @@ export class ReplayStore {
     const meta = this.readMeta(sessionId);
     if (!meta) return null;
 
-    const targetsDir = join(this.storePath, sessionId, TARGETS_DIR);
+    const manifest = this.readManifest(sessionId);
     const targets: ReplayTargetSummary[] = [];
-    if (existsSync(targetsDir)) {
-      for (const targetId of readdirSync(targetsDir)) {
-        const summary = this.summarizeTarget(sessionId, targetId);
-        if (summary) targets.push(summary);
+    if (manifest) {
+      const perTarget = new Map<string, { count: number; size: number; firstUrl?: string; lastUrl?: string }>();
+      for (const frame of manifest.frames) {
+        const entry = perTarget.get(frame.targetId) ?? { count: 0, size: 0 };
+        entry.count++;
+        entry.size += frame.sizeBytes;
+        if (!entry.firstUrl && frame.url) entry.firstUrl = frame.url;
+        if (frame.url) entry.lastUrl = frame.url;
+        perTarget.set(frame.targetId, entry);
+      }
+      for (const [targetId, entry] of perTarget) {
+        targets.push({
+          targetId,
+          frameCount: entry.count,
+          sizeBytes: entry.size,
+          firstUrl: entry.firstUrl,
+          lastUrl: entry.lastUrl,
+        });
       }
     }
     return { ...meta, targets };
   }
 
-  framePath(sessionId: string, targetId: string, frame: number, ext: "png" | "jpeg" = "png"): string {
-    const padded = String(frame).padStart(6, "0");
-    return join(this.storePath, sessionId, TARGETS_DIR, targetId, `${padded}.${ext}`);
+  manifestPath(sessionId: string): string {
+    return join(this.storePath, sessionId, MANIFEST_FILE);
   }
 
-  manifestPath(sessionId: string, targetId: string): string {
-    return join(this.storePath, sessionId, TARGETS_DIR, targetId, MANIFEST_FILE);
+  partPath(sessionId: string, chunkIndex: number): string {
+    return join(this.storePath, sessionId, PARTS_DIR, `${String(chunkIndex).padStart(3, "0")}.bin`);
   }
 
-  readManifest(sessionId: string, targetId: string): ReplayFrameRecord[] {
-    const path = this.manifestPath(sessionId, targetId);
-    if (!existsSync(path)) return [];
-    return readFileSync(path, "utf8")
-      .split("\n")
-      .filter((l) => l.trim().length > 0)
-      .map((line) => JSON.parse(line) as ReplayFrameRecord);
+  readManifest(sessionId: string): ReplayManifest | null {
+    const path = this.manifestPath(sessionId);
+    if (!existsSync(path)) return null;
+    try {
+      return JSON.parse(readFileSync(path, "utf8")) as ReplayManifest;
+    } catch {
+      return null;
+    }
+  }
+
+  readFrame(sessionId: string, frameNumber: number): Buffer | null {
+    const manifest = this.readManifest(sessionId);
+    if (!manifest) return null;
+    const record = manifest.frames.find((f) => f.frame === frameNumber);
+    if (!record) return null;
+    const partPath = this.partPath(sessionId, record.chunkIndex);
+    if (!existsSync(partPath)) return null;
+    const part = readFileSync(partPath);
+    return part.subarray(record.byteOffset + 4, record.byteOffset + 4 + record.length);
   }
 
   delete(sessionId: string): void {
@@ -105,19 +130,6 @@ export class ReplayStore {
       }
     }
     return { ...raw, complete: false };
-  }
-
-  private summarizeTarget(sessionId: string, targetId: string): ReplayTargetSummary | null {
-    const targetDir = join(this.storePath, sessionId, TARGETS_DIR, targetId);
-    if (!existsSync(targetDir)) return null;
-    const records = this.readManifest(sessionId, targetId);
-    return {
-      targetId,
-      frameCount: records.length,
-      sizeBytes: walkDirSize(targetDir),
-      firstUrl: records[0]?.url,
-      lastUrl: records[records.length - 1]?.url,
-    };
   }
 }
 

@@ -7,6 +7,17 @@ export interface ReplayFrameRecord {
   scrollX: number;
   scrollY: number;
   sizeBytes: number;
+  targetId: string;
+  chunkIndex: number;
+  byteOffset: number;
+  length: number;
+}
+
+export interface ReplayManifest {
+  sessionId: string;
+  format: "png" | "jpeg";
+  targets: string[];
+  frames: ReplayFrameRecord[];
 }
 
 export interface ReplayMeta {

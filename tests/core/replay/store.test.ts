@@ -1,17 +1,9 @@
-/**
- * Filesystem-layout contract tests for ReplayStore. Builds the expected
- * directory shape under a `mkdtemp`, asserts list/get/delete behave as
- * specified in `planning/research/v0.3.5-SESSION-REPLAY-PLAN.md`.
- *
- * These tests double as the capture-side specification — when capture lands
- * on Day 2, it MUST produce a layout these tests pass against.
- */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ReplayStore } from "../../../src/server/replay/store.js";
-import type { ReplayFrameRecord, ReplayMeta } from "../../../src/server/replay/types.js";
+import type { ReplayFrameRecord, ReplayManifest, ReplayMeta } from "../../../src/server/replay/types.js";
 
 let dir: string;
 let store: ReplayStore;
@@ -25,25 +17,82 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+function encodePart(payloads: Buffer[]): { part: Buffer; offsets: number[] } {
+  const chunks: Buffer[] = [];
+  const offsets: number[] = [];
+  let off = 0;
+  for (const p of payloads) {
+    offsets.push(off);
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(p.length, 0);
+    chunks.push(len, p);
+    off += 4 + p.length;
+  }
+  return { part: Buffer.concat(chunks), offsets };
+}
+
 function seedSession(opts: {
   id: string;
-  providerId?: string;
-  profileId?: string;
   startedAt: number;
   endedAt?: number;
-  targets?: Array<{ id: string; frames: ReplayFrameRecord[]; framePayloads?: number[] }>;
+  providerId?: string;
+  targets?: Array<{ id: string; frames: Array<{ ts: number; url: string; payload: Buffer }> }>;
 }): void {
   const sessionDir = join(dir, opts.id);
   mkdirSync(sessionDir, { recursive: true });
+  const partsDir = join(sessionDir, "parts");
+  mkdirSync(partsDir, { recursive: true });
+
+  const frames: ReplayFrameRecord[] = [];
+  let frameNumber = 0;
+  let chunkIndex = 0;
+  const targetIds: string[] = [];
+
+  for (const target of opts.targets ?? []) {
+    targetIds.push(target.id);
+    const payloads = target.frames.map((f) => f.payload);
+    if (payloads.length > 0) {
+      const { part, offsets } = encodePart(payloads);
+      writeFileSync(join(partsDir, `${String(chunkIndex).padStart(3, "0")}.bin`), part);
+      for (let i = 0; i < target.frames.length; i++) {
+        frameNumber++;
+        const f = target.frames[i];
+        frames.push({
+          frame: frameNumber,
+          ts: f.ts,
+          url: f.url,
+          deviceWidth: 1280,
+          deviceHeight: 720,
+          scrollX: 0,
+          scrollY: 0,
+          sizeBytes: f.payload.length,
+          targetId: target.id,
+          chunkIndex,
+          byteOffset: offsets[i],
+          length: f.payload.length,
+        });
+      }
+      chunkIndex++;
+    }
+  }
+
+  const manifest: ReplayManifest = {
+    sessionId: opts.id,
+    format: "png",
+    targets: targetIds,
+    frames,
+  };
+  writeFileSync(join(sessionDir, "manifest.json"), JSON.stringify(manifest));
+
   const meta: ReplayMeta = {
     sessionId: opts.id,
     providerId: opts.providerId ?? "browserless",
-    profileId: opts.profileId,
     startedAt: opts.startedAt,
     endedAt: opts.endedAt,
-    frameCount: opts.targets?.reduce((a, t) => a + t.frames.length, 0) ?? 0,
-    sizeBytes: opts.targets?.reduce((a, t) => a + (t.framePayloads?.reduce((b, p) => b + p, 0) ?? 0), 0) ?? 0,
+    frameCount: frames.length,
+    sizeBytes: frames.reduce((a, f) => a + f.sizeBytes, 0),
     complete: opts.endedAt !== undefined,
+    format: "png",
   };
   writeFileSync(join(sessionDir, "meta.json"), JSON.stringify(meta));
   if (opts.endedAt !== undefined) {
@@ -53,31 +102,7 @@ function seedSession(opts: {
       sizeBytes: meta.sizeBytes,
     }));
   }
-  const targetsDir = join(sessionDir, "targets");
-  mkdirSync(targetsDir, { recursive: true });
-  for (const t of opts.targets ?? []) {
-    const td = join(targetsDir, t.id);
-    mkdirSync(td, { recursive: true });
-    const manifest = t.frames.map((f) => JSON.stringify(f)).join("\n");
-    writeFileSync(join(td, "manifest.jsonl"), manifest);
-    for (let i = 0; i < t.frames.length; i++) {
-      const padded = String(t.frames[i].frame).padStart(6, "0");
-      const payload = Buffer.alloc(t.framePayloads?.[i] ?? 0);
-      writeFileSync(join(td, `${padded}.png`), payload);
-    }
-  }
 }
-
-const frame = (n: number, ts: number, url = "https://example.com"): ReplayFrameRecord => ({
-  frame: n,
-  ts,
-  url,
-  deviceWidth: 1280,
-  deviceHeight: 720,
-  scrollX: 0,
-  scrollY: 0,
-  sizeBytes: 0,
-});
 
 describe("ReplayStore.list", () => {
   it("returns [] when the store dir doesn't exist yet", () => {
@@ -89,8 +114,7 @@ describe("ReplayStore.list", () => {
     seedSession({ id: "a", startedAt: 1000, endedAt: 1500 });
     seedSession({ id: "b", startedAt: 3000, endedAt: 3500 });
     seedSession({ id: "c", startedAt: 2000, endedAt: 2500 });
-    const ids = store.list().map((m) => m.sessionId);
-    expect(ids).toEqual(["b", "c", "a"]);
+    expect(store.list().map((m) => m.sessionId)).toEqual(["b", "c", "a"]);
   });
 
   it("respects `sinceMs`", () => {
@@ -105,7 +129,7 @@ describe("ReplayStore.list", () => {
   });
 
   it("flags incomplete sessions with complete=false", () => {
-    seedSession({ id: "running", startedAt: 1000 }); // no endedAt
+    seedSession({ id: "running", startedAt: 1000 });
     seedSession({ id: "done", startedAt: 2000, endedAt: 2500 });
     const got = store.list();
     expect(got.find((m) => m.sessionId === "running")?.complete).toBe(false);
@@ -115,8 +139,7 @@ describe("ReplayStore.list", () => {
   it("skips directories without meta.json", () => {
     mkdirSync(join(dir, "orphan"));
     seedSession({ id: "valid", startedAt: 1000, endedAt: 1500 });
-    const ids = store.list().map((m) => m.sessionId);
-    expect(ids).toEqual(["valid"]);
+    expect(store.list().map((m) => m.sessionId)).toEqual(["valid"]);
   });
 });
 
@@ -125,7 +148,7 @@ describe("ReplayStore.get", () => {
     expect(store.get("nope")).toBeNull();
   });
 
-  it("returns per-target summaries with frame counts + sizes", () => {
+  it("returns per-target summaries derived from manifest frames", () => {
     seedSession({
       id: "s1",
       startedAt: 1000,
@@ -134,26 +157,22 @@ describe("ReplayStore.get", () => {
         {
           id: "T1",
           frames: [
-            frame(1, 1000, "https://a.com"),
-            frame(2, 1200, "https://a.com/page"),
+            { ts: 1000, url: "https://a.com", payload: Buffer.alloc(100) },
+            { ts: 1200, url: "https://a.com/page", payload: Buffer.alloc(200) },
           ],
-          framePayloads: [100, 200],
         },
         {
           id: "T2",
-          frames: [frame(1, 1500)],
-          framePayloads: [50],
+          frames: [{ ts: 1500, url: "https://b.com", payload: Buffer.alloc(50) }],
         },
       ],
     });
-
     const detail = store.get("s1");
     expect(detail).not.toBeNull();
     expect(detail!.targets).toHaveLength(2);
-
     const t1 = detail!.targets.find((t) => t.targetId === "T1")!;
     expect(t1.frameCount).toBe(2);
-    expect(t1.sizeBytes).toBe(300 + Buffer.byteLength(JSON.stringify(frame(1, 1000, "https://a.com")) + "\n" + JSON.stringify(frame(2, 1200, "https://a.com/page"))));
+    expect(t1.sizeBytes).toBe(300);
     expect(t1.firstUrl).toBe("https://a.com");
     expect(t1.lastUrl).toBe("https://a.com/page");
   });
@@ -166,29 +185,32 @@ describe("ReplayStore.get", () => {
   });
 });
 
-describe("ReplayStore.framePath + readManifest", () => {
-  it("zero-pads frame numbers to 6 digits", () => {
-    const p = store.framePath("s1", "T1", 42);
-    expect(p.endsWith("000042.png")).toBe(true);
+describe("ReplayStore.readManifest + readFrame", () => {
+  it("returns null when the manifest doesn't exist yet", () => {
+    expect(store.readManifest("nope")).toBeNull();
   });
 
-  it("parses manifest.jsonl line-by-line", () => {
+  it("readFrame extracts a single frame from a chunk part", () => {
+    const payload = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     seedSession({
       id: "s1",
       startedAt: 1000,
-      endedAt: 1500,
-      targets: [
-        { id: "T1", frames: [frame(1, 1000), frame(2, 1200), frame(3, 1400)] },
-      ],
+      endedAt: 2000,
+      targets: [{ id: "T1", frames: [{ ts: 1000, url: "https://example.com", payload }] }],
     });
-    const records = store.readManifest("s1", "T1");
-    expect(records).toHaveLength(3);
-    expect(records[0].frame).toBe(1);
-    expect(records[2].ts).toBe(1400);
+    const frame = store.readFrame("s1", 1);
+    expect(frame).not.toBeNull();
+    expect(Buffer.from(frame!)).toEqual(payload);
   });
 
-  it("returns [] when the manifest doesn't exist yet", () => {
-    expect(store.readManifest("nope", "T1")).toEqual([]);
+  it("readFrame returns null for a missing frame number", () => {
+    seedSession({ id: "s1", startedAt: 1000, endedAt: 2000 });
+    expect(store.readFrame("s1", 99)).toBeNull();
+  });
+
+  it("partPath produces zero-padded 3-digit names", () => {
+    expect(store.partPath("s1", 0).endsWith("000.bin")).toBe(true);
+    expect(store.partPath("s1", 42).endsWith("042.bin")).toBe(true);
   });
 });
 
@@ -211,10 +233,9 @@ describe("ReplayStore.sessionSizeBytes", () => {
       id: "s1",
       startedAt: 1000,
       endedAt: 2000,
-      targets: [{ id: "T1", frames: [frame(1, 1000), frame(2, 1100)], framePayloads: [400, 600] }],
+      targets: [{ id: "T1", frames: [{ ts: 1000, url: "https://example.com", payload: Buffer.alloc(400) }] }],
     });
-    const total = store.sessionSizeBytes("s1");
-    expect(total).toBeGreaterThanOrEqual(1000); // 400 + 600 PNG + meta + manifest
+    expect(store.sessionSizeBytes("s1")).toBeGreaterThan(400);
   });
 
   it("returns 0 for unknown sessions", () => {
