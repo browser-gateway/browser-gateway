@@ -116,7 +116,34 @@ export class LiveClient {
     });
   }
 
-  private async handleBinaryFrame(buffer: ArrayBuffer): Promise<void> {
+  private isProcessingFrame = false;
+  private pendingFrameBuffer: ArrayBuffer | null = null;
+  private pendingFrameDropped = 0;
+
+  private handleBinaryFrame(buffer: ArrayBuffer): void {
+    if (this.isProcessingFrame) {
+      if (this.pendingFrameBuffer) this.pendingFrameDropped++;
+      this.pendingFrameBuffer = buffer;
+      return;
+    }
+    this.isProcessingFrame = true;
+    void this.drainFrames(buffer);
+  }
+
+  private async drainFrames(first: ArrayBuffer): Promise<void> {
+    try {
+      await this.decodeAndDeliver(first);
+      while (this.pendingFrameBuffer) {
+        const next = this.pendingFrameBuffer;
+        this.pendingFrameBuffer = null;
+        await this.decodeAndDeliver(next);
+      }
+    } finally {
+      this.isProcessingFrame = false;
+    }
+  }
+
+  private async decodeAndDeliver(buffer: ArrayBuffer): Promise<void> {
     try {
       const blob = new Blob([buffer], { type: "image/jpeg" });
       const bitmap = await createImageBitmap(blob);
