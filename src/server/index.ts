@@ -280,6 +280,8 @@ async function startServer() {
     reconnectRegistry,
     profileBootstrap.enabled ? profileBootstrap.lifecycle : undefined,
     replayController,
+    undefined,
+    { storePath: replayStorePath, replayConfig: config.replay },
   );
 
   const activeSockets = new Map<string, { client: Duplex; provider: Duplex }>();

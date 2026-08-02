@@ -399,6 +399,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface ReplayControllerOpts` (line 6)
 - **class** `class ReplayController` (line 13)
+### `src/server/replay/node-storage.ts`
+
+- **class** `class NodeReplayStorage` (line 11) — Node fs impl of ReplayStorage. Layout matches `ReplayStore` reader:
 ### `src/server/replay/retention.ts`
 
 - **interface** `interface ReplayRetentionOpts` (line 5)
@@ -510,12 +513,18 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
   | { kind: "validation-error"; errors: string[] }
   | { kind: "ok"; data: GatewayConfig }
 >` (line 74) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
+### `src/server/ws/pipeline-relay.ts`
+
+- **interface** `interface PipelineRelayOpts` (line 16)
+- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<boolean>` (line 34) — Handles a `/v1/connect?session_record=true` upgrade by upgrading the
+- **fn** `newPipelineSessionId() → string` (line 132) — Generate a fresh session id for a pipeline session.
 ### `src/server/ws/probe.ts`
 
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController, transport: RelayTransport = new NodeTcpPipeTransport()) → unknown` (line 103)
+- **interface** `interface PipelineReplayContext` (line 105)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 110)
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 

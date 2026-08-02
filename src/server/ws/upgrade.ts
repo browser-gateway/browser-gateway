@@ -25,6 +25,8 @@ import { createLiveUpgradeHandler } from "../live/upgrade.js";
 import { getEffectiveProtocolNode } from "../util/request.js";
 import { parseAllowedOrigins } from "../util/request.js";
 import type { ReplayController } from "../replay/controller.js";
+import type { ReplayConfig } from "../../core/types.js";
+import { handlePipelineRelay } from "./pipeline-relay.js";
 
 /** How long to wait for a held profile lock to release before returning 409. */
 const PROFILE_LOCK_WAIT_MS = 15_000;
@@ -100,6 +102,11 @@ const HTTP_STATUS_TEXT: Record<number, string> = {
   503: "Service Unavailable",
 };
 
+export interface PipelineReplayContext {
+  storePath: string;
+  replayConfig: ReplayConfig;
+}
+
 export function createWebSocketHandler(
   gateway: Gateway,
   logger: Logger,
@@ -108,6 +115,7 @@ export function createWebSocketHandler(
   profileLifecycle?: ProfileLifecycle,
   replayController?: ReplayController,
   transport: RelayTransport = new NodeTcpPipeTransport(),
+  pipelineReplay?: PipelineReplayContext,
 ) {
 
   const liveHandler = createLiveUpgradeHandler({ gateway, logger, token, profileLifecycle, replayController });
@@ -152,6 +160,8 @@ export function createWebSocketHandler(
       socket.destroy();
       return;
     }
+
+    const sessionRecord = url.searchParams.get("session_record") === "true";
 
     // Profile acquisition — lock + decrypt happen BEFORE provider selection so we
     // fail-fast on contention. Inject happens after we have a wsUrl.
@@ -283,6 +293,8 @@ export function createWebSocketHandler(
       return;
     }
 
+    const usePipelineReplay = sessionRecord && !acquired && pipelineReplay !== undefined;
+
     const tryConnect = async (): Promise<boolean> => {
       const candidates = gateway.selectProviderWithFallbacks(targetProviderId, profileId);
 
@@ -296,10 +308,17 @@ export function createWebSocketHandler(
           continue;
         }
 
-        const connected = await pipeToProvider(
-          gateway, logger, transport, socket, head, req, sessionId, provider, reconnectRegistry,
-          profileLifecycle, acquired, replayController,
-        );
+        const connected = usePipelineReplay
+          ? await handlePipelineRelay({
+              gateway, logger, req, socket, head, provider, sessionId,
+              storePath: pipelineReplay!.storePath,
+              replayConfig: pipelineReplay!.replayConfig,
+              reconnectRegistry,
+            })
+          : await pipeToProvider(
+              gateway, logger, transport, socket, head, req, sessionId, provider, reconnectRegistry,
+              profileLifecycle, acquired, replayController,
+            );
 
         if (connected) {
           acquired = null;
