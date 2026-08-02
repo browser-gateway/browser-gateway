@@ -44,12 +44,22 @@ logging:
 
   gatewayProcess = spawn("npx", ["tsx", "src/server/index.ts", "serve", "--config", CONFIG_PATH], {
     cwd: process.cwd(),
-    stdio: "pipe",
+    stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, BG_TOKEN: "" },
   });
+  const bootErrors: string[] = [];
+  gatewayProcess.stderr?.on("data", (b) => bootErrors.push(String(b)));
 
-  await sleep(3000);
-}, 15000);
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    try {
+      const r = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
+      if (r.ok) return;
+    } catch { /* not ready */ }
+    await sleep(200);
+  }
+  throw new Error(`gateway did not boot within 15s. stderr: ${bootErrors.join("").slice(-2000)}`);
+}, 20000);
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
