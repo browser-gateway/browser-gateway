@@ -5,6 +5,7 @@
 export interface PendingCall {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
+  timer?: ReturnType<typeof setTimeout>;
 }
 
 /** Given a decoded CDP message and a pending-call map, dispatch a response and
@@ -18,6 +19,7 @@ export function dispatchCdpResponse(
   const call = pending.get(msg.id);
   if (!call) return true;
   pending.delete(msg.id);
+  if (call.timer) clearTimeout(call.timer);
   if (msg.error) {
     call.reject(new Error(`CDP error: ${msg.error.message}`));
   } else {

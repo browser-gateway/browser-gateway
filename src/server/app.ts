@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
 import { timingSafeEqual, createHmac, randomBytes } from "node:crypto";
@@ -297,12 +297,18 @@ export function createApp(
     return c.json({ webhooks });
   });
 
-  app.post("/v1/webhooks", async (c) => {
+  const readWebhookBody = async (c: Context) => {
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const parsed = parseWebhookBody(body);
-    if (parsed.errors) {
-      return c.json({ error: "Invalid webhook", details: parsed.errors }, 400);
-    }
+    return parseWebhookBody(body);
+  };
+  const resolveWebhookIndex = (raw: string): number | null => {
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 0 && n < gateway.config.webhooks.length ? n : null;
+  };
+
+  app.post("/v1/webhooks", async (c) => {
+    const parsed = await readWebhookBody(c);
+    if (parsed.errors) return c.json({ error: "Invalid webhook", details: parsed.errors }, 400);
     gateway.config.webhooks.push(parsed.data);
     const failed = persistConfigOrRollback(gateway.config, () => gateway.config.webhooks.pop());
     if (failed) return c.json(failed, 500);
@@ -310,15 +316,10 @@ export function createApp(
   });
 
   app.put("/v1/webhooks/:index", async (c) => {
-    const index = Number(c.req.param("index"));
-    if (!Number.isInteger(index) || index < 0 || index >= gateway.config.webhooks.length) {
-      return c.json({ error: "Webhook not found" }, 404);
-    }
-    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const parsed = parseWebhookBody(body);
-    if (parsed.errors) {
-      return c.json({ error: "Invalid webhook", details: parsed.errors }, 400);
-    }
+    const index = resolveWebhookIndex(c.req.param("index"));
+    if (index === null) return c.json({ error: "Webhook not found" }, 404);
+    const parsed = await readWebhookBody(c);
+    if (parsed.errors) return c.json({ error: "Invalid webhook", details: parsed.errors }, 400);
     const previous = gateway.config.webhooks[index];
     gateway.config.webhooks[index] = parsed.data;
     const failed = persistConfigOrRollback(gateway.config, () => { gateway.config.webhooks[index] = previous; });
@@ -327,10 +328,8 @@ export function createApp(
   });
 
   app.delete("/v1/webhooks/:index", (c) => {
-    const index = Number(c.req.param("index"));
-    if (!Number.isInteger(index) || index < 0 || index >= gateway.config.webhooks.length) {
-      return c.json({ error: "Webhook not found" }, 404);
-    }
+    const index = resolveWebhookIndex(c.req.param("index"));
+    if (index === null) return c.json({ error: "Webhook not found" }, 404);
     const [removed] = gateway.config.webhooks.splice(index, 1);
     const failed = persistConfigOrRollback(gateway.config, () => gateway.config.webhooks.splice(index, 0, removed));
     if (failed) return c.json(failed, 500);

@@ -84,3 +84,19 @@ describe("WsCDPClient.close — pending send rejection (H2 fix)", () => {
     expect(closeMs).toBeLessThan(2_500);
   }, 10_000);
 });
+
+describe("WsCDPClient.sendOn — per-command timeout", () => {
+  it("rejects when the peer never responds, within the configured timeout window", async () => {
+    const client = new WsCDPClient({ commandTimeoutMs: 300 });
+    await client.connect(srv.url, 2_000);
+
+    const t0 = Date.now();
+    await expect(client.send("Target.createTarget", { url: "about:blank" })).rejects.toThrow(
+      /CDP command timeout after 300ms: Target.createTarget/,
+    );
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(280);
+    expect(Date.now() - t0).toBeLessThan(700);
+
+    await client.close();
+  }, 5_000);
+});

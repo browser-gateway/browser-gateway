@@ -100,9 +100,9 @@ export class Pipeline {
    *  each plugin's `onSessionEnd` (with per-plugin timeout) before
    *  resolving. */
   async run(): Promise<PipelineResult> {
-    await this.startPlugins();
     this.attachSocketListeners();
     this.startTimers();
+    await this.startPlugins();
     const result = await new Promise<PipelineResult>((resolve) => {
       this.resolveResult = resolve;
     });

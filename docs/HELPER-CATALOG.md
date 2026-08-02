@@ -16,7 +16,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/cdp/dispatch.ts`
 
 - **interface** `interface PendingCall` (line 5) — Pure CDP response dispatch — shared between `WsCDPClient` (Node ws) and
-- **fn** `dispatchCdpResponse(msg: { id?: unknown; error?: { message: string }; result?: unknown }, pending: Map<number, PendingCall>) → boolean` (line 13) — Given a decoded CDP message and a pending-call map, dispatch a response and
+- **fn** `dispatchCdpResponse(msg: { id?: unknown; error?: { message: string }; result?: unknown }, pending: Map<number, PendingCall>) → boolean` (line 14) — Given a decoded CDP message and a pending-call map, dispatch a response and
 ### `src/core/cdp/protocol.ts`
 
 - **interface** `interface CdpTransport` (line 3) — Pure CDP protocol layer — request/response matching + event emission over a pluggable transport. Isomorphic.
@@ -79,7 +79,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `captureState(cdp: CDPClient, opts: CaptureOptions = {}) → Promise<CapturedProfile>` (line 58) — Capture browser state from a CDP session for cross-session replay.
 ### `src/core/profile/cdp-client.ts`
 
-- **class** `class WsCDPClient` (line 27) — Minimal raw-CDP client over a single WebSocket.
+- **class** `class WsCDPClient` (line 24) — Minimal raw-CDP client over a single WebSocket.
 ### `src/core/profile/cdp-event-base.ts`
 
 - **fn** `assertCdpConnected(ws: WebSocket | null) → asserts ws is WebSocket` (line 9) — Assert that a WebSocket is open. Used by every CDP send() implementation —

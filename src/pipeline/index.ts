@@ -14,3 +14,8 @@ export type {
   PipelineResult,
   PipelineLogEvent,
 } from "./types.js";
+export { ScreencastCapturePlugin } from "./plugins/screencast-capture.js";
+export type {
+  ReplayStorage,
+  ScreencastCapturePluginOpts,
+} from "./plugins/screencast-capture.js";

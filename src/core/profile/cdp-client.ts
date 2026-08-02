@@ -1,7 +1,7 @@
 import WebSocket from "ws";
 import type { CDPClient } from "./cdp.js";
 import { TypedCdpEventEmitter, assertCdpConnected } from "./cdp-event-base.js";
-import { dispatchCdpResponse } from "../cdp/dispatch.js";
+import { dispatchCdpResponse, type PendingCall } from "../cdp/dispatch.js";
 
 interface CDPMessage {
   id?: number;
@@ -12,10 +12,7 @@ interface CDPMessage {
   error?: { code: number; message: string; data?: unknown };
 }
 
-interface PendingCall {
-  resolve: (value: unknown) => void;
-  reject: (reason: Error) => void;
-}
+const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 
 /**
  * Minimal raw-CDP client over a single WebSocket.
@@ -29,6 +26,12 @@ export class WsCDPClient extends TypedCdpEventEmitter implements CDPClient {
   private nextId = 1;
   private readonly pending = new Map<number, PendingCall>();
   private closeError: Error | null = null;
+  private readonly commandTimeoutMs: number;
+
+  constructor(opts: { commandTimeoutMs?: number } = {}) {
+    super();
+    this.commandTimeoutMs = opts.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+  }
 
   async connect(wsUrl: string, timeoutMs = 10_000): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -82,11 +85,21 @@ export class WsCDPClient extends TypedCdpEventEmitter implements CDPClient {
     const envelope: Record<string, unknown> = { id, method, params };
     if (sessionId) envelope.sessionId = sessionId;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        const pending = this.pending.get(id);
+        if (!pending) return;
+        this.pending.delete(id);
+        pending.reject(new Error(`CDP command timeout after ${this.commandTimeoutMs}ms: ${method}`));
+      }, this.commandTimeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
       this.ws!.send(JSON.stringify(envelope), (err) => {
         if (err) {
-          this.pending.delete(id);
-          reject(err);
+          const pending = this.pending.get(id);
+          if (pending) {
+            clearTimeout(pending.timer);
+            this.pending.delete(id);
+            reject(err);
+          }
         }
       });
     });
@@ -150,6 +163,7 @@ export class WsCDPClient extends TypedCdpEventEmitter implements CDPClient {
 
   private rejectAllPending(err: Error): void {
     for (const call of this.pending.values()) {
+      clearTimeout(call.timer);
       call.reject(err);
     }
     this.pending.clear();

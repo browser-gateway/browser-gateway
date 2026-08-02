@@ -79,7 +79,7 @@ if (command === "version" || args.includes("--version") || args.includes("-v")) 
 
 if (command === "help" || args.includes("--help") || args.includes("-h")) {
   console.log(`
-browser-gateway - Reliable, scalable browser infrastructure for AI agents and automation
+browser-gateway - OpenRouter for browsers.
 
 Usage:
   browser-gateway serve [options]    Start the gateway server
