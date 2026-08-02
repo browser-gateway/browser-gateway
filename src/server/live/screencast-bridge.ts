@@ -24,6 +24,9 @@ export interface BridgeOptions {
   deviceScaleFactor?: number;
   /** Drop frame if dashboard buffered bytes exceeds this. Default 1 MB. */
   dropThresholdBytes?: number;
+  /** Hard session-duration cap. When set, session terminates after this many
+   *  seconds regardless of activity. 0 or undefined disables. */
+  keepAliveSeconds?: number;
   logger: Logger;
 }
 
@@ -35,7 +38,13 @@ const DEFAULT_OPTS = {
   everyNthFrame: 2,
   deviceScaleFactor: 1,
   dropThresholdBytes: 1_000_000,
+  keepAliveSeconds: 0,
 };
+
+const SAME_TAB_SCRIPT =
+  "(()=>{document.addEventListener('click',e=>{const a=e.target&&e.target.closest&&e.target.closest('a[target=\"_blank\"]');if(a)a.target='_self';},true);" +
+  "document.addEventListener('submit',e=>{const f=e.target;if(f&&f.target&&String(f.target).toLowerCase()==='_blank')f.target='_self';},true);" +
+  "try{window.open=(u)=>{if(u)location.href=String(u);return null;};}catch(_){}})();";
 
 interface ScreencastFrameParams {
   data: string;
@@ -61,6 +70,8 @@ export class ScreencastBridge {
   private framesDropped = 0;
   private closed = false;
   private cleanupFns: Array<() => void> = [];
+  private expireTimer: NodeJS.Timeout | null = null;
+  private warnTimer: NodeJS.Timeout | null = null;
 
   constructor(opts: BridgeOptions) {
     this.opts = {
@@ -72,6 +83,7 @@ export class ScreencastBridge {
       everyNthFrame: opts.everyNthFrame ?? DEFAULT_OPTS.everyNthFrame,
       deviceScaleFactor: opts.deviceScaleFactor ?? DEFAULT_OPTS.deviceScaleFactor,
       dropThresholdBytes: opts.dropThresholdBytes ?? DEFAULT_OPTS.dropThresholdBytes,
+      keepAliveSeconds: opts.keepAliveSeconds ?? DEFAULT_OPTS.keepAliveSeconds,
       logger: opts.logger,
     };
     this.cdp = new CdpClient();
@@ -105,6 +117,14 @@ export class ScreencastBridge {
     await this.cdp.send("Page.enable", {}, this.attachSessionId);
     await this.cdp.send("Storage.clearCookies", {}).catch(() => undefined);
 
+    await this.cdp
+      .send(
+        "Page.addScriptToEvaluateOnNewDocument",
+        { source: SAME_TAB_SCRIPT },
+        this.attachSessionId,
+      )
+      .catch(() => undefined);
+
     // must run before Page.startScreencast — puppeteer/puppeteer#10527
     await this.cdp.send(
       "Page.setDeviceMetricsOverride",
@@ -137,6 +157,28 @@ export class ScreencastBridge {
       this.close();
     });
     this.cleanupFns.push(offClose);
+
+    if (this.opts.keepAliveSeconds > 0) {
+      this.startKeepAliveTimers(this.opts.keepAliveSeconds);
+    }
+  }
+
+  private startKeepAliveTimers(seconds: number): void {
+    const totalMs = seconds * 1000;
+    const warnAtMs = Math.max(0, totalMs - 30_000);
+    if (warnAtMs > 0) {
+      this.warnTimer = setTimeout(() => {
+        this.sendControlMessage({ type: "expiring", secondsRemaining: 30 });
+      }, warnAtMs);
+    }
+    this.expireTimer = setTimeout(() => {
+      this.sendControlMessage({ type: "expired" });
+      this.opts.logger.info(
+        { targetId: this.targetId, keepAliveSeconds: seconds },
+        "live: keep-alive expired, closing session",
+      );
+      this.close();
+    }, totalMs);
   }
 
   /** Attaches the dashboard WebSocket for bidirectional traffic. */
@@ -355,6 +397,9 @@ export class ScreencastBridge {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+
+    if (this.expireTimer) { clearTimeout(this.expireTimer); this.expireTimer = null; }
+    if (this.warnTimer) { clearTimeout(this.warnTimer); this.warnTimer = null; }
 
     for (const fn of this.cleanupFns) {
       try { fn(); } catch {}

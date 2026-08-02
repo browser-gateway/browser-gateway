@@ -70,7 +70,21 @@ export interface ServerErrorMessage {
   message: string;
 }
 
+/** Server→client warning that the keep-alive timer is about to expire. */
+export interface ServerExpiringMessage {
+  type: "expiring";
+  secondsRemaining: number;
+}
+
+/** Server→client notification that the keep-alive timer has expired. Session
+ *  is closed immediately after this message. */
+export interface ServerExpiredMessage {
+  type: "expired";
+}
+
 export type ServerControlMessage =
   | ServerFrameMetaMessage
   | ServerUrlMessage
-  | ServerErrorMessage;
+  | ServerErrorMessage
+  | ServerExpiringMessage
+  | ServerExpiredMessage;

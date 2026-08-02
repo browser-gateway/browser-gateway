@@ -17,10 +17,10 @@
  *   - No automatic reconnect — user clicks Reconnect manually
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Loader2, Pause, Play, RefreshCw } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { ArrowLeft, ArrowRight, Loader2, Maximize2, Minimize2, Pause, Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, type SelectOption } from "@/components/ui/select";
 import { fetchProfiles, fetchProviders, type ProfileMetaItem, type ProviderConfigItem } from "@/lib/api";
 import { LiveClient, eventModifiers, mouseButton, type FrameMeta } from "@/lib/live-client";
 import { useAuthEnabled, useGatewayToken } from "@/components/token-autofill";
@@ -29,6 +29,17 @@ import { NavGuard } from "@/components/nav-guard";
 type Status = "idle" | "connecting" | "live" | "error" | "closed";
 
 const DEFAULT_VIEWPORT = { width: 1280, height: 720 };
+const KEEP_ALIVE_OPTIONS: SelectOption[] = Array.from({ length: 20 }, (_, i) => {
+  const min = i + 1;
+  return { value: String(min * 60), label: `${min} min` };
+});
+const DEFAULT_KEEP_ALIVE_SECONDS = 300;
+
+function formatMinutesLeft(seconds: number): string {
+  if (seconds <= 60) return "<1 min left";
+  const mins = Math.ceil(seconds / 60);
+  return `${mins} min left`;
+}
 
 export default function PlaygroundPage() {
   const [providers, setProviders] = useState<ProviderConfigItem[] | null>(null);
@@ -36,6 +47,8 @@ export default function PlaygroundPage() {
   const [profilesEnabled, setProfilesEnabled] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [selectedProfile, setSelectedProfile] = useState<string>("");
+  const [keepAliveSeconds, setKeepAliveSeconds] = useState<number>(DEFAULT_KEEP_ALIVE_SECONDS);
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [statusMsg, setStatusMsg] = useState<string>("");
   const [urlInput, setUrlInput] = useState<string>("https://example.com");
@@ -55,8 +68,60 @@ export default function PlaygroundPage() {
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const clientRef = useRef<LiveClient | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    let pending: ReturnType<typeof setTimeout> | null = null;
+    let lastW = 0;
+    let lastH = 0;
+    const sync = () => {
+      const w = Math.max(320, Math.floor(el.clientWidth));
+      const h = Math.max(240, Math.floor(el.clientHeight));
+      if (w === lastW && h === lastH) return;
+      lastW = w;
+      lastH = h;
+      if (clientRef.current?.isOpen()) clientRef.current.setViewport(w, h);
+    };
+    const schedule = () => {
+      if (pending) clearTimeout(pending);
+      pending = setTimeout(sync, 250);
+    };
+    schedule();
+    const ro = new ResizeObserver(schedule);
+    ro.observe(el);
+    window.addEventListener("resize", schedule);
+    return () => {
+      if (pending) clearTimeout(pending);
+      ro.disconnect();
+      window.removeEventListener("resize", schedule);
+    };
+  }, [status]);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    if (status !== "live") {
+      setRemainingSeconds(null);
+      return;
+    }
+    setRemainingSeconds(keepAliveSeconds);
+    const tick = setInterval(() => {
+      setRemainingSeconds((prev) => (prev === null ? null : Math.max(0, prev - 15)));
+    }, 15000);
+    return () => clearInterval(tick);
+  }, [status, keepAliveSeconds]);
   const authEnabled = useAuthEnabled();
   const realToken = useGatewayToken();
 
@@ -111,6 +176,13 @@ export default function PlaygroundPage() {
         setStatus("error");
         setStatusMsg(`${code}: ${message}`);
       },
+      onExpiring: (secondsRemaining) => {
+        setStatusMsg(`Session ends in ${secondsRemaining}s.`);
+      },
+      onExpired: () => {
+        setStatus("closed");
+        setStatusMsg("Session ended after keep-alive limit.");
+      },
       onUrl: (url) => {
         // Sync the address bar with the actual page URL unless the user is
         // actively editing (input != the last URL we set).
@@ -142,9 +214,10 @@ export default function PlaygroundPage() {
       token: authEnabled ? realToken : null,
       maxWidth: DEFAULT_VIEWPORT.width,
       maxHeight: DEFAULT_VIEWPORT.height,
+      keepAliveSeconds,
     });
     clientRef.current = client;
-  }, [selectedProvider, selectedProfile, authEnabled, realToken, urlInput]);
+  }, [selectedProvider, selectedProfile, authEnabled, realToken, urlInput, keepAliveSeconds]);
 
   const handleStop = useCallback(() => {
     clientRef.current?.close();
@@ -373,59 +446,78 @@ export default function PlaygroundPage() {
 
   const providerOptions = useMemo(() => providers ?? [], [providers]);
   const profileOptions = useMemo(() => profiles ?? [], [profiles]);
+  const providerSelectOptions = useMemo<SelectOption[]>(
+    () => providerOptions.map((p) => ({ value: p.id, label: p.id })),
+    [providerOptions],
+  );
+  const profileSelectOptions = useMemo<SelectOption[]>(
+    () => [{ value: "", label: "(no profile)" }, ...profileOptions.map((p) => ({ value: p.id, label: p.id }))],
+    [profileOptions],
+  );
+
+  const rootClass = isFullscreen
+    ? "fixed inset-0 z-50 bg-background flex flex-col p-4 gap-4"
+    : "flex flex-col h-[calc(100dvh-6rem)] min-h-[28rem] gap-6";
 
   return (
-    <div className="space-y-6">
+    <div className={rootClass}>
       <NavGuard
         active={status === "live" || status === "connecting"}
         message="A live browser session is open. Leaving this page will end it. Continue?"
       />
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Playground</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Live remote browser view. Pick a provider, click Start, then click and type into the canvas as if it were a local browser.
-        </p>
-      </div>
+      {!isFullscreen && (
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Playground</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Live remote browser view. Pick a provider, click Start, then click and type into the canvas as if it were a local browser.
+          </p>
+        </div>
+      )}
 
-      <Card className="border-border/40">
-        <CardContent className="px-5 py-4 space-y-4">
-          {/* Top control bar: provider + profile + status + start/stop */}
+      <div className="flex-1 min-h-0 flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <label className="text-[12px] font-medium text-foreground/80 shrink-0">Provider</label>
-              <select
+            {providerSelectOptions.length > 0 ? (
+              <Select
+                label="Provider"
                 value={selectedProvider}
-                onChange={(e) => setSelectedProvider(e.target.value)}
+                options={providerSelectOptions}
+                onChange={setSelectedProvider}
                 disabled={status === "live" || status === "connecting"}
-                className="bg-muted/30 border border-border/40 rounded h-10 px-3.5 text-[13px] font-mono focus:outline-none focus:ring-1 focus:ring-foreground/40 disabled:opacity-50"
-              >
-                {providerOptions.length === 0 && <option value="">(no providers)</option>}
-                {providerOptions.map((p) => (
-                  <option key={p.id} value={p.id}>{p.id}</option>
-                ))}
-              </select>
-            </div>
-
-            {profilesEnabled && (
-              <div className="flex items-center gap-2">
-                <label className="text-[12px] font-medium text-foreground/80 shrink-0">Profile</label>
-                <select
-                  value={selectedProfile}
-                  onChange={(e) => setSelectedProfile(e.target.value)}
-                  disabled={status === "live" || status === "connecting"}
-                  className="bg-muted/30 border border-border/40 rounded h-10 px-3.5 text-[13px] font-mono focus:outline-none focus:ring-1 focus:ring-foreground/40 disabled:opacity-50"
-                >
-                  <option value="">(no profile)</option>
-                  {profileOptions.map((p) => (
-                    <option key={p.id} value={p.id}>{p.id}</option>
-                  ))}
-                </select>
-              </div>
+              />
+            ) : (
+              <span className="text-[12px] text-muted-foreground">No providers configured.</span>
             )}
 
-            <StatusBadge status={status} message={statusMsg} />
+            {profilesEnabled && (
+              <Select
+                label="Profile"
+                value={selectedProfile}
+                options={profileSelectOptions}
+                onChange={setSelectedProfile}
+                disabled={status === "live" || status === "connecting"}
+              />
+            )}
+
+            <Select
+              label="Duration"
+              value={String(keepAliveSeconds)}
+              options={KEEP_ALIVE_OPTIONS}
+              onChange={(v) => setKeepAliveSeconds(Number(v))}
+              disabled={status === "live" || status === "connecting"}
+              width="min-w-[8rem]"
+            />
+
+            <StatusBadge status={status} message={statusMsg} remainingSeconds={remainingSeconds} />
 
             <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setIsFullscreen((v) => !v)}
+                title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+              >
+                {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+              </Button>
               {status === "live" || status === "connecting" ? (
                 <Button variant="outline" onClick={handleStop} size="sm">
                   <Pause className="size-3.5 mr-1.5" />
@@ -467,14 +559,9 @@ export default function PlaygroundPage() {
             </div>
           )}
 
-          {/*
-            Canvas wrapper. Stacks the screencast canvas + the cursor overlay so
-            the cursor draws on top without affecting input. `overscroll-contain`
-            prevents wheel scroll inside the canvas from chaining out to the
-            page. `touch-none` blocks touch-scroll on mobile/trackpads.
-          */}
           <div
-            className="relative rounded-lg border border-border/40 bg-black/40 overflow-hidden"
+            ref={containerRef}
+            className="flex-1 min-h-0 relative rounded-lg border border-border/40 bg-black/40 overflow-hidden"
             style={{ overscrollBehavior: "contain", touchAction: "none" }}
           >
             <canvas
@@ -490,15 +577,13 @@ export default function PlaygroundPage() {
               onKeyDown={onCanvasKeyDown}
               onKeyUp={onCanvasKeyUp}
               onPaste={onCanvasPaste}
-              className="w-full block bg-black focus:outline-none"
-              style={{ aspectRatio: `${meta.deviceWidth} / ${meta.deviceHeight}` }}
+              className="absolute inset-0 w-full h-full block bg-black focus:outline-none"
             />
             <canvas
               ref={overlayRef}
               width={DEFAULT_VIEWPORT.width}
               height={DEFAULT_VIEWPORT.height}
               className="absolute inset-0 w-full h-full pointer-events-none"
-              style={{ aspectRatio: `${meta.deviceWidth} / ${meta.deviceHeight}` }}
             />
           </div>
 
@@ -507,13 +592,20 @@ export default function PlaygroundPage() {
               Click <em className="not-italic font-medium text-foreground">Start</em> to open a live browser on the selected provider. Click into the canvas to focus it before typing.
             </p>
           )}
-        </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }
 
-function StatusBadge({ status, message }: { status: Status; message: string }) {
+function StatusBadge({
+  status,
+  message,
+  remainingSeconds,
+}: {
+  status: Status;
+  message: string;
+  remainingSeconds: number | null;
+}) {
   const labelMap: Record<Status, string> = {
     idle: "Not connected",
     connecting: "Connecting",
@@ -532,6 +624,11 @@ function StatusBadge({ status, message }: { status: Status; message: string }) {
         }`}
       />
       <span className="text-foreground">{labelMap[status]}</span>
+      {status === "live" && remainingSeconds !== null && (
+        <span className="text-[11px] text-muted-foreground rounded-full border border-border/40 bg-muted/30 px-2 py-0.5">
+          {formatMinutesLeft(remainingSeconds)}
+        </span>
+      )}
       {status === "connecting" && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
       {message && (
         <span className="text-muted-foreground font-mono text-[11px]" title={message}>

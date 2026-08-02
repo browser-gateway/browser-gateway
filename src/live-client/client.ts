@@ -30,6 +30,11 @@ export interface LiveClientEvents {
   onError: (code: string, message: string) => void;
   onClose: (info: { code: number; reason: string }) => void;
   onOpen: () => void;
+  /** Fired when the server signals the keep-alive window is about to expire.
+   *  Optional; hosts that don't opt in to `keepAliveSeconds` can ignore it. */
+  onExpiring?: (secondsRemaining: number) => void;
+  /** Fired when the server has hit the keep-alive limit. A close follows. */
+  onExpired?: () => void;
 }
 
 export interface ConnectOpts {
@@ -51,6 +56,10 @@ export interface ConnectOpts {
   maxWidth?: number;
   maxHeight?: number;
   everyNthFrame?: number;
+  /** Hard session-duration cap in seconds. Server clamps to [60, 1200]. Omit
+   *  to disable. When enabled, the server sends `expiring` at T-30s and
+   *  `expired` at T-0, then closes the connection. */
+  keepAliveSeconds?: number;
 }
 
 export class LiveClient {
@@ -83,6 +92,8 @@ export class LiveClient {
     if (opts.maxHeight !== undefined) params.set("maxHeight", String(opts.maxHeight));
     if (opts.everyNthFrame !== undefined)
       params.set("everyNthFrame", String(opts.everyNthFrame));
+    if (opts.keepAliveSeconds !== undefined)
+      params.set("keepAlive", String(opts.keepAliveSeconds));
 
     const url = `${wsBase}/v1/live?${params.toString()}`;
     const ws = new WebSocket(url);
@@ -169,6 +180,7 @@ export class LiveClient {
       url?: string;
       code?: string;
       message?: string;
+      secondsRemaining?: number;
     };
     try {
       msg = JSON.parse(text);
@@ -194,6 +206,14 @@ export class LiveClient {
     }
     if (msg.type === "error") {
       this.listeners.onError(msg.code ?? "UNKNOWN", msg.message ?? "");
+      return;
+    }
+    if (msg.type === "expiring" && typeof msg.secondsRemaining === "number") {
+      this.listeners.onExpiring?.(msg.secondsRemaining);
+      return;
+    }
+    if (msg.type === "expired") {
+      this.listeners.onExpired?.();
       return;
     }
   }

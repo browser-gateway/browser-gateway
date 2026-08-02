@@ -133,10 +133,13 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
     const maxWidth = clampInt(url.searchParams.get("maxWidth"), 320, 3840, 1280);
     const maxHeight = clampInt(url.searchParams.get("maxHeight"), 240, 2160, 720);
     const everyNthFrame = clampInt(url.searchParams.get("everyNthFrame"), 1, 10, 2);
+    const keepAliveRaw = url.searchParams.get("keepAlive");
+    const keepAliveSeconds =
+      keepAliveRaw === null ? 0 : clampInt(keepAliveRaw, 60, 1200, 300);
 
     wss.handleUpgrade(req, socket, head, async (ws) => {
       logger.info(
-        { providerId, profileId, format, quality, maxWidth, maxHeight, everyNthFrame },
+        { providerId, profileId, format, quality, maxWidth, maxHeight, everyNthFrame, keepAliveSeconds },
         "live: dashboard connected",
       );
 
@@ -147,6 +150,7 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         maxWidth,
         maxHeight,
         everyNthFrame,
+        keepAliveSeconds,
         logger,
       });
 

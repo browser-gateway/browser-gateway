@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-07-31
+Generated: 2026-08-02
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -303,7 +303,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/live/screencast-bridge.ts`
 
 - **interface** `interface BridgeOptions` (line 10)
-- **class** `class ScreencastBridge` (line 54)
+- **class** `class ScreencastBridge` (line 63)
 ### `src/server/live/upgrade.ts`
 
 - **interface** `interface CreateLiveHandlerDeps` (line 36)
