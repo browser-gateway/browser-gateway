@@ -140,10 +140,15 @@ describe("ScreencastCapturePlugin", () => {
     }));
     await new Promise((r) => setTimeout(r, 5));
 
-    // Plugin should have sent Page.enable + Page.startScreencast on S1.
+    // Plugin should have sent Page.enable + Page.setDeviceMetricsOverride + Page.startScreencast on S1.
     const armed = parseSent(upstream).filter((m) => m.sessionId === "S1");
     expect(armed.some((m) => m.method === "Page.enable")).toBe(true);
+    expect(armed.some((m) => m.method === "Page.setDeviceMetricsOverride")).toBe(true);
     expect(armed.some((m) => m.method === "Page.startScreencast")).toBe(true);
+    // Order matters: setDeviceMetricsOverride must precede startScreencast (Chromium quirk #10527).
+    const armedMethods = armed.map((m) => m.method);
+    expect(armedMethods.indexOf("Page.setDeviceMetricsOverride"))
+      .toBeLessThan(armedMethods.indexOf("Page.startScreencast"));
 
     // Attach event was NOT filtered from client.
     const clientAttach = parseSent(client).find((m) => m.method === "Target.attachedToTarget");

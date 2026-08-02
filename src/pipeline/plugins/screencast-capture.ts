@@ -43,6 +43,14 @@ export interface ScreencastCapturePluginOpts {
   chunkMaxElapsedMs: number;
   /** Cap on outstanding chunk writes; frames are dropped when exceeded. */
   maxInFlightChunks?: number;
+  /** Viewport width for Page.setDeviceMetricsOverride. Required for
+   *  Page.startScreencast to emit frames on stock Chromium — see
+   *  puppeteer/puppeteer#10527. Defaults to 1280. */
+  viewportWidth?: number;
+  /** Viewport height for Page.setDeviceMetricsOverride. Defaults to 720. */
+  viewportHeight?: number;
+  /** Device scale factor for Page.setDeviceMetricsOverride. Defaults to 1. */
+  deviceScaleFactor?: number;
   logger?: (msg: string, data?: Record<string, unknown>) => void;
 }
 
@@ -189,6 +197,17 @@ export class ScreencastCapturePlugin implements CdpPlugin {
       sizeBytes: 0,
     });
     state.sendInternalOneWay("Page.enable", {}, cdpSessionId);
+    // must run before Page.startScreencast — puppeteer/puppeteer#10527
+    state.sendInternalOneWay(
+      "Page.setDeviceMetricsOverride",
+      {
+        width: this.opts.viewportWidth ?? 1280,
+        height: this.opts.viewportHeight ?? 720,
+        deviceScaleFactor: this.opts.deviceScaleFactor ?? 1,
+        mobile: false,
+      },
+      cdpSessionId,
+    );
     state.sendInternalOneWay(
       "Page.startScreencast",
       {
