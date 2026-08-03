@@ -12,7 +12,7 @@ class FakeSocket implements PipelineSocket {
   readonly sent: Array<string | ArrayBuffer | ArrayBufferView> = [];
   private listeners = new Map<string, Array<(ev: unknown) => void>>();
   bufferedAmount = 0;
-  private closed = false;
+  closed = false;
 
   send(data: string | ArrayBuffer | ArrayBufferView): void {
     if (this.closed) return;
@@ -87,66 +87,52 @@ describe("ProfilePlugin — constructor + eligibility", () => {
   });
 });
 
-describe("ProfilePlugin — onSessionStart", () => {
-  it("throws LOCK_HELD when acquireLock returns null", async () => {
+describe("ProfilePlugin — start()", () => {
+  it("start() fails with LOCK_HELD when acquireLock returns null", async () => {
     const upstream = new FakeSocket();
-    const client = new FakeSocket();
     const storage = new FakeStorage();
     storage.acquireLockResult = null;
 
     const plugin = new ProfilePlugin({ profileId: validId, storage });
-    const p = new Pipeline(client, upstream, "wss://test/", {
+    const p = new Pipeline(upstream, "wss://test/", {
       plugins: [plugin],
       onSessionEndTimeoutMs: 100,
     });
-    const done = p.run();
-    await new Promise((r) => setTimeout(r, 5));
-
-    client.close();
-    await done;
-    // Lock never taken, so no release call recorded.
+    const s = await p.start();
+    expect(s.ok).toBe(false);
+    if (!s.ok) expect(s.plugin).toBe("profile");
     expect(storage.released).toEqual([]);
+    expect(upstream.closed).toBe(true);
   });
 
-  it("propagates decrypt failure as DECRYPT_FAILED and releases the lock", async () => {
+  it("start() fails on decrypt error and releases the lock", async () => {
     const upstream = new FakeSocket();
-    const client = new FakeSocket();
     const storage = new FakeStorage();
     storage.loadThrows = new Error("failed to decrypt profile: HMAC mismatch");
 
     const plugin = new ProfilePlugin({ profileId: validId, storage });
-    const p = new Pipeline(client, upstream, "wss://test/", {
+    const p = new Pipeline(upstream, "wss://test/", {
       plugins: [plugin],
       onSessionEndTimeoutMs: 100,
     });
-    const done = p.run();
-    await new Promise((r) => setTimeout(r, 20));
-
-    // Lock was acquired then released after the failure.
+    const s = await p.start();
+    expect(s.ok).toBe(false);
     expect(storage.released).toEqual([validId]);
-
-    client.close();
-    await done;
   });
 
-  it("propagates unknown DEK version as UNKNOWN_DEK_VERSION", async () => {
+  it("start() fails on unknown DEK version", async () => {
     const upstream = new FakeSocket();
-    const client = new FakeSocket();
     const storage = new FakeStorage();
     storage.loadThrows = new Error("profile blob references DEK version 9 not in key ring");
 
     const plugin = new ProfilePlugin({ profileId: validId, storage });
-    const p = new Pipeline(client, upstream, "wss://test/", {
+    const p = new Pipeline(upstream, "wss://test/", {
       plugins: [plugin],
       onSessionEndTimeoutMs: 100,
     });
-    const done = p.run();
-    await new Promise((r) => setTimeout(r, 20));
-
+    const s = await p.start();
+    expect(s.ok).toBe(false);
     expect(storage.released).toEqual([validId]);
-
-    client.close();
-    await done;
   });
 });
 

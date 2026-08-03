@@ -9,7 +9,7 @@ class FakeSocket implements PipelineSocket {
   readonly sent: Array<string | ArrayBuffer | ArrayBufferView> = [];
   private listeners = new Map<string, Array<(ev: unknown) => void>>();
   bufferedAmount = 0;
-  private closed = false;
+  closed = false;
 
   send(data: string | ArrayBuffer | ArrayBufferView): void {
     if (this.closed) throw new Error("closed");
@@ -42,9 +42,11 @@ function parseSent(s: FakeSocket): CdpMessage[] {
     .filter((x): x is CdpMessage => x !== null);
 }
 
-async function runPipeline(client: FakeSocket, upstream: FakeSocket, plugins: CdpPlugin[]): Promise<Promise<import("../../../src/pipeline/types.js").PipelineResult>> {
-  const p = new Pipeline(client, upstream, "wss://test/", { plugins, onSessionEndTimeoutMs: 100 });
-  return p.run();
+async function runPipeline(client: FakeSocket | null, upstream: FakeSocket, plugins: CdpPlugin[]): Promise<import("../../../src/pipeline/types.js").PipelineResult> {
+  const p = new Pipeline(upstream, "wss://test/", { plugins, onSessionEndTimeoutMs: 100 });
+  const s = await p.start();
+  if (!s.ok) throw new Error(`unexpected start failure: ${s.plugin}`);
+  return p.run(client);
 }
 
 describe("Pipeline", () => {
@@ -205,12 +207,14 @@ describe("Pipeline", () => {
       onCommand: () => { throw new Error("boom"); },
     };
     const errors: string[] = [];
-    const p = new Pipeline(client, upstream, "wss://test/", {
+    const p = new Pipeline(upstream, "wss://test/", {
       plugins: [plugin],
       onSessionEndTimeoutMs: 100,
       logger: (e) => { if (e.kind === "plugin-error") errors.push(String(e.data.err)); },
     });
-    const done = p.run();
+    const s = await p.start();
+    if (!s.ok) throw new Error("unexpected");
+    const done = p.run(client);
     await new Promise((r) => setTimeout(r, 5));
 
     client.receive(jsonMsg({ id: 1, method: "Page.enable" }));
@@ -284,8 +288,10 @@ describe("Pipeline", () => {
       onEvent: (msg) => { events.push(`event:${msg.method}`); },
       onSessionEnd: async () => { events.push("end"); },
     };
-    const p = new Pipeline(null, upstream, "wss://test/", { plugins: [plugin], onSessionEndTimeoutMs: 100 });
-    const done = p.run();
+    const p = new Pipeline(upstream, "wss://test/", { plugins: [plugin], onSessionEndTimeoutMs: 100 });
+    const s = await p.start();
+    if (!s.ok) throw new Error("unexpected");
+    const done = p.run(null);
     await new Promise((r) => setTimeout(r, 5));
 
     expect(events).toContain("start");
@@ -307,8 +313,10 @@ describe("Pipeline", () => {
       name: "solo",
       onEvent: () => { sawEvent = true; },
     };
-    const p = new Pipeline(null, upstream, "wss://test/", { plugins: [plugin], onSessionEndTimeoutMs: 100 });
-    const done = p.run();
+    const p = new Pipeline(upstream, "wss://test/", { plugins: [plugin], onSessionEndTimeoutMs: 100 });
+    const s = await p.start();
+    if (!s.ok) throw new Error("unexpected");
+    const done = p.run(null);
     await new Promise((r) => setTimeout(r, 5));
 
     upstream.receive(jsonMsg({ method: "Page.screencastFrame", params: {} }));

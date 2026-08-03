@@ -1,7 +1,7 @@
 /** CDP-aware pipeline — mux + plugin API for OSS gateway + SaaS router. */
 
 export { Pipeline } from "./pipeline.js";
-export type { PipelineSocket } from "./pipeline.js";
+export type { PipelineSocket, PipelineStartResult } from "./pipeline.js";
 export { InternalIdSpace } from "./id-space.js";
 export { SessionStateImpl } from "./session-state.js";
 export type {
@@ -22,6 +22,7 @@ export type {
 export { ProfilePlugin, ProfilePluginError } from "./plugins/profile.js";
 export type {
   ProfilePluginOpts,
+  ProfilePluginPreloaded,
   ProfilePluginFailureReason,
 } from "./plugins/profile.js";
 export { PluginCdpClient } from "./plugins/profile-cdp-client.js";

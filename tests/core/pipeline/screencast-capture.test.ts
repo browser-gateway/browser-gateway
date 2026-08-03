@@ -11,7 +11,7 @@ class FakeSocket implements PipelineSocket {
   readonly sent: Array<string | ArrayBuffer | ArrayBufferView> = [];
   private listeners = new Map<string, Array<(ev: unknown) => void>>();
   bufferedAmount = 0;
-  private closed = false;
+  closed = false;
   send(data: string | ArrayBuffer | ArrayBufferView): void {
     if (this.closed) throw new Error("closed");
     this.sent.push(data);
@@ -97,8 +97,10 @@ async function driveScreencast(opts: {
     chunkMaxElapsedMs: 60_000,
     maxInFlightChunks: opts.maxInFlightChunks,
   });
-  const pipe = new Pipeline(client, upstream, "wss://test/", { plugins: [plugin], onSessionEndTimeoutMs: 500 });
-  const done = pipe.run();
+  const pipe = new Pipeline(upstream, "wss://test/", { plugins: [plugin], onSessionEndTimeoutMs: 500 });
+  const s = await pipe.start();
+  if (!s.ok) throw new Error(`unexpected start failure: ${s.plugin}`);
+  const done = pipe.run(client);
   await new Promise((r) => setTimeout(r, 5));
   return { client, upstream, plugin, done };
 }

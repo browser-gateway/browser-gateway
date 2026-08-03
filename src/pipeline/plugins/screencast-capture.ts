@@ -111,6 +111,13 @@ export class ScreencastCapturePlugin implements CdpPlugin {
       waitForDebuggerOnStart: false,
       flatten: true,
     });
+    // Don't block startup on Target.getTargets — auto-attach delivers new
+    // target events regardless, and existing targets get picked up when
+    // their attach event fires.
+    void this.probeExistingTargets(state);
+  }
+
+  private async probeExistingTargets(state: SessionState): Promise<void> {
     try {
       const list = await state.sendInternal<{ targetInfos: CdpTargetInfo[] }>("Target.getTargets");
       for (const ti of list.targetInfos ?? []) {

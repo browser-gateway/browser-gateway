@@ -8,10 +8,7 @@ import type { ProviderState } from "../../core/types.js";
 import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
 import { resolveWsUrl } from "../../core/providers/cdp.js";
 import { Pipeline, type PipelineSocket } from "../../pipeline/pipeline.js";
-import { ScreencastCapturePlugin } from "../../pipeline/plugins/screencast-capture.js";
-import { NodeReplayStorage } from "../replay/node-storage.js";
-import { CHUNK_MAX_BYTES, CHUNK_MAX_ELAPSED_MS } from "../replay/constants.js";
-import type { ReplayConfig } from "../../core/types.js";
+import type { CdpPlugin } from "../../pipeline/types.js";
 
 export interface PipelineRelayOpts {
   gateway: Gateway;
@@ -21,18 +18,18 @@ export interface PipelineRelayOpts {
   head: Buffer;
   provider: ProviderState;
   sessionId: string;
-  storePath: string;
-  replayConfig: ReplayConfig;
+  plugins: CdpPlugin[];
   reconnectRegistry?: ReconnectRegistry;
 }
 
-/** Handles a `/v1/connect?session_record=true` upgrade by upgrading the
- *  client to a Node WebSocket, opening a WebSocket to the upstream provider,
- *  and running a CDP-aware pipeline with the `ScreencastCapturePlugin`.
- *  Returns true on success (session ran), false on failure so the caller
- *  can try the next provider. */
+/** Two-phase pipeline handoff for `/v1/connect`:
+ *  1. Open upstream WS and run every plugin's `onSessionStart` (which may
+ *     dispatch inject commands). If any plugin fails, upstream is closed
+ *     and the client socket is NEVER upgraded — the caller retries with
+ *     the next provider.
+ *  2. Upgrade the client, attach it to the pipeline, run the byte relay. */
 export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<boolean> {
-  const { gateway, logger, req, socket, head, provider, sessionId } = opts;
+  const { gateway, logger, req, socket, head, provider, sessionId, plugins } = opts;
 
   let upstreamUrl: string;
   try {
@@ -41,9 +38,11 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<bool
     upstreamUrl = provider.config.url;
   }
 
-  logger.info({ sessionId, providerId: provider.id, mode: "pipeline-replay" }, "connecting to provider");
+  logger.info(
+    { sessionId, providerId: provider.id, plugins: plugins.map((p) => p.name) },
+    "pipeline: connecting to provider",
+  );
 
-  const wss = new WebSocketServer({ noServer: true });
   const upstream = new WebSocket(upstreamUrl, {
     handshakeTimeout: gateway.config.gateway.connectionTimeout,
     perMessageDeflate: false,
@@ -59,10 +58,35 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<bool
   });
   if (!upstreamOpen.ok) {
     logger.warn({ sessionId, providerId: provider.id, error: upstreamOpen.err }, "provider connection failed");
-    try { socket.write("HTTP/1.1 502 Bad Gateway\r\n\r\n"); socket.destroy(); } catch { /* ignore */ }
     return false;
   }
 
+  const pipeline = new Pipeline(
+    upstream as unknown as PipelineSocket,
+    upstreamUrl,
+    {
+      plugins,
+      logger: (event) => {
+        if (event.kind === "plugin-error") {
+          logger.warn({ sessionId, providerId: provider.id, ...event.data }, "pipeline plugin error");
+        }
+      },
+    },
+  );
+
+  // Phase 1 — plugin setup. On failure, upstream is already closed and
+  // the client socket is untouched; caller retries with next provider.
+  const startResult = await pipeline.start();
+  if (!startResult.ok) {
+    logger.warn(
+      { sessionId, providerId: provider.id, plugin: startResult.plugin },
+      "pipeline plugin setup failed, trying next provider",
+    );
+    return false;
+  }
+
+  // Phase 2 — commit. Upgrade client and pump bytes.
+  const wss = new WebSocketServer({ noServer: true });
   const client = await new Promise<WebSocket>((resolve) => {
     wss.handleUpgrade(req, socket, head, (ws) => resolve(ws));
   });
@@ -74,35 +98,7 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<bool
 
   client.on("message", () => gateway.sessions.recordActivity(sessionId));
 
-  const storage = new NodeReplayStorage(opts.storePath);
-  const plugin = new ScreencastCapturePlugin({
-    sessionId,
-    providerId: provider.id,
-    storage,
-    format: opts.replayConfig.capture.format,
-    quality: opts.replayConfig.capture.quality,
-    everyNthFrame: opts.replayConfig.capture.everyNthFrame,
-    maxBytesPerSession: opts.replayConfig.maxBytesPerSession,
-    chunkMaxBytes: CHUNK_MAX_BYTES,
-    chunkMaxElapsedMs: CHUNK_MAX_ELAPSED_MS,
-    logger: (msg, data) => logger.warn(data ?? {}, msg),
-  });
-
-  const pipeline = new Pipeline(
-    client as unknown as PipelineSocket,
-    upstream as unknown as PipelineSocket,
-    upstreamUrl,
-    {
-      plugins: [plugin],
-      logger: (event) => {
-        if (event.kind === "plugin-error") {
-          logger.warn({ sessionId, providerId: provider.id, ...event.data }, "pipeline plugin error");
-        }
-      },
-    },
-  );
-
-  const result = await pipeline.run();
+  const result = await pipeline.run(client as unknown as PipelineSocket);
 
   const durationMs = Date.now() - startTime;
   gateway.sessions.remove(sessionId);

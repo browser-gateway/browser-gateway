@@ -526,16 +526,16 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 >` (line 74) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/pipeline-relay.ts`
 
-- **interface** `interface PipelineRelayOpts` (line 16)
-- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<boolean>` (line 34) — Handles a `/v1/connect?session_record=true` upgrade by upgrading the
-- **fn** `newPipelineSessionId() → string` (line 132) — Generate a fresh session id for a pipeline session.
+- **interface** `interface PipelineRelayOpts` (line 13)
+- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<boolean>` (line 31) — Two-phase pipeline handoff for `/v1/connect`:
+- **fn** `newPipelineSessionId() → string` (line 128) — Generate a fresh session id for a pipeline session.
 ### `src/server/ws/probe.ts`
 
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **interface** `interface PipelineReplayContext` (line 105)
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 110)
+- **interface** `interface PipelineReplayContext` (line 189)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 194)
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 

@@ -261,18 +261,21 @@ describe("D1: provider drops mid-pipe — lock + slot released, no orphans", () 
     provA.state.storedCookies = [{ name: "d1", value: "x", domain: ".t", path: "/", secure: true, httpOnly: false }];
 
     const ws = await openProfile("d1-profile");
-    // Send a CDP message to trigger the provider's drop
+    // Pipeline path fails over to provB during plugin setup (provA drops on
+    // first message = Storage.clearCookies). Client sees a clean session on
+    // provB. Close explicitly + wait for cleanup + commit.
     ws.send(JSON.stringify({ id: 1, method: "Browser.getVersion" }));
-    await new Promise<void>((resolve) => ws.once("close", () => resolve()));
-
-    // Wait briefly for cleanup to fire + commit to release the lock
+    await sleep(200);
+    ws.close();
     await sleep(2_500);
+
+    // Reset flag before reconnect so provA behaves normally on the second
+    // attempt — otherwise we exercise the failover path repeatedly.
+    provA.state.dropAfterFirstMessage = false;
 
     // Should be reconnectable — lock must have been released
     const second = await checkConnect("d1-profile");
     expect(second.ok).toBe(true);
-
-    provA.state.dropAfterFirstMessage = false;
   }, 30_000);
 });
 

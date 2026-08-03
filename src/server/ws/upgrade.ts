@@ -27,6 +27,12 @@ import { parseAllowedOrigins } from "../util/request.js";
 import type { ReplayController } from "../replay/controller.js";
 import type { ReplayConfig } from "../../core/types.js";
 import { handlePipelineRelay } from "./pipeline-relay.js";
+import { ProfilePlugin } from "../../pipeline/plugins/profile.js";
+import { ScreencastCapturePlugin } from "../../pipeline/plugins/screencast-capture.js";
+import { NodeReplayStorage } from "../replay/node-storage.js";
+import { CHUNK_MAX_BYTES, CHUNK_MAX_ELAPSED_MS } from "../replay/constants.js";
+import { PROFILE_VERSION } from "../../core/profile/index.js";
+import type { CdpPlugin } from "../../pipeline/types.js";
 
 /** How long to wait for a held profile lock to release before returning 409. */
 const PROFILE_LOCK_WAIT_MS = 15_000;
@@ -79,6 +85,84 @@ function extractBearerToken(header: string | undefined): string | undefined {
 
 function anyProviderEligibleForProfile(gateway: Gateway, profileId: string): boolean {
   return gateway.registry.getAll().some((p) => isEligibleForProfile(p.config, profileId));
+}
+
+interface PluginListInputs {
+  acquired: AcquiredProfile | null;
+  isBrowserserveProfile: boolean;
+  sessionRecord: boolean;
+  sessionId: string;
+  providerId: string;
+  pipelineReplay: PipelineReplayContext | undefined;
+  profileLifecycle: ProfileLifecycle | undefined;
+  logger: Logger;
+}
+
+/** Builds the plugin list for a single provider attempt. Empty list → the
+ *  session takes the byte-pipe fast lane. */
+function buildPluginList(inputs: PluginListInputs): CdpPlugin[] {
+  const plugins: CdpPlugin[] = [];
+
+  if (inputs.acquired && !inputs.isBrowserserveProfile && inputs.profileLifecycle) {
+    plugins.push(makeProfilePluginFromAcquired(inputs.acquired, inputs.profileLifecycle, inputs.logger));
+  }
+
+  if (inputs.sessionRecord && inputs.pipelineReplay) {
+    plugins.push(new ScreencastCapturePlugin({
+      sessionId: inputs.sessionId,
+      providerId: inputs.providerId,
+      profileId: inputs.acquired?.profileId,
+      storage: new NodeReplayStorage(inputs.pipelineReplay.storePath),
+      format: inputs.pipelineReplay.replayConfig.capture.format,
+      quality: inputs.pipelineReplay.replayConfig.capture.quality,
+      everyNthFrame: inputs.pipelineReplay.replayConfig.capture.everyNthFrame,
+      maxBytesPerSession: inputs.pipelineReplay.replayConfig.maxBytesPerSession,
+      chunkMaxBytes: CHUNK_MAX_BYTES,
+      chunkMaxElapsedMs: CHUNK_MAX_ELAPSED_MS,
+      logger: (msg, data) => inputs.logger.warn(data ?? {}, msg),
+    }));
+  }
+
+  return plugins;
+}
+
+/** Wraps an already-acquired profile as a preloaded ProfilePlugin. The
+ *  outer WS handler owns the lock lifecycle via ProfileLifecycle; the
+ *  plugin handles inject + capture on the pipeline's CDP connection. */
+function makeProfilePluginFromAcquired(
+  acquired: AcquiredProfile,
+  profileLifecycle: ProfileLifecycle,
+  logger: Logger,
+): ProfilePlugin {
+  const loadedProfile = {
+    version: PROFILE_VERSION,
+    capturedAt: new Date().toISOString(),
+    cookies: acquired.cookies,
+    storage: acquired.storage,
+    indexeddb: acquired.indexeddb,
+    meta: { capturedOrigins: [], skippedOrigins: [], durationMs: 0 },
+  };
+
+  return new ProfilePlugin({
+    profileId: acquired.profileId,
+    readOnly: acquired.readOnly,
+    preloaded: acquired.readOnly
+      ? { profile: loadedProfile }
+      : {
+          profile: loadedProfile,
+          onSave: async (captured) => {
+            await profileLifecycle.commitCaptured(acquired, {
+              cookies: captured.cookies,
+              storage: captured.storage,
+              indexeddb: captured.indexeddb ?? [],
+            });
+          },
+          onEmptyCapture: async () => {
+            await profileLifecycle.release(acquired);
+          },
+        },
+    logger: (msg, data) => logger.info(data ?? {}, msg),
+  });
 }
 
 function respondError(socket: Duplex, status: number, body: Record<string, unknown>): void {
@@ -293,8 +377,6 @@ export function createWebSocketHandler(
       return;
     }
 
-    const usePipelineReplay = sessionRecord && !acquired && pipelineReplay !== undefined;
-
     const tryConnect = async (): Promise<boolean> => {
       const candidates = gateway.selectProviderWithFallbacks(targetProviderId, profileId);
 
@@ -308,11 +390,25 @@ export function createWebSocketHandler(
           continue;
         }
 
-        const connected = usePipelineReplay
+        // browserserve gets the profile out-of-band via HTTP drop-off;
+        // that keeps the byte-pipe. External providers with a profile use
+        // ProfilePlugin. session_record adds ScreencastCapturePlugin.
+        const isBrowserserveProfile = acquired !== null && provider.detectedKind === "browserserve";
+        const plugins = buildPluginList({
+          acquired,
+          isBrowserserveProfile,
+          sessionRecord,
+          sessionId,
+          providerId: provider.id,
+          pipelineReplay,
+          profileLifecycle,
+          logger,
+        });
+
+        const connected = plugins.length > 0
           ? await handlePipelineRelay({
               gateway, logger, req, socket, head, provider, sessionId,
-              storePath: pipelineReplay!.storePath,
-              replayConfig: pipelineReplay!.replayConfig,
+              plugins,
               reconnectRegistry,
             })
           : await pipeToProvider(

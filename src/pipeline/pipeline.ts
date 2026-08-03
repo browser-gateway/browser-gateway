@@ -24,17 +24,21 @@ export interface PipelineSocket {
   readonly bufferedAmount?: number;
 }
 
-/** CDP-aware bidirectional relay between a client WS and an upstream CDP
- *  WS. Parses every JSON message flowing in either direction, updates
- *  per-session state, dispatches to registered plugins, and supports
- *  plugin-injected commands with internal ID isolation. Zero cost when
- *  no plugin cares about a given message (fast-path forward).
- *
- *  A null `client` runs the pipeline in solo mode — no client-side relay,
- *  no backpressure check. Plugins own all client-side I/O (used by
- *  `/v1/live` playground where the viewer WS is plugin-owned). */
+/** Outcome of {@link Pipeline.start}. */
+export type PipelineStartResult =
+  | { ok: true }
+  | { ok: false; plugin: string; error?: unknown };
+
+/** CDP-aware bidirectional relay. Two-phase lifecycle:
+ *  1. {@link Pipeline.start} — attaches the upstream side, runs every
+ *     plugin's `onSessionStart`. Fails fast if any plugin errors; the
+ *     upstream is closed and no `onSessionEnd` runs. Callers use this to
+ *     probe whether the provider can serve the session before committing
+ *     to a client upgrade — enables failover.
+ *  2. {@link Pipeline.run} — attaches the client (or runs solo), pumps
+ *     bytes, runs `onSessionEnd` for every plugin on close. */
 export class Pipeline {
-  private readonly client: PipelineSocket | null;
+  private client: PipelineSocket | null = null;
   private readonly upstream: PipelineSocket;
   private readonly plugins: readonly CdpPlugin[];
   private readonly logger: (event: PipelineLogEvent) => void;
@@ -53,6 +57,7 @@ export class Pipeline {
     droppedByPlugin: 0,
     injectedCount: 0,
   };
+  private started = false;
   private closed = false;
   private lastClientActivityAt = Date.now();
   private maxTimer: ReturnType<typeof setTimeout> | null = null;
@@ -60,12 +65,10 @@ export class Pipeline {
   private resolveResult: ((r: PipelineResult) => void) | null = null;
 
   constructor(
-    client: PipelineSocket | null,
     upstream: PipelineSocket,
     upstreamUrl: string,
     opts: PipelineOptions,
   ) {
-    this.client = client;
     this.upstream = upstream;
     this.plugins = opts.plugins;
     this.logger = opts.logger ?? (() => {});
@@ -100,41 +103,62 @@ export class Pipeline {
     this.state.close = (reason: string) => this.finalize(reason);
   }
 
-  /** Run the pipeline. Resolves when either socket closes. Awaits each
-   *  plugin's `onSessionStart` sequentially before opening the wire, and
-   *  each plugin's `onSessionEnd` (with per-plugin timeout) before
-   *  resolving. */
-  async run(): Promise<PipelineResult> {
-    this.attachSocketListeners();
-    this.startTimers();
-    await this.startPlugins();
-    const result = await new Promise<PipelineResult>((resolve) => {
-      this.resolveResult = resolve;
-    });
-    return result;
-  }
+  /** Phase 1. Attaches upstream listeners and runs plugin `onSessionStart`
+   *  in order. On any plugin throw, closes the upstream and returns
+   *  `{ok:false, plugin}`. `onSessionEnd` does NOT run on start failure. */
+  async start(): Promise<PipelineStartResult> {
+    if (this.started) throw new Error("Pipeline.start() called twice");
+    this.started = true;
+    this.attachUpstreamListeners();
 
-  private async startPlugins(): Promise<void> {
     for (const p of this.plugins) {
       if (!p.onSessionStart) continue;
       try {
         await p.onSessionStart(this.state);
       } catch (err) {
         this.logger({ kind: "plugin-error", data: { plugin: p.name, hook: "onSessionStart", err: errToString(err) } });
+        this.closed = true;
+        try { this.upstream.close(1000); } catch { /* already closed */ }
+        this.ids.rejectAll("plugin-start-failed");
+        return { ok: false, plugin: p.name, error: err };
+      }
+      // Upstream may have closed during onSessionStart (provider dropped or
+      // rejected the setup CDP calls). Treat as start failure so the caller
+      // can retry with the next provider.
+      if (this.closed) {
+        return { ok: false, plugin: p.name, error: new Error("upstream closed during onSessionStart") };
       }
     }
     this.logger({ kind: "connect", data: { plugins: this.plugins.map((p) => p.name) } });
+    return { ok: true };
   }
 
-  private attachSocketListeners(): void {
-    if (this.client) {
-      listen(this.client, "message", (evt) => this.onClientMessage(evt));
-      listen(this.client, "close", () => this.finalize("client-closed"));
-      listen(this.client, "error", () => this.finalize("client-error"));
+  /** Phase 2. Attaches the client (or null for solo mode), starts timers,
+   *  awaits close, runs `onSessionEnd` for every plugin, resolves. Must
+   *  be called after a successful {@link Pipeline.start}. */
+  async run(client: PipelineSocket | null): Promise<PipelineResult> {
+    if (!this.started) throw new Error("Pipeline.run() called before start()");
+    if (this.closed) {
+      return { reason: "pipeline-not-started", counters: this.counters };
     }
+    this.client = client;
+    if (client) this.attachClientListeners(client);
+    this.startTimers();
+    return new Promise<PipelineResult>((resolve) => {
+      this.resolveResult = resolve;
+    });
+  }
+
+  private attachUpstreamListeners(): void {
     listen(this.upstream, "message", (evt) => this.onUpstreamMessage(evt));
     listen(this.upstream, "close", () => this.finalize("upstream-closed"));
     listen(this.upstream, "error", () => this.finalize("upstream-error"));
+  }
+
+  private attachClientListeners(client: PipelineSocket): void {
+    listen(client, "message", (evt) => this.onClientMessage(evt));
+    listen(client, "close", () => this.finalize("client-closed"));
+    listen(client, "error", () => this.finalize("client-error"));
   }
 
   private startTimers(): void {
