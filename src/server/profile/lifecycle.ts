@@ -16,6 +16,7 @@ import {
   type OriginStorage,
   type ProfileLimits,
 } from "../../core/profile/index.js";
+import { mergeAndPrepareProfile } from "../../core/profile/save.js";
 import type { WsCDPClient } from "../../core/profile/cdp-client.js";
 import type { LockToken, ProfileStore } from "../../core/profile/store.js";
 
@@ -271,70 +272,51 @@ export class ProfileLifecycle {
             { helperPages, totalTimeoutMs: commitTimeoutMs, includeCookieDerivedOrigins: true },
           );
 
-      const cookies = captureResult.cookies;
+      const prepared = mergeAndPrepareProfile({
+        loadedStorage: acquired.storage,
+        loadedCookies: acquired.cookies,
+        loadedIndexeddb: acquired.indexeddb,
+        capturedCookies: captureResult.cookies,
+        capturedStorage: captureResult.storage,
+        capturedSkippedOrigins: captureResult.skippedOrigins,
+        capturedDurationMs: captureResult.durationMs,
+        limits: this.opts.limits,
+      });
 
-      if (cookies.length === 0 && acquired.cookies.length > 0) {
+      if (prepared.action === "preserved-empty-capture") {
         this.logger.warn(
-          {
-            profileId: acquired.profileId,
-            previousCookies: acquired.cookies.length,
-          },
-          "profile lifecycle: captured 0 cookies but previous state had cookies — preserving previous state, not overwriting",
+          { profileId: acquired.profileId, previousCookies: acquired.cookies.length },
+          "profile lifecycle: 0 cookies captured but previous had — preserved",
         );
         return;
       }
-
-      const mergedStorage: Record<string, OriginStorage> = { ...acquired.storage };
-      for (const [origin, data] of Object.entries(captureResult.storage)) {
-        mergedStorage[origin] = data;
-      }
-
-      const profile: CapturedProfile = {
-        version: PROFILE_VERSION,
-        capturedAt: new Date().toISOString(),
-        cookies,
-        storage: mergedStorage,
-        indexeddb: acquired.indexeddb,
-        meta: {
-          capturedOrigins: Object.keys(captureResult.storage),
-          skippedOrigins: captureResult.skippedOrigins,
-          durationMs: captureResult.durationMs,
-        },
-      };
-
-      const enforced = enforceProfileLimits(profile, this.opts.limits);
-      if (enforced.refused) {
+      if (prepared.action === "preserved-refused") {
         this.logger.warn(
-          {
-            profileId: acquired.profileId,
-            bytes: enforced.bytes,
-            reason: enforced.refusedReason,
-          },
+          { profileId: acquired.profileId, bytes: prepared.bytes, reason: prepared.refusedReason },
           "profile lifecycle: refused to save — previous state preserved",
         );
         return;
       }
-      if (enforced.evictedOrigins.length > 0) {
+      if (prepared.evictedOrigins && prepared.evictedOrigins.length > 0) {
         this.logger.info(
           {
             profileId: acquired.profileId,
-            evicted: enforced.evictedOrigins.length,
-            evictedOrigins: enforced.evictedOrigins.slice(0, 5),
-            bytes: enforced.bytes,
+            evicted: prepared.evictedOrigins.length,
+            evictedOrigins: prepared.evictedOrigins.slice(0, 5),
+            bytes: prepared.bytes,
           },
           "profile lifecycle: evicted oldest origins to fit budget",
         );
       }
-      if (enforced.softWarn) {
+      if (prepared.softWarn) {
         this.logger.warn(
-          { profileId: acquired.profileId, bytes: enforced.bytes },
+          { profileId: acquired.profileId, bytes: prepared.bytes },
           "profile lifecycle: profile exceeds soft-warn threshold",
         );
       }
 
-      const finalProfile: CapturedProfile = { ...enforced.profile, indexeddb: profile.indexeddb };
-      await this.encodeAndStore(finalProfile, acquired.profileId, "profile lifecycle: state saved", {
-        cookies: cookies.length,
+      await this.encodeAndStore(prepared.profile!, acquired.profileId, "profile lifecycle: state saved", {
+        cookies: prepared.profile!.cookies.length,
       });
     } catch (err) {
       this.logger.warn(

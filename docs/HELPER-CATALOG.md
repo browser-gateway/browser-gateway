@@ -172,6 +172,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface EnforceResult` (line 12)
 - **const** `const DEFAULT_PROFILE_LIMITS` (line 27)
 - **fn** `enforceProfileLimits(profile: CapturedProfile, limits: ProfileLimits = {}) → EnforceResult` (line 34) — Enforces size and origin-count caps on a profile. Returns a new profile; input untouched.
+### `src/core/profile/save.ts`
+
+- **interface** `interface MergeAndPrepareResult` (line 13) — Result of {@link mergeAndPrepareProfile}. `refused`/`preserved` mean the
+- **interface** `interface MergeInputs` (line 22)
+- **fn** `mergeAndPrepareProfile(inputs: MergeInputs) → MergeAndPrepareResult` (line 41) — Runs the empty-capture guard, merges captured storage over loaded, applies
 ### `src/core/profile/store.ts`
 
 - **type** `type LockToken` (line 3)
@@ -382,11 +387,14 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `rewrapKeycheck(storePath: string, oldPassword: string, newPassword: string) → Promise<void>` (line 107)
 ### `src/server/profile/lifecycle.ts`
 
-- **interface** `interface LifecycleOptions` (line 22)
-- **interface** `interface AcquiredProfile` (line 37)
-- **type** `type LifecycleFailureReason` (line 53)
-- **class** `class LifecycleError` (line 60)
-- **class** `class ProfileLifecycle` (line 71) — Orchestrates acquire/inject/commit/release for a profile around one session.
+- **interface** `interface LifecycleOptions` (line 23)
+- **interface** `interface AcquiredProfile` (line 38)
+- **type** `type LifecycleFailureReason` (line 54)
+- **class** `class LifecycleError` (line 61)
+- **class** `class ProfileLifecycle` (line 72) — Orchestrates acquire/inject/commit/release for a profile around one session.
+### `src/server/profile/node-profile-storage.ts`
+
+- **class** `class NodeProfileStorage` (line 17) — Node-side {@link ProfileStorage} adapter. Wraps the existing
 ### `src/server/replay/capture.ts`
 
 - **interface** `interface ReplayCaptureOpts` (line 10)

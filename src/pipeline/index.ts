@@ -19,3 +19,10 @@ export type {
   ReplayStorage,
   ScreencastCapturePluginOpts,
 } from "./plugins/screencast-capture.js";
+export { ProfilePlugin, ProfilePluginError } from "./plugins/profile.js";
+export type {
+  ProfilePluginOpts,
+  ProfilePluginFailureReason,
+} from "./plugins/profile.js";
+export { PluginCdpClient } from "./plugins/profile-cdp-client.js";
+export type { ProfileStorage, LoadedProfile, LockToken } from "./plugins/profile-storage.js";
