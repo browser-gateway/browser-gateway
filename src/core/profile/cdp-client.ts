@@ -66,32 +66,32 @@ export class WsCDPClient extends TypedCdpEventEmitter implements CDPClient {
     });
   }
 
-  async send(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
-    return this.sendOn(method, params, undefined);
+  async send<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    return this.sendOn<T>(method, params, undefined);
   }
 
   /**
    * Send a CDP command tagged with a flat-mode sessionId. Identical to send()
-   * when sessionId is undefined — backward-compatible. Used by the eager-inject
-   * helper-page pool to route commands to specific attached targets.
+   * when sessionId is undefined. Used by the eager-inject helper-page pool
+   * to route commands to specific attached targets.
    */
-  async sendOn(
+  async sendOn<T = unknown>(
     method: string,
     params: Record<string, unknown> = {},
     sessionId: string | undefined,
-  ): Promise<unknown> {
+  ): Promise<T> {
     assertCdpConnected(this.ws);
     const id = this.nextId++;
     const envelope: Record<string, unknown> = { id, method, params };
     if (sessionId) envelope.sessionId = sessionId;
-    return new Promise((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         const pending = this.pending.get(id);
         if (!pending) return;
         this.pending.delete(id);
         pending.reject(new Error(`CDP command timeout after ${this.commandTimeoutMs}ms: ${method}`));
       }, this.commandTimeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
+      this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
       this.ws!.send(JSON.stringify(envelope), (err) => {
         if (err) {
           const pending = this.pending.get(id);

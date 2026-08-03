@@ -28,9 +28,13 @@ export interface PipelineSocket {
  *  WS. Parses every JSON message flowing in either direction, updates
  *  per-session state, dispatches to registered plugins, and supports
  *  plugin-injected commands with internal ID isolation. Zero cost when
- *  no plugin cares about a given message (fast-path forward). */
+ *  no plugin cares about a given message (fast-path forward).
+ *
+ *  A null `client` runs the pipeline in solo mode — no client-side relay,
+ *  no backpressure check. Plugins own all client-side I/O (used by
+ *  `/v1/live` playground where the viewer WS is plugin-owned). */
 export class Pipeline {
-  private readonly client: PipelineSocket;
+  private readonly client: PipelineSocket | null;
   private readonly upstream: PipelineSocket;
   private readonly plugins: readonly CdpPlugin[];
   private readonly logger: (event: PipelineLogEvent) => void;
@@ -56,7 +60,7 @@ export class Pipeline {
   private resolveResult: ((r: PipelineResult) => void) | null = null;
 
   constructor(
-    client: PipelineSocket,
+    client: PipelineSocket | null,
     upstream: PipelineSocket,
     upstreamUrl: string,
     opts: PipelineOptions,
@@ -93,6 +97,7 @@ export class Pipeline {
         /* ignore — fire-and-forget */
       }
     };
+    this.state.close = (reason: string) => this.finalize(reason);
   }
 
   /** Run the pipeline. Resolves when either socket closes. Awaits each
@@ -122,9 +127,11 @@ export class Pipeline {
   }
 
   private attachSocketListeners(): void {
-    listen(this.client, "message", (evt) => this.onClientMessage(evt));
-    listen(this.client, "close", () => this.finalize("client-closed"));
-    listen(this.client, "error", () => this.finalize("client-error"));
+    if (this.client) {
+      listen(this.client, "message", (evt) => this.onClientMessage(evt));
+      listen(this.client, "close", () => this.finalize("client-closed"));
+      listen(this.client, "error", () => this.finalize("client-error"));
+    }
     listen(this.upstream, "message", (evt) => this.onUpstreamMessage(evt));
     listen(this.upstream, "close", () => this.finalize("upstream-closed"));
     listen(this.upstream, "error", () => this.finalize("upstream-error"));
@@ -191,19 +198,22 @@ export class Pipeline {
     this.counters.messageCount++;
 
     if (typeof data !== "string") {
-      trySend(this.client, data);
+      if (this.client) trySend(this.client, data);
       return;
     }
 
     // Backpressure: drop upstream frames when the client can't keep up.
-    const buffered = this.client.bufferedAmount ?? 0;
-    if (buffered > this.dropThresholdBytes) {
-      return;
+    // Solo mode (no client) skips this — plugins pace themselves.
+    if (this.client) {
+      const buffered = this.client.bufferedAmount ?? 0;
+      if (buffered > this.dropThresholdBytes) {
+        return;
+      }
     }
 
     const msg = tryParse(data);
     if (!msg) {
-      trySend(this.client, data);
+      if (this.client) trySend(this.client, data);
       return;
     }
     this.counters.parsedCount++;
@@ -222,7 +232,7 @@ export class Pipeline {
           this.logger({ kind: "plugin-error", data: { plugin: p.name, hook: "onResponse", err: errToString(err) } });
         }
       }
-      trySend(this.client, data);
+      if (this.client) trySend(this.client, data);
       return;
     }
 
@@ -242,7 +252,7 @@ export class Pipeline {
         return;
       }
     }
-    trySend(this.client, data);
+    if (this.client) trySend(this.client, data);
   }
 
   private finalize(reason: string): void {
@@ -252,7 +262,9 @@ export class Pipeline {
     if (this.idleTimer) clearInterval(this.idleTimer);
     void this.runOnSessionEnd(reason).finally(() => {
       this.ids.rejectAll(reason);
-      try { this.client.close(1000); } catch { /* already closed */ }
+      if (this.client) {
+        try { this.client.close(1000); } catch { /* already closed */ }
+      }
       try { this.upstream.close(1000); } catch { /* already closed */ }
       this.logger({ kind: "close", data: { reason, counters: this.counters } });
       this.resolveResult?.({ reason, counters: this.counters });

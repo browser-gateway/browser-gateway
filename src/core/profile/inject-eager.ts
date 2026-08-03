@@ -1,4 +1,5 @@
 import type { CdpCookie } from "./cdp.js";
+import type { HelperPoolCdpClient } from "./helper-pool-client.js";
 import { WsCDPClient } from "./cdp-client.js";
 import { sanitizeCookiesForInject } from "./cookie-helpers.js";
 import {
@@ -34,7 +35,7 @@ export interface EagerInjectResult {
 
 /** Eagerly injects cookies and the top-K origins' localStorage on an already-connected client. */
 export async function injectStateEager(
-  client: WsCDPClient,
+  client: HelperPoolCdpClient,
   profile: CapturedProfile,
   opts: Omit<EagerInjectOptions, "totalTimeoutMs"> = {},
 ): Promise<EagerInjectResult> {
@@ -98,7 +99,7 @@ export async function injectStateEagerViaTransient(
   );
 }
 
-async function injectCookies(client: WsCDPClient, cookies: CdpCookie[]): Promise<number> {
+async function injectCookies(client: HelperPoolCdpClient, cookies: CdpCookie[]): Promise<number> {
   await client.send("Storage.clearCookies", {}).catch(() => undefined);
   if (cookies.length === 0) return 0;
   await client.send("Storage.setCookies", { cookies: sanitizeCookiesForInject(cookies) });
@@ -106,7 +107,7 @@ async function injectCookies(client: WsCDPClient, cookies: CdpCookie[]): Promise
 }
 
 async function injectEagerOrigins(
-  client: WsCDPClient,
+  client: HelperPoolCdpClient,
   origins: string[],
   storage: Record<string, OriginStorage>,
   cfg: { helperCount: number; perOriginTimeout: number; signal?: AbortSignal },

@@ -1,3 +1,4 @@
+import type { HelperPoolCdpClient } from "./helper-pool-client.js";
 import { WsCDPClient } from "./cdp-client.js";
 import {
   closeHelperPages,
@@ -52,7 +53,7 @@ export interface BackgroundInjectResult {
 
 /** Runs the background phase on an already-connected client. Caller owns the WS lifecycle. */
 export async function runBackgroundInjectOnClient(
-  client: WsCDPClient,
+  client: HelperPoolCdpClient,
   opts: BackgroundCommonOptions,
 ): Promise<BackgroundInjectResult> {
   const started = Date.now();

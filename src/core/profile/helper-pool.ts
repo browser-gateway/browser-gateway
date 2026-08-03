@@ -1,4 +1,4 @@
-import type { WsCDPClient } from "./cdp-client.js";
+import type { HelperPoolCdpClient } from "./helper-pool-client.js";
 
 export interface HelperPage {
   targetId: string;
@@ -8,7 +8,7 @@ export interface HelperPage {
 const FETCH_FULFILL_BODY_B64 = Buffer.from("<html></html>").toString("base64");
 
 /** Opens a helper target with Fetch and Page domains enabled. */
-export async function openHelperPage(client: WsCDPClient): Promise<HelperPage> {
+export async function openHelperPage(client: HelperPoolCdpClient): Promise<HelperPage> {
   const created = (await client.send("Target.createTarget", { url: "about:blank" })) as {
     targetId: string;
   };
@@ -23,7 +23,7 @@ export async function openHelperPage(client: WsCDPClient): Promise<HelperPage> {
 
 /** Installs a Fetch.requestPaused fulfiller scoped to the given sessions. Returns an unregister fn. */
 export function installFetchFulfill(
-  client: WsCDPClient,
+  client: HelperPoolCdpClient,
   helperSessionIds: Set<string>,
 ): () => void {
   const onPaused = (params: unknown) => {
@@ -54,7 +54,7 @@ export function installFetchFulfill(
 }
 
 /** Closes helper targets and disables Fetch on each session. */
-export async function closeHelperPages(client: WsCDPClient, helpers: HelperPage[]): Promise<void> {
+export async function closeHelperPages(client: HelperPoolCdpClient, helpers: HelperPage[]): Promise<void> {
   await Promise.allSettled(
     helpers.map(async (h) => {
       await client.sendOn("Fetch.disable", {}, h.sessionId).catch(() => undefined);
@@ -65,7 +65,7 @@ export async function closeHelperPages(client: WsCDPClient, helpers: HelperPage[
 
 /** Opens up to `count` helper pages sequentially. Returns however many succeeded. */
 export async function openHelperPool(
-  client: WsCDPClient,
+  client: HelperPoolCdpClient,
   count: number,
 ): Promise<HelperPage[]> {
   const helpers: HelperPage[] = [];
@@ -86,7 +86,7 @@ export async function openHelperPool(
  * hand them to `work`, guarantee teardown in `finally`.
  */
 export async function withHelperPool<T>(
-  client: WsCDPClient,
+  client: HelperPoolCdpClient,
   helperCount: number,
   originCount: number,
   work: (helpers: HelperPage[]) => Promise<T>,
@@ -129,7 +129,7 @@ export function withDeadline<T>(op: Promise<T>, timeoutMs: number, label: string
 
 /** Navigates the helper to an origin and evaluates `expression` in its page context. */
 export async function navigateAndEvaluate(
-  client: WsCDPClient,
+  client: HelperPoolCdpClient,
   helper: HelperPage,
   origin: string,
   expression: string,

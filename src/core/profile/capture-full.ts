@@ -1,4 +1,5 @@
 import type { CdpCookie, GetAllCookiesResponse } from "./cdp.js";
+import type { HelperPoolCdpClient } from "./helper-pool-client.js";
 import { WsCDPClient } from "./cdp-client.js";
 import {
   navigateAndEvaluate,
@@ -46,7 +47,7 @@ const STORAGE_DUMP_EXPR = `
 
 /** Captures cookies and per-origin localStorage on an already-connected client. */
 export async function captureFullStateOnClient(
-  client: WsCDPClient,
+  client: HelperPoolCdpClient,
   originsToCapture: string[],
   opts: Omit<CaptureFullOptions, "totalTimeoutMs"> = {},
 ): Promise<CaptureFullResult> {
@@ -100,7 +101,7 @@ export async function captureFullStateViaTransient(
 }
 
 async function captureOrigins(
-  client: WsCDPClient,
+  client: HelperPoolCdpClient,
   origins: string[],
   cfg: { helperCount: number; perOriginTimeout: number; signal?: AbortSignal },
 ): Promise<{ storage: Record<string, OriginStorage>; skipped: SkippedOrigin[] }> {
@@ -122,7 +123,7 @@ async function captureOrigins(
 }
 
 async function captureOneOrigin(
-  client: WsCDPClient,
+  client: HelperPoolCdpClient,
   helper: HelperPage,
   origin: string,
   timeoutMs: number,

@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-08-02
+Generated: 2026-08-03
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -68,11 +68,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `decodeBlob(blob: Buffer, dek: Buffer, expectedProfileId: string) → Buffer` (line 105)
 ### `src/core/profile/capture-full.ts`
 
-- **interface** `interface CaptureFullOptions` (line 12)
-- **interface** `interface CaptureFullResult` (line 25)
-- **fn** `captureFullStateOnClient(client: WsCDPClient, originsToCapture: string[], opts: Omit<CaptureFullOptions, "totalTimeoutMs"> = {}) → Promise<CaptureFullResult>` (line 48) — Captures cookies and per-origin localStorage on an already-connected client.
-- **fn** `captureFullStateViaTransient(providerWsUrl: string, originsToCapture: string[], opts: CaptureFullOptions = {}) → Promise<CaptureFullResult>` (line 81) — Opens its own WS to the provider, captures, then closes the WS.
-- **fn** `originsFromCookies(cookies: CdpCookie[]) → string[]` (line 155) — Returns https origin candidates derived from a cookie list.
+- **interface** `interface CaptureFullOptions` (line 13)
+- **interface** `interface CaptureFullResult` (line 26)
+- **fn** `captureFullStateOnClient(client: HelperPoolCdpClient, originsToCapture: string[], opts: Omit<CaptureFullOptions, "totalTimeoutMs"> = {}) → Promise<CaptureFullResult>` (line 49) — Captures cookies and per-origin localStorage on an already-connected client.
+- **fn** `captureFullStateViaTransient(providerWsUrl: string, originsToCapture: string[], opts: CaptureFullOptions = {}) → Promise<CaptureFullResult>` (line 82) — Opens its own WS to the provider, captures, then closes the WS.
+- **fn** `originsFromCookies(cookies: CdpCookie[]) → string[]` (line 156) — Returns https origin candidates derived from a cookie list.
 ### `src/core/profile/capture.ts`
 
 - **interface** `interface CaptureOptions` (line 14)
@@ -117,17 +117,20 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `wrapDek(kek: Buffer, dek: Buffer, version: number) → WrappedDek` (line 6)
 - **fn** `unwrapDek(kek: Buffer, wrapped: WrappedDek) → Buffer` (line 16)
 - **fn** `newDek() → Buffer` (line 26)
+### `src/core/profile/helper-pool-client.ts`
+
+- **interface** `interface HelperPoolCdpClient` (line 5) — CDP client shape the profile helper-pool depends on. Any client that can
 ### `src/core/profile/helper-pool.ts`
 
 - **interface** `interface HelperPage` (line 3)
-- **fn** `openHelperPage(client: WsCDPClient) → Promise<HelperPage>` (line 11) — Opens a helper target with Fetch and Page domains enabled.
-- **fn** `installFetchFulfill(client: WsCDPClient, helperSessionIds: Set<string>) → () => void` (line 25) — Installs a Fetch.requestPaused fulfiller scoped to the given sessions. Returns an unregister fn.
-- **fn** `closeHelperPages(client: WsCDPClient, helpers: HelperPage[]) → Promise<void>` (line 57) — Closes helper targets and disables Fetch on each session.
-- **fn** `openHelperPool(client: WsCDPClient, count: number) → Promise<HelperPage[]>` (line 67) — Opens up to `count` helper pages sequentially. Returns however many succeeded.
-- **fn** `withHelperPool(client: WsCDPClient, helperCount: number, originCount: number, work: (helpers: HelperPage[]) => Promise<T>) → Promise<T>` (line 88) — Wraps the helper-pool lifecycle used by profile capture/inject: install
+- **fn** `openHelperPage(client: HelperPoolCdpClient) → Promise<HelperPage>` (line 11) — Opens a helper target with Fetch and Page domains enabled.
+- **fn** `installFetchFulfill(client: HelperPoolCdpClient, helperSessionIds: Set<string>) → () => void` (line 25) — Installs a Fetch.requestPaused fulfiller scoped to the given sessions. Returns an unregister fn.
+- **fn** `closeHelperPages(client: HelperPoolCdpClient, helpers: HelperPage[]) → Promise<void>` (line 57) — Closes helper targets and disables Fetch on each session.
+- **fn** `openHelperPool(client: HelperPoolCdpClient, count: number) → Promise<HelperPage[]>` (line 67) — Opens up to `count` helper pages sequentially. Returns however many succeeded.
+- **fn** `withHelperPool(client: HelperPoolCdpClient, helperCount: number, originCount: number, work: (helpers: HelperPage[]) => Promise<T>) → Promise<T>` (line 88) — Wraps the helper-pool lifecycle used by profile capture/inject: install
 - **fn** `raceTimeout(p: Promise<T>, timeoutMs: number, label: string) → Promise<T>` (line 107) — Races a Promise against a per-operation timeout.
 - **fn** `withDeadline(op: Promise<T>, timeoutMs: number, label: string) → Promise<T>` (line 117) — Wall-clock deadline around a whole operation. Rejects on timeout.
-- **fn** `navigateAndEvaluate(client: WsCDPClient, helper: HelperPage, origin: string, expression: string, timeoutMs: number) → Promise<unknown>` (line 131) — Navigates the helper to an origin and evaluates `expression` in its page context.
+- **fn** `navigateAndEvaluate(client: HelperPoolCdpClient, helper: HelperPage, origin: string, expression: string, timeoutMs: number) → Promise<unknown>` (line 131) — Navigates the helper to an origin and evaluates `expression` in its page context.
 - **fn** `runHelperPool(opts: {
   helpers: HelperPage[];
   origins: string[];
@@ -138,18 +141,18 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 }) → Promise<void>` (line 173) — Round-robin work over `origins` across `helpers`. Per-origin errors go to `onError`.
 ### `src/core/profile/inject-background.ts`
 
-- **interface** `interface BackgroundInjectOptions` (line 40)
-- **interface** `interface BackgroundInjectResult` (line 47)
-- **fn** `runBackgroundInjectOnClient(client: WsCDPClient, opts: BackgroundCommonOptions) → Promise<BackgroundInjectResult>` (line 54) — Runs the background phase on an already-connected client. Caller owns the WS lifecycle.
-- **fn** `runBackgroundInject(opts: BackgroundInjectOptions) → Promise<BackgroundInjectResult>` (line 120) — Opens its own WS to the provider, runs the background phase, then closes the WS.
+- **interface** `interface BackgroundInjectOptions` (line 41)
+- **interface** `interface BackgroundInjectResult` (line 48)
+- **fn** `runBackgroundInjectOnClient(client: HelperPoolCdpClient, opts: BackgroundCommonOptions) → Promise<BackgroundInjectResult>` (line 55) — Runs the background phase on an already-connected client. Caller owns the WS lifecycle.
+- **fn** `runBackgroundInject(opts: BackgroundInjectOptions) → Promise<BackgroundInjectResult>` (line 121) — Opens its own WS to the provider, runs the background phase, then closes the WS.
 ### `src/core/profile/inject-eager.ts`
 
-- **interface** `interface EagerInjectOptions` (line 12)
-- **interface** `interface EagerInjectResult` (line 25)
-- **fn** `injectStateEager(client: WsCDPClient, profile: CapturedProfile, opts: Omit<EagerInjectOptions, "totalTimeoutMs"> = {}) → Promise<EagerInjectResult>` (line 36) — Eagerly injects cookies and the top-K origins' localStorage on an already-connected client.
-- **fn** `injectStateEagerViaTransient(providerWsUrl: string, profile: CapturedProfile, opts: EagerInjectOptions = {}) → Promise<EagerInjectResult>` (line 80) — Opens a fresh WS to the provider, runs the eager inject, then closes the WS.
-- **fn** `buildLocalStorageWriteExpression(data: OriginStorage) → string` (line 140) — Returns a JS expression that writes the origin's localStorage entries.
-- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 160) — Returns origins sorted by lastVisitedAt descending.
+- **interface** `interface EagerInjectOptions` (line 13)
+- **interface** `interface EagerInjectResult` (line 26)
+- **fn** `injectStateEager(client: HelperPoolCdpClient, profile: CapturedProfile, opts: Omit<EagerInjectOptions, "totalTimeoutMs"> = {}) → Promise<EagerInjectResult>` (line 37) — Eagerly injects cookies and the top-K origins' localStorage on an already-connected client.
+- **fn** `injectStateEagerViaTransient(providerWsUrl: string, profile: CapturedProfile, opts: EagerInjectOptions = {}) → Promise<EagerInjectResult>` (line 81) — Opens a fresh WS to the provider, runs the eager inject, then closes the WS.
+- **fn** `buildLocalStorageWriteExpression(data: OriginStorage) → string` (line 141) — Returns a JS expression that writes the origin's localStorage entries.
+- **fn** `rankOrigins(storage: Record<string, OriginStorage>) → string[]` (line 161) — Returns origins sorted by lastVisitedAt descending.
 ### `src/core/profile/inject.ts`
 
 - **interface** `interface InjectOptions` (line 6)

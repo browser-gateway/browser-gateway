@@ -271,4 +271,98 @@ describe("Pipeline", () => {
     client.close();
     await done;
   });
+
+  it("solo mode: pipeline runs with null client, plugin owns viewer WS", async () => {
+    const upstream = new FakeSocket();
+    const events: string[] = [];
+    const plugin: CdpPlugin = {
+      name: "solo",
+      onSessionStart: async (state) => {
+        events.push("start");
+        state.sendInternalOneWay("Page.enable");
+      },
+      onEvent: (msg) => { events.push(`event:${msg.method}`); },
+      onSessionEnd: async () => { events.push("end"); },
+    };
+    const p = new Pipeline(null, upstream, "wss://test/", { plugins: [plugin], onSessionEndTimeoutMs: 100 });
+    const done = p.run();
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(events).toContain("start");
+    expect(parseSent(upstream)[0].method).toBe("Page.enable");
+
+    upstream.receive(jsonMsg({ method: "Page.frameNavigated", params: {} }));
+    expect(events).toContain("event:Page.frameNavigated");
+
+    upstream.close();
+    const result = await done;
+    expect(result.reason).toBe("upstream-closed");
+    expect(events).toContain("end");
+  });
+
+  it("solo mode: no client backpressure check even with large upstream frames", async () => {
+    const upstream = new FakeSocket();
+    let sawEvent = false;
+    const plugin: CdpPlugin = {
+      name: "solo",
+      onEvent: () => { sawEvent = true; },
+    };
+    const p = new Pipeline(null, upstream, "wss://test/", { plugins: [plugin], onSessionEndTimeoutMs: 100 });
+    const done = p.run();
+    await new Promise((r) => setTimeout(r, 5));
+
+    upstream.receive(jsonMsg({ method: "Page.screencastFrame", params: {} }));
+    expect(sawEvent).toBe(true); // never dropped, no client to back-pressure against
+
+    upstream.close();
+    await done;
+  });
+
+  it("state.close(reason) triggers finalize from within a plugin", async () => {
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    let closedByPlugin = false;
+    const plugin: CdpPlugin = {
+      name: "self-closer",
+      onEvent: (msg, state) => {
+        if (msg.method === "Runtime.executionContextDestroyed") {
+          state.close("plugin-requested-close");
+          closedByPlugin = true;
+        }
+      },
+    };
+    const done = runPipeline(client, upstream, [plugin]);
+    await new Promise((r) => setTimeout(r, 5));
+
+    upstream.receive(jsonMsg({ method: "Runtime.executionContextDestroyed", params: {} }));
+    const result = await done;
+
+    expect(closedByPlugin).toBe(true);
+    expect(result.reason).toBe("plugin-requested-close");
+  });
+
+  it("state.close is idempotent — second call is a no-op", async () => {
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    let endCalls = 0;
+    const plugin: CdpPlugin = {
+      name: "double-closer",
+      onEvent: (msg, state) => {
+        if (msg.method === "Runtime.executionContextDestroyed") {
+          state.close("first-call");
+          state.close("second-call");
+        }
+      },
+      onSessionEnd: async () => { endCalls++; },
+    };
+    const done = runPipeline(client, upstream, [plugin]);
+    await new Promise((r) => setTimeout(r, 5));
+
+    upstream.receive(jsonMsg({ method: "Runtime.executionContextDestroyed", params: {} }));
+    const result = await done;
+
+    // Only the first close wins; onSessionEnd fires exactly once.
+    expect(endCalls).toBe(1);
+    expect(result.reason).toBe("first-call");
+  });
 });
