@@ -339,6 +339,8 @@ gh attestation verify oci://ghcr.io/browser-gateway/server:0.3.0 \
 
 ## How It Works
 
+**Sessions without profile / recording / observability** (the default) take the byte-pipe fast lane:
+
 1. Client connects to `ws://gateway:9500/v1/connect`
 2. Gateway selects a provider using your [routing strategy](https://docs.browsergateway.com/operating/load-balancing)
 3. Gateway opens a raw TCP connection to the provider
@@ -347,6 +349,8 @@ gh attestation verify oci://ghcr.io/browser-gateway/server:0.3.0 \
 6. All WebSocket messages forwarded transparently (never parsed or modified)
 7. On disconnect: session cleaned up, slot released, metrics updated
 8. If all providers full: connection [waits in a queue](https://docs.browsergateway.com/operating/queue) until a slot opens
+
+**Sessions with profile inject, session recording, live view, or observability** (e.g. `?profile=X`, `?session_record=true`, `/v1/live`) run through a CDP-aware pipeline instead — one WebSocket per session, N plugins observing the wire. Same routing + failover, byte-perfect passthrough at rest, plugins only fire when their feature is requested. Architecture + plugin-authoring guide: [`docs/PIPELINE.md`](./docs/PIPELINE.md).
 
 ---
 
