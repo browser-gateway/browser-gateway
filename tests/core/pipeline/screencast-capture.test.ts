@@ -378,4 +378,63 @@ describe("ScreencastCapturePlugin", () => {
     expect((storage.finalSummary?.droppedFrames ?? 0)).toBeGreaterThan(0);
     expect((storage.finalSummary?.frameCount ?? 0)).toBeLessThan(5);
   });
+
+  it("filterEmptyUrl drops frames whose target has no lastUrl yet (pre-navigation about:blank)", async () => {
+    const storage = new FakeStorage();
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    const plugin = new ScreencastCapturePlugin({
+      sessionId: "sess-eu",
+      providerId: "prov-1",
+      storage,
+      format: "jpeg",
+      quality: 60,
+      everyNthFrame: 1,
+      maxBytesPerSession: 1_000_000,
+      chunkMaxBytes: 25 * 1024 * 1024,
+      chunkMaxElapsedMs: 60_000,
+      filterEmptyUrl: true,
+    });
+    const pipe = new Pipeline(upstream, "wss://test/", { plugins: [plugin], onSessionEndTimeoutMs: 500 });
+    const s = await pipe.start();
+    if (!s.ok) throw new Error(`unexpected start failure: ${s.plugin}`);
+    const done = pipe.run(client);
+    await new Promise((r) => setTimeout(r, 5));
+
+    const gt = parseSent(upstream).find((m) => m.method === "Target.getTargets");
+    upstream.receive(jsonMsg({ id: gt!.id, result: { targetInfos: [] } }));
+    upstream.receive(jsonMsg({
+      method: "Target.attachedToTarget",
+      params: { sessionId: "S1", targetInfo: { targetId: "T1", type: "page" } },
+    }));
+    await new Promise((r) => setTimeout(r, 5));
+
+    // Frame 1 fires BEFORE any Page.frameNavigated — target.lastUrl is still undefined → filtered.
+    upstream.receive(jsonMsg({
+      sessionId: "S1", method: "Page.screencastFrame",
+      params: { data: FRAME_JPEG_1, sessionId: 1, metadata: { timestamp: 1, deviceWidth: 1280, deviceHeight: 720 } },
+    }));
+    await new Promise((r) => setTimeout(r, 5));
+
+    // Now the frame's target navigates → lastUrl set.
+    upstream.receive(jsonMsg({
+      sessionId: "S1", method: "Page.frameNavigated",
+      params: { frame: { url: "https://example.com/", parentId: undefined } },
+    }));
+    upstream.receive(jsonMsg({
+      sessionId: "S1", method: "Page.screencastFrame",
+      params: { data: FRAME_JPEG_2, sessionId: 2, metadata: { timestamp: 2, deviceWidth: 1280, deviceHeight: 720 } },
+    }));
+    await new Promise((r) => setTimeout(r, 5));
+
+    client.close();
+    await done;
+
+    // Only the post-navigation frame made it into the manifest.
+    expect(storage.finalSummary?.frameCount).toBe(1);
+    expect(storage.finalManifest?.frames[0].url).toBe("https://example.com/");
+    // First frame was accounted as skipped (recorded in duplicatesSkipped since it took the same code path).
+    expect((storage.finalSummary?.duplicatesSkipped ?? 0)).toBeGreaterThanOrEqual(1);
+  });
+
 });

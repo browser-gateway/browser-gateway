@@ -52,6 +52,9 @@ export interface ScreencastCapturePluginOpts {
   viewportHeight?: number;
   /** Device scale factor for Page.setDeviceMetricsOverride. Defaults to 1. */
   deviceScaleFactor?: number;
+  /** When true, drops frames whose `url` is the empty string (pre-navigation
+   *  about:blank). Reduces manifest noise while the browser is booting. */
+  filterEmptyUrl?: boolean;
   logger?: (msg: string, data?: Record<string, unknown>) => void;
 }
 
@@ -261,6 +264,11 @@ export class ScreencastCapturePlugin implements CdpPlugin {
           state.sendInternalOneWay("Page.stopScreencast", {}, t.cdpSessionId);
         }
       }
+      return;
+    }
+
+    if (this.opts.filterEmptyUrl && !target.lastUrl) {
+      this.duplicatesSkipped++;
       return;
     }
 
