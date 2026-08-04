@@ -43,3 +43,22 @@ export {
   type TestConnectionClient,
   type TestConnectionResult,
 } from "./core/providers/test-connection.js";
+
+// Profile inject + capture — isomorphic helpers callable against any
+// HelperPoolCdpClient (WsCDPClient on Node, RouterCdpClient on Workers,
+// PluginCdpClient inside a Pipeline). Used by ProfilePlugin internally, but
+// also directly by consumers that manage their own CDP wire (e.g. SaaS
+// /v1/live handler that pre-injects before its LiveRelayDO takes over).
+export type { HelperPoolCdpClient } from "./core/profile/helper-pool-client.js";
+export {
+  injectStateEager,
+  type EagerInjectOptions,
+  type EagerInjectResult,
+} from "./core/profile/inject-eager.js";
+export {
+  captureFullStateOnClient,
+  type CaptureFullOptions,
+  type CaptureFullResult,
+} from "./core/profile/capture-full.js";
+export { PROFILE_VERSION, PROFILE_ID_REGEX } from "./core/profile/index.js";
+export { mergeAndPrepareProfile } from "./core/profile/save.js";
