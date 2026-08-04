@@ -4,6 +4,7 @@ import type {
   ReplayMeta,
 } from "../../server/replay/types.js";
 import type { CdpMessage, CdpPlugin, SessionState } from "../types.js";
+import { base64ToBytes } from "../socket-io.js";
 
 /** Backing store the plugin writes chunked frames + metadata to. Isomorphic:
  *  Node fs impl lives in `src/server/replay/node-storage.ts`; a Workers R2
@@ -347,13 +348,6 @@ export class ScreencastCapturePlugin implements CdpPlugin {
     this.chunkBufferBytes = 0;
     this.chunkOpenedAt = 0;
   }
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
 }
 
 function fnv1a32(bytes: Uint8Array): number {

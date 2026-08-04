@@ -1,6 +1,5 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { randomUUID } from "node:crypto";
 import { WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
@@ -9,6 +8,7 @@ import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
 import { resolveWsUrl } from "../../core/providers/cdp.js";
 import { Pipeline, type PipelineSocket } from "../../pipeline/pipeline.js";
 import type { CdpPlugin } from "../../pipeline/types.js";
+import { openUpstream } from "./upstream-open.js";
 
 export interface PipelineRelayOpts {
   gateway: Gateway;
@@ -43,23 +43,12 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<bool
     "pipeline: connecting to provider",
   );
 
-  const upstream = new WebSocket(upstreamUrl, {
-    handshakeTimeout: gateway.config.gateway.connectionTimeout,
-    perMessageDeflate: false,
-  });
-
-  const upstreamOpen = await new Promise<{ ok: true } | { ok: false; err: string }>((resolve) => {
-    const timeout = setTimeout(() => {
-      try { upstream.close(); } catch { /* ignore */ }
-      resolve({ ok: false, err: "upstream-timeout" });
-    }, gateway.config.gateway.connectionTimeout);
-    upstream.once("open", () => { clearTimeout(timeout); resolve({ ok: true }); });
-    upstream.once("error", (err) => { clearTimeout(timeout); resolve({ ok: false, err: err.message }); });
-  });
+  const upstreamOpen = await openUpstream(upstreamUrl, gateway.config.gateway.connectionTimeout);
   if (!upstreamOpen.ok) {
     logger.warn({ sessionId, providerId: provider.id, error: upstreamOpen.err }, "provider connection failed");
     return false;
   }
+  const upstream = upstreamOpen.ws;
 
   const pipeline = new Pipeline(
     upstream as unknown as PipelineSocket,
@@ -124,7 +113,3 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<bool
   return true;
 }
 
-/** Generate a fresh session id for a pipeline session. */
-export function newPipelineSessionId(): string {
-  return randomUUID();
-}

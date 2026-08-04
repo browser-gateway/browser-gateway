@@ -1,16 +1,20 @@
-/** WS /v1/live upgrade handler with profile injection. */
+/** WS /v1/live upgrade handler. Runs the CDP-aware pipeline in solo mode:
+ *  no CDP client peer — the viewer speaks the LIVE protocol via
+ *  ScreencastBridgePlugin, and profile inject/capture rides the same pipeline
+ *  via ProfilePlugin when `?profile=` is present. */
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
-import { randomUUID, timingSafeEqual } from "node:crypto";
-import { WebSocketServer } from "ws";
+import { timingSafeEqual } from "node:crypto";
+import { WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import { resolveWsUrl } from "../../core/providers/cdp.js";
 import { LifecycleError, type ProfileLifecycle, type AcquiredProfile } from "../profile/lifecycle.js";
-import { runBackgroundInjectOnClient } from "../../core/profile/index.js";
-import { WsCDPClient } from "../../core/profile/cdp-client.js";
-import { ScreencastBridge } from "./screencast-bridge.js";
-import { installLazyHydration } from "./lazy-hydration.js";
+import { Pipeline, type PipelineSocket } from "../../pipeline/pipeline.js";
+import { ScreencastBridgePlugin } from "../../pipeline/plugins/screencast-bridge.js";
+import type { CdpPlugin } from "../../pipeline/types.js";
+import { openUpstream } from "../ws/upstream-open.js";
+import { makeProfilePluginFromAcquired } from "../profile/preloaded-profile-plugin.js";
 
 function safeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
@@ -25,7 +29,7 @@ function extractBearer(header: string | undefined): string | undefined {
 function writeHttpError(socket: Duplex, status: number, body: Record<string, unknown>): void {
   const text = JSON.stringify(body);
   socket.write(
-    `HTTP/1.1 ${status} ${status === 400 ? "Bad Request" : status === 401 ? "Unauthorized" : status === 503 ? "Service Unavailable" : "Error"}\r\n` +
+    `HTTP/1.1 ${status} ${status === 400 ? "Bad Request" : status === 401 ? "Unauthorized" : status === 409 ? "Conflict" : status === 503 ? "Service Unavailable" : "Error"}\r\n` +
       `Content-Type: application/json\r\n` +
       `Content-Length: ${Buffer.byteLength(text)}\r\n\r\n` +
       text,
@@ -36,16 +40,12 @@ function writeHttpError(socket: Duplex, status: number, body: Record<string, unk
 export interface CreateLiveHandlerDeps {
   gateway: Gateway;
   logger: Logger;
-  /** Required gateway BG_TOKEN. If unset, auth is disabled. */
   token?: string;
-  /** Optional. When set, `?profile=<id>` is supported. */
   profileLifecycle?: ProfileLifecycle;
-  /** Optional. When set + enabled in config, the session is captured to the replay store. */
-  replayController?: import("../replay/controller.js").ReplayController;
 }
 
 export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
-  const { gateway, logger, token, profileLifecycle, replayController } = deps;
+  const { gateway, logger, token, profileLifecycle } = deps;
   const wss = new WebSocketServer({ noServer: true });
 
   async function handle(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
@@ -67,9 +67,7 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
 
     const providerId = url.searchParams.get("provider");
     if (!providerId) {
-      writeHttpError(socket, 400, {
-        error: "live view requires ?provider=<id>",
-      });
+      writeHttpError(socket, 400, { error: "live view requires ?provider=<id>" });
       return;
     }
 
@@ -110,14 +108,8 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         );
       } catch (err) {
         if (err instanceof LifecycleError) {
-          if (err.reason === "INVALID_ID") {
-            writeHttpError(socket, 400, { error: err.message });
-            return;
-          }
-          if (err.reason === "LOCK_HELD") {
-            writeHttpError(socket, 409, { error: err.message });
-            return;
-          }
+          if (err.reason === "INVALID_ID") { writeHttpError(socket, 400, { error: err.message }); return; }
+          if (err.reason === "LOCK_HELD") { writeHttpError(socket, 409, { error: err.message }); return; }
         }
         logger.error(
           { profileId, error: err instanceof Error ? err.message : String(err) },
@@ -134,155 +126,77 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
     const maxHeight = clampInt(url.searchParams.get("maxHeight"), 240, 2160, 720);
     const everyNthFrame = clampInt(url.searchParams.get("everyNthFrame"), 1, 10, 2);
     const keepAliveRaw = url.searchParams.get("keepAlive");
-    const keepAliveSeconds =
-      keepAliveRaw === null ? 0 : clampInt(keepAliveRaw, 60, 1200, 300);
+    const keepAliveSeconds = keepAliveRaw === null ? 0 : clampInt(keepAliveRaw, 60, 1200, 300);
 
-    wss.handleUpgrade(req, socket, head, async (ws) => {
+    wss.handleUpgrade(req, socket, head, async (viewer) => {
       logger.info(
         { providerId, profileId, format, quality, maxWidth, maxHeight, everyNthFrame, keepAliveSeconds },
-        "live: dashboard connected",
+        "live: viewer connected",
       );
 
-      const bridge = new ScreencastBridge({
-        providerWsUrl,
+      const upstreamReady = await openUpstream(providerWsUrl, gateway.config.gateway.connectionTimeout);
+
+      if (!upstreamReady.ok) {
+        logger.warn({ providerId, error: upstreamReady.err }, "live: upstream connect failed");
+        sendViewerError(viewer, "SETUP_FAILED", `upstream connect failed: ${upstreamReady.err}`);
+        try { viewer.close(1011, "upstream connect failed"); } catch { /* ignore */ }
+        if (acquired && profileLifecycle) await profileLifecycle.release(acquired).catch(() => undefined);
+        return;
+      }
+
+      const bridge = new ScreencastBridgePlugin({
+        viewer: viewer as unknown as PipelineSocket,
         format,
         quality,
-        maxWidth,
-        maxHeight,
+        viewportWidth: maxWidth,
+        viewportHeight: maxHeight,
         everyNthFrame,
         keepAliveSeconds,
-        logger,
+        logger: (msg, data) => logger.info(data ?? {}, msg),
       });
 
-      // Shared CDP client used by inject + background + commit. One WS per
-      // profile session keeps cost to a single billable slot on hosted providers
-      // and avoids re-opening on every phase.
-      let profileClient: WsCDPClient | null = null;
-      const ensureProfileClient = async (): Promise<WsCDPClient> => {
-        if (profileClient) return profileClient;
-        const c = new WsCDPClient();
-        await c.connect(providerWsUrl);
-        profileClient = c;
-        return c;
-      };
-
-      const sessionId = randomUUID();
-      let replayStarted = false;
-      let cleanupRan = false;
-      const cleanup = async () => {
-        if (cleanupRan) return;
-        cleanupRan = true;
-        if (replayStarted && replayController) {
-          replayController.onSessionEnd(sessionId);
-        }
-        if (acquired && profileLifecycle) {
-          try {
-            await profileLifecycle.commit(acquired, providerWsUrl, profileClient ?? undefined);
-          } catch (err) {
-            logger.warn(
-              { profileId, error: err instanceof Error ? err.message : String(err) },
-              "live: profile commit failed (state preserved)",
-            );
-          }
-        }
-        if (profileClient) {
-          await profileClient.close().catch(() => undefined);
-          profileClient = null;
-        }
-      };
-      ws.on("close", () => { void cleanup(); });
-
-      const alreadyInjected = new Set<string>();
-      let teardownLazy: (() => void) | null = null;
-      const backgroundAbort = new AbortController();
-
-      try {
-        await bridge.setup();
-
-        if (replayController) {
-          replayController.onSessionStart({
-            sessionId,
-            providerId,
-            providerWsUrl,
-            profileId: acquired?.profileId ?? undefined,
-            sessionRecord: url.searchParams.get("session_record") === "true",
-          });
-          replayStarted = true;
-        }
-
-        if (acquired && profileLifecycle) {
-          const sharedClient = await ensureProfileClient();
-          const result = await profileLifecycle.inject(acquired, providerWsUrl, sharedClient);
-          for (const o of result.originsInjected) alreadyInjected.add(o);
-
-          const session = bridge.getCdpAndSession();
-          if (session && result.originsDeferred.length > 0) {
-            teardownLazy = installLazyHydration({
-              cdp: session.cdp,
-              mainSessionId: session.sessionId,
-              storage: acquired.storage,
-              alreadyInjected,
-              logger,
-            });
-
-            void runBackgroundInjectOnClient(sharedClient, {
-              origins: result.originsDeferred,
-              storage: acquired.storage,
-              alreadyInjected,
-              signal: backgroundAbort.signal,
-            })
-              .then((bg) => {
-                logger.info(
-                  {
-                    profileId,
-                    injected: bg.injected.length,
-                    skipped: bg.skipped.length,
-                    durationMs: bg.durationMs,
-                  },
-                  "live: background origin hydration finished",
-                );
-              })
-              .catch((err) => {
-                logger.warn(
-                  { profileId, error: err instanceof Error ? err.message : String(err) },
-                  "live: background hydration failed",
-                );
-              });
-          }
-        }
-        bridge.attachDashboard(ws);
-        ws.on("close", () => {
-          if (teardownLazy) teardownLazy();
-          backgroundAbort.abort();
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.warn({ providerId, error: message }, "live: setup failed");
-        try {
-          ws.send(JSON.stringify({ type: "error", code: "SETUP_FAILED", message }));
-        } catch {
-          // ignore
-        }
-        try {
-          ws.close(1011, "setup failed");
-        } catch {
-          // ignore
-        }
-        bridge.close();
-        const pc = profileClient as WsCDPClient | null;
-        if (pc) {
-          await pc.close().catch(() => {});
-          profileClient = null;
-        }
-        if (acquired && profileLifecycle) {
-          await profileLifecycle.release(acquired).catch(() => {});
-          acquired = null;
-        }
+      const plugins: CdpPlugin[] = [];
+      if (acquired && profileLifecycle) {
+        plugins.push(makeProfilePluginFromAcquired(acquired, profileLifecycle, logger));
       }
+      plugins.push(bridge);
+
+      const pipeline = new Pipeline(
+        upstreamReady.ws as unknown as PipelineSocket,
+        providerWsUrl,
+        {
+          plugins,
+          logger: (event) => {
+            if (event.kind === "plugin-error") {
+              logger.warn({ providerId, ...event.data }, "live: pipeline plugin error");
+            }
+          },
+        },
+      );
+
+      const startResult = await pipeline.start();
+      if (!startResult.ok) {
+        const errMsg = startResult.error instanceof Error ? startResult.error.message : String(startResult.error);
+        logger.warn({ providerId, plugin: startResult.plugin, error: errMsg }, "live: pipeline setup failed");
+        sendViewerError(viewer, "SETUP_FAILED", `${startResult.plugin}: ${errMsg}`);
+        try { viewer.close(1011, "setup failed"); } catch { /* ignore */ }
+        if (acquired && profileLifecycle) await profileLifecycle.release(acquired).catch(() => undefined);
+        return;
+      }
+
+      const result = await pipeline.run(null);
+      logger.info(
+        { providerId, profileId, reason: result.reason, ...result.counters },
+        "live: session ended",
+      );
     });
   }
 
   return { handle };
+}
+
+function sendViewerError(viewer: WebSocket, code: string, message: string): void {
+  try { viewer.send(JSON.stringify({ type: "error", code, message })); } catch { /* ignore */ }
 }
 
 function clampInt(raw: string | null, lo: number, hi: number, fallback: number): number {

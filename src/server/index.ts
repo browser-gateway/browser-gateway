@@ -38,7 +38,7 @@ import { loadConfig } from "./config/loader.js";
 import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
 import { bootstrapProfiles, ProfileBootstrapError } from "./profile/bootstrap.js";
-import { ReplayController, ReplayRetention, ReplayStore } from "./replay/index.js";
+import { ReplayRetention, ReplayStore } from "./replay/index.js";
 import { resolveDataDir } from "./setup/data-dir.js";
 import { resolveEncryptionKey } from "./setup/encryption-key.js";
 import { resolvePort, resolveHost } from "./setup/port.js";
@@ -221,12 +221,6 @@ async function startServer() {
 
   const replayStorePath = resolve(resolveDataDir(), config.replay.filesystem.path);
   const replayStore = new ReplayStore(replayStorePath);
-  const replayController = new ReplayController({
-    storePath: replayStorePath,
-    config: config.replay,
-    registry: gateway.registry,
-    logger,
-  });
   const replayRetention = new ReplayRetention({
     store: replayStore,
     storePath: replayStorePath,
@@ -279,7 +273,6 @@ async function startServer() {
     token,
     reconnectRegistry,
     profileBootstrap.enabled ? profileBootstrap.lifecycle : undefined,
-    replayController,
     undefined,
     { storePath: replayStorePath, replayConfig: config.replay },
   );
@@ -451,7 +444,6 @@ async function startServer() {
     }
 
     replayRetention.stop();
-    await replayController.shutdown();
 
     logger.info("server stopped");
     process.exit(0);

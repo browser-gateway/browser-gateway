@@ -1,6 +1,7 @@
 import { withTimeout } from "../core/profile/cdp-utils.js";
 import { InternalIdSpace } from "./id-space.js";
 import { SessionStateImpl } from "./session-state.js";
+import { listen } from "./socket-io.js";
 import type {
   CdpMessage,
   CdpPlugin,
@@ -304,14 +305,6 @@ export class Pipeline {
         this.logger({ kind: "plugin-error", data: { plugin: p.name, hook: "onSessionEnd", err: errToString(err) } });
       }
     }
-  }
-}
-
-function listen(sock: PipelineSocket, evt: string, cb: (data: unknown) => void): void {
-  if (typeof sock.addEventListener === "function") {
-    sock.addEventListener(evt, cb);
-  } else if (typeof sock.on === "function") {
-    sock.on(evt, cb);
   }
 }
 

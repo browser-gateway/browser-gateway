@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-08-03
+Generated: 2026-08-04
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -299,22 +299,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/config/writer.ts`
 
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
-### `src/server/live/cdp-client.ts`
-
-- **interface** `interface CdpEvent` (line 12)
-- **class** `class CdpError` (line 18)
-- **class** `class CdpClient` (line 28)
-### `src/server/live/lazy-hydration.ts`
-
-- **interface** `interface LazyHydrationDeps` (line 7)
-- **fn** `installLazyHydration(deps: LazyHydrationDeps) → () => void` (line 21) — Installs a top-level frameNavigated listener that lazily injects storage. Returns teardown.
-### `src/server/live/screencast-bridge.ts`
-
-- **interface** `interface BridgeOptions` (line 10)
-- **class** `class ScreencastBridge` (line 63)
 ### `src/server/live/upgrade.ts`
 
-- **interface** `interface CreateLiveHandlerDeps` (line 36)
+- **interface** `interface CreateLiveHandlerDeps` (line 40)
 - **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 47)
 ### `src/server/mcp/ax-tree.ts`
 
@@ -395,10 +382,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/profile/node-profile-storage.ts`
 
 - **class** `class NodeProfileStorage` (line 17) — Node-side {@link ProfileStorage} adapter. Wraps the existing
-### `src/server/replay/capture.ts`
+### `src/server/profile/preloaded-profile-plugin.ts`
 
-- **interface** `interface ReplayCaptureOpts` (line 10)
-- **class** `class ReplayCapture` (line 33)
+- **fn** `makeProfilePluginFromAcquired(acquired: AcquiredProfile, profileLifecycle: ProfileLifecycle, logger: Logger) → ProfilePlugin` (line 9) — Wraps an already-acquired profile as a preloaded {@link ProfilePlugin}.
 ### `src/server/replay/constants.ts`
 
 - **const** `const SESSION_ID_REGEX` (line 1)
@@ -406,10 +392,6 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **const** `const PART_NAME_REGEX` (line 5)
 - **const** `const CHUNK_MAX_BYTES` (line 7)
 - **const** `const CHUNK_MAX_ELAPSED_MS` (line 9)
-### `src/server/replay/controller.ts`
-
-- **interface** `interface ReplayControllerOpts` (line 6)
-- **class** `class ReplayController` (line 13)
 ### `src/server/replay/node-storage.ts`
 
 - **class** `class NodeReplayStorage` (line 11) — Node fs impl of ReplayStorage. Layout matches `ReplayStore` reader:
@@ -528,14 +510,16 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface PipelineRelayOpts` (line 13)
 - **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<boolean>` (line 31) — Two-phase pipeline handoff for `/v1/connect`:
-- **fn** `newPipelineSessionId() → string` (line 128) — Generate a fresh session id for a pipeline session.
 ### `src/server/ws/probe.ts`
 
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **interface** `interface PipelineReplayContext` (line 189)
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, replayController?: ReplayController, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 194)
+- **interface** `interface PipelineReplayContext` (line 148)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 153)
+### `src/server/ws/upstream-open.ts`
+
+- **fn** `openUpstream(url: string, timeoutMs: number) → Promise<{ ok: true; ws: WebSocket } | { ok: false; err: string }>` (line 5) — Open a Node `ws` upstream and race it against a timeout. Resolves once
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 

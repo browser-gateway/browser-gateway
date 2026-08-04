@@ -24,15 +24,13 @@ import {
 import { createLiveUpgradeHandler } from "../live/upgrade.js";
 import { getEffectiveProtocolNode } from "../util/request.js";
 import { parseAllowedOrigins } from "../util/request.js";
-import type { ReplayController } from "../replay/controller.js";
 import type { ReplayConfig } from "../../core/types.js";
 import { handlePipelineRelay } from "./pipeline-relay.js";
-import { ProfilePlugin } from "../../pipeline/plugins/profile.js";
 import { ScreencastCapturePlugin } from "../../pipeline/plugins/screencast-capture.js";
 import { NodeReplayStorage } from "../replay/node-storage.js";
 import { CHUNK_MAX_BYTES, CHUNK_MAX_ELAPSED_MS } from "../replay/constants.js";
-import { PROFILE_VERSION } from "../../core/profile/index.js";
 import type { CdpPlugin } from "../../pipeline/types.js";
+import { makeProfilePluginFromAcquired } from "../profile/preloaded-profile-plugin.js";
 
 /** How long to wait for a held profile lock to release before returning 409. */
 const PROFILE_LOCK_WAIT_MS = 15_000;
@@ -126,45 +124,6 @@ function buildPluginList(inputs: PluginListInputs): CdpPlugin[] {
   return plugins;
 }
 
-/** Wraps an already-acquired profile as a preloaded ProfilePlugin. The
- *  outer WS handler owns the lock lifecycle via ProfileLifecycle; the
- *  plugin handles inject + capture on the pipeline's CDP connection. */
-function makeProfilePluginFromAcquired(
-  acquired: AcquiredProfile,
-  profileLifecycle: ProfileLifecycle,
-  logger: Logger,
-): ProfilePlugin {
-  const loadedProfile = {
-    version: PROFILE_VERSION,
-    capturedAt: new Date().toISOString(),
-    cookies: acquired.cookies,
-    storage: acquired.storage,
-    indexeddb: acquired.indexeddb,
-    meta: { capturedOrigins: [], skippedOrigins: [], durationMs: 0 },
-  };
-
-  return new ProfilePlugin({
-    profileId: acquired.profileId,
-    readOnly: acquired.readOnly,
-    preloaded: acquired.readOnly
-      ? { profile: loadedProfile }
-      : {
-          profile: loadedProfile,
-          onSave: async (captured) => {
-            await profileLifecycle.commitCaptured(acquired, {
-              cookies: captured.cookies,
-              storage: captured.storage,
-              indexeddb: captured.indexeddb ?? [],
-            });
-          },
-          onEmptyCapture: async () => {
-            await profileLifecycle.release(acquired);
-          },
-        },
-    logger: (msg, data) => logger.info(data ?? {}, msg),
-  });
-}
-
 function respondError(socket: Duplex, status: number, body: Record<string, unknown>): void {
   const text = JSON.stringify(body);
   const statusText = HTTP_STATUS_TEXT[status] ?? "Error";
@@ -197,12 +156,11 @@ export function createWebSocketHandler(
   token?: string,
   reconnectRegistry?: ReconnectRegistry,
   profileLifecycle?: ProfileLifecycle,
-  replayController?: ReplayController,
   transport: RelayTransport = new NodeTcpPipeTransport(),
   pipelineReplay?: PipelineReplayContext,
 ) {
 
-  const liveHandler = createLiveUpgradeHandler({ gateway, logger, token, profileLifecycle, replayController });
+  const liveHandler = createLiveUpgradeHandler({ gateway, logger, token, profileLifecycle });
   const allowedOrigins = parseAllowedOrigins(process.env.BG_ALLOWED_ORIGINS);
 
   async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
@@ -347,7 +305,7 @@ export function createWebSocketHandler(
 
           const connected = await pipeToProvider(
             gateway, logger, transport, socket, head, req, reconnectSessionId, provider, reconnectRegistry,
-            profileLifecycle, acquired, replayController,
+            profileLifecycle, acquired,
           );
 
           if (connected) {
@@ -413,7 +371,7 @@ export function createWebSocketHandler(
             })
           : await pipeToProvider(
               gateway, logger, transport, socket, head, req, sessionId, provider, reconnectRegistry,
-              profileLifecycle, acquired, replayController,
+              profileLifecycle, acquired,
             );
 
         if (connected) {
@@ -503,13 +461,7 @@ async function pipeToProvider(
   reconnectRegistry?: ReconnectRegistry,
   profileLifecycle?: ProfileLifecycle,
   acquired?: AcquiredProfile | null,
-  replayController?: ReplayController,
 ): Promise<boolean> {
-  const reqUrl = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
-  const isInternalPool = reqUrl.searchParams.get("__pool") === "1";
-  const sessionRecord = reqUrl.searchParams.get("session_record") === "true";
-  const effectiveReplay = isInternalPool ? undefined : replayController;
-
   let resolvedUrl: string;
   try {
     resolvedUrl = await cachedResolveWsUrl(provider.config.url, gateway.config.gateway.connectionTimeout);
@@ -569,10 +521,6 @@ async function pipeToProvider(
     const source = closeReasonToSource(reason);
     const session = gateway.sessions.remove(sessionId);
     gateway.releaseSlot(sessionId, provider.id);
-
-    if (effectiveReplay) {
-      effectiveReplay.onSessionEnd(sessionId);
-    }
 
     const durationMs = Date.now() - startTime;
     gateway.recordSuccess(provider.id, durationMs);
@@ -645,15 +593,6 @@ async function pipeToProvider(
       gateway.sessions.create(sessionId, provider.id, acquired?.profileId);
       gateway.emit("session.created", { sessionId, providerId: provider.id });
       logger.info({ sessionId, providerId: provider.id }, "session established");
-      if (effectiveReplay) {
-        effectiveReplay.onSessionStart({
-          sessionId,
-          providerId: provider.id,
-          providerWsUrl: resolvedUrl,
-          profileId: acquired?.profileId,
-          sessionRecord,
-        });
-      }
     },
     onMessage: () => {
       gateway.sessions.recordActivity(sessionId);
