@@ -36,10 +36,12 @@ export function httpDiscoveryUrl(providerUrl: string): string {
 export async function fetchProviderIdentity(
   providerUrl: string,
   timeoutMs: number = 3000,
+  headers?: Record<string, string>,
 ): Promise<ProviderIdentity> {
   try {
     const res = await fetch(httpDiscoveryUrl(providerUrl), {
       signal: AbortSignal.timeout(timeoutMs),
+      ...(headers ? { headers } : {}),
     });
     if (!res.ok) return UNKNOWN_IDENTITY;
     const data = (await res.json()) as Record<string, unknown>;
@@ -60,9 +62,13 @@ export async function fetchProviderIdentity(
 export async function fetchCdpVersion(
   httpUrl: string,
   timeoutMs: number = 3000,
+  headers?: Record<string, string>,
 ): Promise<CdpVersionInfo> {
   const versionUrl = `${httpUrl.replace(/\/$/, "")}/json/version`;
-  const res = await fetch(versionUrl, { signal: AbortSignal.timeout(timeoutMs) });
+  const res = await fetch(versionUrl, {
+    signal: AbortSignal.timeout(timeoutMs),
+    ...(headers ? { headers } : {}),
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as CdpVersionInfo;
 }
@@ -74,11 +80,12 @@ export function isHttpUrl(url: string): boolean {
 export async function resolveWsUrl(
   providerUrl: string,
   timeoutMs: number = 3000,
+  headers?: Record<string, string>,
 ): Promise<string> {
   if (!isHttpUrl(providerUrl)) return providerUrl;
 
   const parsed = new URL(providerUrl);
-  const data = await fetchCdpVersion(providerUrl, timeoutMs);
+  const data = await fetchCdpVersion(providerUrl, timeoutMs, headers);
 
   if (data.webSocketDebuggerUrl) {
     const wsUrl = new URL(data.webSocketDebuggerUrl);

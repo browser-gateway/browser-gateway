@@ -130,6 +130,7 @@ export const GatewayConfigSchema: z.ZodObject<{
         weight: z.ZodDefault<z.ZodNumber>;
         profile: z.ZodOptional<z.ZodString>;
         multiProfile: z.ZodDefault<z.ZodBoolean>;
+        headers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
     }, z.core.$strip>>;
     pool: z.ZodDefault<z.ZodObject<{
         minSessions: z.ZodDefault<z.ZodNumber>;
@@ -262,6 +263,7 @@ export const ProviderConfigSchema: z.ZodObject<{
     weight: z.ZodDefault<z.ZodNumber>;
     profile: z.ZodOptional<z.ZodString>;
     multiProfile: z.ZodDefault<z.ZodBoolean>;
+    headers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
 }, z.core.$strip>;
 
 // Warning: (ae-forgotten-export) The symbol "ProviderStore" needs to be exported by the entry point index.d.ts
@@ -407,6 +409,15 @@ export interface RelayTransport {
     // (undocumented)
     relay(opts: RelayOptions): Promise<RelayResult>;
 }
+
+// @public
+export interface ResolvedOutbound {
+    upstreamHeaders: Record<string, string>;
+    upstreamUrl: string;
+}
+
+// @public
+export function resolveProviderOutbound(providerUrl: string, providerHeaders?: Record<string, string>): ResolvedOutbound;
 
 // @public (undocumented)
 export interface Session {

@@ -104,3 +104,43 @@ export interface RelayTransport {
   readonly name: string;
   relay(opts: RelayOptions): Promise<RelayResult>;
 }
+
+/** Headers a relay caller has already resolved from provider config + URL userinfo. */
+export interface ResolvedOutbound {
+  /** Upstream URL with any userinfo stripped (userinfo becomes Authorization: Basic). */
+  upstreamUrl: string;
+  /** Headers derived from provider config + URL userinfo. May be empty. */
+  upstreamHeaders: Record<string, string>;
+}
+
+/**
+ * Compose the upstream headers a bridge must send from provider-config `headers`
+ * and any URL userinfo. Isomorphic (Node + Workers). Rules:
+ *   - URL userinfo → `Authorization: Basic <base64(user:pass)>`, but only if no
+ *     `Authorization` header already exists in `providerHeaders`.
+ *   - URL userinfo is stripped from the returned `upstreamUrl` (RFC 3986 forbids
+ *     it on the wire).
+ *   - Header key casing from `providerHeaders` is preserved verbatim.
+ *
+ * @throws Error if `providerUrl` is not a valid URL.
+ */
+export function resolveProviderOutbound(
+  providerUrl: string,
+  providerHeaders?: Record<string, string>,
+): ResolvedOutbound {
+  const u = new URL(providerUrl);
+  const headers: Record<string, string> = { ...(providerHeaders ?? {}) };
+  const hasAuthorization = Object.keys(headers).some(
+    (k) => k.toLowerCase() === "authorization",
+  );
+  if (u.username && !hasAuthorization) {
+    const user = decodeURIComponent(u.username);
+    const pass = decodeURIComponent(u.password ?? "");
+    headers["Authorization"] = `Basic ${globalThis.btoa(`${user}:${pass}`)}`;
+  }
+  if (u.username || u.password) {
+    u.username = "";
+    u.password = "";
+  }
+  return { upstreamUrl: u.toString(), upstreamHeaders: headers };
+}

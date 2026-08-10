@@ -23,4 +23,6 @@ export type {
   RelayOptions,
   RelayResult,
   RelayTransport,
+  ResolvedOutbound,
 } from "./transport.js";
+export { resolveProviderOutbound } from "./transport.js";

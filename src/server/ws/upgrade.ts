@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { ProviderState } from "../../core/types.js";
 import type { RelayTransport, RelayCloseReason } from "../../core/transport.js";
+import { resolveProviderOutbound } from "../../core/transport.js";
 import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
 import { NodeTcpPipeTransport } from "../transport/node.js";
 import { isEligibleForProfile } from "../../core/router/selector.js";
@@ -426,7 +427,11 @@ const cdpUrlCache = new Map<string, { wsUrl: string; resolvedAt: number }>();
 const CDP_CACHE_TTL = 30000;
 const CDP_CACHE_MAX = 256;
 
-async function cachedResolveWsUrl(providerUrl: string, timeoutMs: number): Promise<string> {
+async function cachedResolveWsUrl(
+  providerUrl: string,
+  timeoutMs: number,
+  headers?: Record<string, string>,
+): Promise<string> {
   if (!isHttpUrl(providerUrl)) return providerUrl;
 
   const cached = cdpUrlCache.get(providerUrl);
@@ -437,7 +442,7 @@ async function cachedResolveWsUrl(providerUrl: string, timeoutMs: number): Promi
     return cached.wsUrl;
   }
 
-  const resolved = await resolveWsUrl(providerUrl, Math.min(timeoutMs, 3000));
+  const resolved = await resolveWsUrl(providerUrl, Math.min(timeoutMs, 3000), headers);
   if (resolved !== providerUrl) {
     if (cdpUrlCache.size >= CDP_CACHE_MAX) {
       // Evict oldest entry (Map iteration order = insertion order)
@@ -464,7 +469,11 @@ async function pipeToProvider(
 ): Promise<boolean> {
   let resolvedUrl: string;
   try {
-    resolvedUrl = await cachedResolveWsUrl(provider.config.url, gateway.config.gateway.connectionTimeout);
+    resolvedUrl = await cachedResolveWsUrl(
+      provider.config.url,
+      gateway.config.gateway.connectionTimeout,
+      provider.config.headers,
+    );
   } catch {
     resolvedUrl = provider.config.url;
   }
@@ -583,10 +592,12 @@ async function pipeToProvider(
     }
   };
 
+  const outbound = resolveProviderOutbound(resolvedUrl, provider.config.headers);
   const relayResult = await transport.relay({
     client: clientSocket,
     clientMeta: { req, head },
-    upstreamUrl: resolvedUrl,
+    upstreamUrl: outbound.upstreamUrl,
+    upstreamHeaders: outbound.upstreamHeaders,
     sessionId,
     connectionTimeoutMs: gateway.config.gateway.connectionTimeout,
     onUpgrade: () => {

@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-08-04
+Generated: 2026-08-10
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -221,10 +221,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface ProviderIdentity` (line 8) — Vendor fields a provider may advertise on its CDP discovery endpoint.
 - **const** `const UNKNOWN_IDENTITY: Readonly<ProviderIdentity>` (line 15)
 - **fn** `httpDiscoveryUrl(providerUrl: string) → string` (line 25) — Derives the HTTP `/json/version` discovery URL for a provider URL of any
-- **fn** `fetchProviderIdentity(providerUrl: string, timeoutMs: number = 3000) → Promise<ProviderIdentity>` (line 36) — Reads a provider's vendor identity from its `/json/version` response.
-- **fn** `fetchCdpVersion(httpUrl: string, timeoutMs: number = 3000) → Promise<CdpVersionInfo>` (line 60)
-- **fn** `isHttpUrl(url: string) → boolean` (line 70)
-- **fn** `resolveWsUrl(providerUrl: string, timeoutMs: number = 3000) → Promise<string>` (line 74)
+- **fn** `fetchProviderIdentity(providerUrl: string, timeoutMs: number = 3000, headers?: Record<string, string>) → Promise<ProviderIdentity>` (line 36) — Reads a provider's vendor identity from its `/json/version` response.
+- **fn** `fetchCdpVersion(httpUrl: string, timeoutMs: number = 3000, headers?: Record<string, string>) → Promise<CdpVersionInfo>` (line 62)
+- **fn** `isHttpUrl(url: string) → boolean` (line 76)
+- **fn** `resolveWsUrl(providerUrl: string, timeoutMs: number = 3000, headers?: Record<string, string>) → Promise<string>` (line 80)
 ### `src/core/providers/effective.ts`
 
 - **fn** `isEligibleForProfile(config: ProviderConfig, requestedProfile: string | null | undefined) → boolean` (line 10) — Given a provider's config and the caller's requested profile, decide whether
@@ -272,19 +272,21 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface RelayOptions` (line 42) — Options passed to `RelayTransport.relay()`.
 - **interface** `interface RelayResult` (line 76) — Result of a `relay()` invocation.
 - **interface** `interface RelayTransport` (line 103) — Bidirectional WebSocket relay between an accepted client and an upstream URL.
+- **interface** `interface ResolvedOutbound` (line 109) — Headers a relay caller has already resolved from provider config + URL userinfo.
+- **fn** `resolveProviderOutbound(providerUrl: string, providerHeaders?: Record<string, string>) → ResolvedOutbound` (line 127) — Compose the upstream headers a bridge must send from provider-config `headers`
 ### `src/core/types.ts`
 
 - **const** `const ProviderConfigSchema` (line 4)
-- **const** `const WebhookSchema` (line 68)
-- **const** `const ProfilesConfigSchema` (line 81)
-- **type** `type ProfilesConfig` (line 97)
-- **const** `const ReplayConfigSchema` (line 109)
-- **type** `type ReplayConfig` (line 117)
-- **const** `const GatewayConfigSchema` (line 119)
-- **type** `type ProviderConfig` (line 131)
-- **type** `type GatewayConfig` (line 132)
-- **interface** `interface ProviderState` (line 134)
-- **interface** `interface Session` (line 151)
+- **const** `const WebhookSchema` (line 75)
+- **const** `const ProfilesConfigSchema` (line 88)
+- **type** `type ProfilesConfig` (line 104)
+- **const** `const ReplayConfigSchema` (line 116)
+- **type** `type ReplayConfig` (line 124)
+- **const** `const GatewayConfigSchema` (line 126)
+- **type** `type ProviderConfig` (line 138)
+- **type** `type GatewayConfig` (line 139)
+- **interface** `interface ProviderState` (line 141)
+- **interface** `interface Session` (line 158)
 
 ## Server layer (src/server/)
 
@@ -508,18 +510,18 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 >` (line 74) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/pipeline-relay.ts`
 
-- **interface** `interface PipelineRelayOpts` (line 13)
-- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<boolean>` (line 31) — Two-phase pipeline handoff for `/v1/connect`:
+- **interface** `interface PipelineRelayOpts` (line 14)
+- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<boolean>` (line 32) — Two-phase pipeline handoff for `/v1/connect`:
 ### `src/server/ws/probe.ts`
 
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **interface** `interface PipelineReplayContext` (line 148)
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 153)
+- **interface** `interface PipelineReplayContext` (line 149)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 154)
 ### `src/server/ws/upstream-open.ts`
 
-- **fn** `openUpstream(url: string, timeoutMs: number) → Promise<{ ok: true; ws: WebSocket } | { ok: false; err: string }>` (line 5) — Open a Node `ws` upstream and race it against a timeout. Resolves once
+- **fn** `openUpstream(url: string, timeoutMs: number, headers?: Record<string, string>) → Promise<{ ok: true; ws: WebSocket } | { ok: false; err: string }>` (line 7) — Open a Node `ws` upstream and race it against a timeout. Resolves once
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 

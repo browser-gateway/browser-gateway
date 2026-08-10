@@ -22,6 +22,13 @@ export const ProviderConfigSchema = z
      * Not user-facing yet — do not advertise in docs or dashboard.
      */
     multiProfile: z.boolean().default(false),
+    /**
+     * Extra HTTP headers to include on the upstream WS upgrade request.
+     * Used for providers that require Bearer / API-key / custom auth on the
+     * WebSocket handshake (Cloudflare Browser Run, private reverse proxies,
+     * etc.). Header values here override any same-named client-provided header.
+     */
+    headers: z.record(z.string(), z.string()).optional(),
   })
   .refine((c) => !(c.profile && c.multiProfile), {
     message: "provider.profile and provider.multiProfile are mutually exclusive",

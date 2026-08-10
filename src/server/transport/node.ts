@@ -65,7 +65,7 @@ export class NodeTcpPipeTransport implements RelayTransport {
 
       function onConnect(): void {
         clearTimeout(timeout);
-        providerSocket.write(buildUpgradeRequest(providerUrl, req));
+        providerSocket.write(buildUpgradeRequest(providerUrl, req, opts.upstreamHeaders));
         if (head.length > 0) providerSocket.write(head);
       }
 
@@ -152,19 +152,30 @@ export class NodeTcpPipeTransport implements RelayTransport {
   }
 }
 
-function buildUpgradeRequest(providerUrl: URL, originalReq: IncomingMessage): string {
+function buildUpgradeRequest(
+  providerUrl: URL,
+  originalReq: IncomingMessage,
+  overrides?: Record<string, string>,
+): string {
   const path = providerUrl.pathname + providerUrl.search;
-  let request = `GET ${path} HTTP/1.1\r\n`;
-  request += `Host: ${providerUrl.host}\r\n`;
-  const skipHeaders = new Set(["host", "connection", "upgrade", "authorization"]);
+  const overrideKeys = new Set(Object.keys(overrides ?? {}).map((k) => k.toLowerCase()));
+  const skipHeaders = new Set(["host", "connection", "upgrade"]);
+  const emitted: string[] = [];
+  emitted.push(`GET ${path} HTTP/1.1`);
+  emitted.push(`Host: ${providerUrl.host}`);
   for (let i = 0; i < originalReq.rawHeaders.length; i += 2) {
     const key = originalReq.rawHeaders[i];
-    if (key && !skipHeaders.has(key.toLowerCase())) {
-      request += `${key}: ${originalReq.rawHeaders[i + 1]}\r\n`;
-    }
+    if (!key) continue;
+    const lower = key.toLowerCase();
+    if (skipHeaders.has(lower)) continue;
+    if (overrideKeys.has(lower)) continue;
+    emitted.push(`${key}: ${originalReq.rawHeaders[i + 1]}`);
   }
-  request += `Connection: Upgrade\r\n`;
-  request += `Upgrade: websocket\r\n`;
-  request += `\r\n`;
-  return request;
+  for (const [key, value] of Object.entries(overrides ?? {})) {
+    if (skipHeaders.has(key.toLowerCase())) continue;
+    emitted.push(`${key}: ${value}`);
+  }
+  emitted.push(`Connection: Upgrade`);
+  emitted.push(`Upgrade: websocket`);
+  return emitted.join("\r\n") + "\r\n\r\n";
 }

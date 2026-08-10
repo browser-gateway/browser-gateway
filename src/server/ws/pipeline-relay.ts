@@ -6,6 +6,7 @@ import type { Gateway } from "../../core/index.js";
 import type { ProviderState } from "../../core/types.js";
 import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
 import { resolveWsUrl } from "../../core/providers/cdp.js";
+import { resolveProviderOutbound } from "../../core/transport.js";
 import { Pipeline, type PipelineSocket } from "../../pipeline/pipeline.js";
 import type { CdpPlugin } from "../../pipeline/types.js";
 import { openUpstream } from "./upstream-open.js";
@@ -33,17 +34,27 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<bool
 
   let upstreamUrl: string;
   try {
-    upstreamUrl = await resolveWsUrl(provider.config.url, gateway.config.gateway.connectionTimeout);
+    upstreamUrl = await resolveWsUrl(
+      provider.config.url,
+      gateway.config.gateway.connectionTimeout,
+      provider.config.headers,
+    );
   } catch {
     upstreamUrl = provider.config.url;
   }
+
+  const outbound = resolveProviderOutbound(upstreamUrl, provider.config.headers);
 
   logger.info(
     { sessionId, providerId: provider.id, plugins: plugins.map((p) => p.name) },
     "pipeline: connecting to provider",
   );
 
-  const upstreamOpen = await openUpstream(upstreamUrl, gateway.config.gateway.connectionTimeout);
+  const upstreamOpen = await openUpstream(
+    outbound.upstreamUrl,
+    gateway.config.gateway.connectionTimeout,
+    outbound.upstreamHeaders,
+  );
   if (!upstreamOpen.ok) {
     logger.warn({ sessionId, providerId: provider.id, error: upstreamOpen.err }, "provider connection failed");
     return false;
