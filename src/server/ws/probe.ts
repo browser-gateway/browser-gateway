@@ -5,9 +5,16 @@ import WebSocket from "ws";
  * on `error` or timeout. Used by `POST /v1/providers/:id/test` and the CLI
  * `browser-gateway check` to verify reachability of a provider WS endpoint.
  */
-export function probeWebSocket(url: string, timeoutMs = 5_000): Promise<void> {
+export function probeWebSocket(
+  url: string,
+  timeoutMs = 5_000,
+  headers?: Record<string, string>,
+): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const ws = new WebSocket(url, { handshakeTimeout: timeoutMs });
+    const ws = new WebSocket(url, {
+      handshakeTimeout: timeoutMs,
+      headers,
+    });
     const timer = setTimeout(() => {
       try { ws.close(); } catch {}
       reject(new Error("timeout"));

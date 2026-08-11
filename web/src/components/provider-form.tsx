@@ -8,9 +8,9 @@ import {
   Eye,
   EyeOff,
   Loader2,
+  Plug,
   Plus,
   X,
-  Zap,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -157,9 +157,10 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
     setTesting(true);
     setTestResult(null);
     try {
+      const outboundHeaders = headersToRecord(headers);
       const r = isEdit && initial
-        ? await testProvider(initial.id)
-        : await testProvider("_new", url.trim());
+        ? await testProvider(initial.id, undefined, outboundHeaders)
+        : await testProvider("_new", url.trim(), outboundHeaders);
       setTestResult(r);
     } catch (err) {
       setTestResult({
@@ -273,7 +274,7 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
                 {testing ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Zap className="h-3.5 w-3.5" />
+                  <Plug className="h-3.5 w-3.5" />
                 )}
                 {testing ? COPY.actions.testing : COPY.actions.test}
               </Button>

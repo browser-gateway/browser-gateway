@@ -517,12 +517,20 @@ export function createApp(
     const provider = gateway.config.providers[id];
 
     let url: string;
+    let headers: Record<string, string> | undefined;
     if (provider) {
       url = provider.url;
+      headers = provider.headers;
     } else {
       const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
       url = body.url as string;
       if (!url) return c.json({ error: "Provider not found and no URL provided" }, 400);
+      if (body.headers && typeof body.headers === "object" && !Array.isArray(body.headers)) {
+        const entries = Object.entries(body.headers as Record<string, unknown>).filter(
+          ([k, v]) => typeof k === "string" && typeof v === "string" && k && v,
+        ) as [string, string][];
+        if (entries.length > 0) headers = Object.fromEntries(entries);
+      }
     }
 
     const start = Date.now();
@@ -537,7 +545,7 @@ export function createApp(
         });
       }
 
-      await probeWebSocket(url, 5000);
+      await probeWebSocket(url, 5000, headers);
       return c.json({ ok: true, latencyMs: Date.now() - start });
     } catch (err: any) {
       return c.json({ ok: false, error: err.message, latencyMs: Date.now() - start });

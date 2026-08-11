@@ -514,7 +514,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<boolean>` (line 32) — Two-phase pipeline handoff for `/v1/connect`:
 ### `src/server/ws/probe.ts`
 
-- **fn** `probeWebSocket(url: string, timeoutMs = 5_000) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
+- **fn** `probeWebSocket(url: string, timeoutMs = 5_000, headers?: Record<string, string>) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
 - **interface** `interface PipelineReplayContext` (line 149)

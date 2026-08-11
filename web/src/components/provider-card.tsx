@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, Loader2, Pencil, Trash2, X, Zap } from "lucide-react";
+import { Check, Loader2, Pencil, Plug, Trash2, X } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CapabilityStrip } from "@/components/capability-strip";
@@ -169,7 +169,7 @@ export function ProviderCard({
               {testing ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <Zap className="h-3.5 w-3.5" />
+                <Plug className="h-3.5 w-3.5" />
               )}
             </Button>
             <Link

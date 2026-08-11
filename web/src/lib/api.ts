@@ -201,12 +201,16 @@ export async function testWebhook(url: string): Promise<{ ok: boolean; status?: 
 
 export async function testProvider(
   id: string,
-  url?: string
+  url?: string,
+  headers?: Record<string, string>,
 ): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  const body: Record<string, unknown> = {};
+  if (url) body.url = url;
+  if (headers && Object.keys(headers).length > 0) body.headers = headers;
   const res = await fetch(`${API_BASE}/v1/providers/${id}/test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(url ? { url } : {}),
+    body: JSON.stringify(body),
     credentials: "include",
   });
   return res.json();
