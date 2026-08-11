@@ -412,6 +412,7 @@ export function createApp(
         weight: p.weight ?? 1,
         profile: p.profile ?? null,
         multiProfile: p.multiProfile || state?.detectedKind === "browserserve" || false,
+        headers: p.headers ?? null,
       };
     });
     return c.json({ providers });

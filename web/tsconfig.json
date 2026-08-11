@@ -25,6 +25,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@shared/provider-form": [
+        "../dist/provider-form/index"
       ]
     }
   },

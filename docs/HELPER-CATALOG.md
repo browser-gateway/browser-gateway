@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-08-10
+Generated: 2026-08-11
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -502,12 +502,12 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 15) — Format a Zod error into a human-readable list of "path: message" strings.
 - **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 26) — Parse a provider config body (from POST or PUT /v1/providers/...).
-- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 56) — Validate a webhook request body against {@link WebhookSchema}.
+- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 58) — Validate a webhook request body against {@link WebhookSchema}.
 - **fn** `parseYamlGatewayConfig(yaml: string) → Promise<
   | { kind: "parse-error"; message: string }
   | { kind: "validation-error"; errors: string[] }
   | { kind: "ok"; data: GatewayConfig }
->` (line 74) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
+>` (line 76) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/pipeline-relay.ts`
 
 - **interface** `interface PipelineRelayOpts` (line 14)
