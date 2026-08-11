@@ -45,7 +45,7 @@ export default function NewProviderPage() {
   }, []);
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       <div>
         <Link
           href="/providers"

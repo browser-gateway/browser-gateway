@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Slider } from "@/components/ui/slider";
+import { Select, type SelectOption } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   addProvider,
@@ -56,9 +56,9 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
   const [maxConcurrent, setMaxConcurrent] = React.useState(
     initial?.maxConcurrent != null ? String(initial.maxConcurrent) : "",
   );
-  const [priority, setPriority] = React.useState<number>(initial?.priority ?? 1);
-  const [weight, setWeight] = React.useState<number>(initial?.weight ?? 1);
-  const [profile, setProfile] = React.useState(
+  const [priority, setPriority] = React.useState<number>(initial?.priority ?? 100);
+  const [weight, setWeight] = React.useState<number>(initial?.weight ?? 100);
+  const [profile, setProfile] = React.useState<string>(
     initial?.multiProfile ? "*" : (initial?.profile ?? ""),
   );
   const [headers, setHeaders] = React.useState<HeaderRow[]>(() =>
@@ -80,14 +80,13 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
     [siblings, initial, isEdit],
   );
 
-  const allPriorities = React.useMemo(
-    () => [...otherSiblings.map((s) => s.priority), priority],
-    [otherSiblings, priority],
-  );
-
   const priorityEffect = React.useMemo(
-    () => computePriorityEffect(priority, allPriorities),
-    [priority, allPriorities],
+    () =>
+      computePriorityEffect(priority, [
+        ...otherSiblings.map((s) => s.priority),
+        priority,
+      ]),
+    [priority, otherSiblings],
   );
 
   const weightEffect = React.useMemo(
@@ -110,6 +109,8 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
     if (urlErr) errs.url = urlErr;
     const mcErr = validatePositiveInteger(maxConcurrent, "Max connections");
     if (mcErr) errs.maxConcurrent = mcErr;
+    if (priority < 1) errs.priority = "At least 1.";
+    if (weight < 1) errs.weight = "At least 1.";
     const headerErr = validateHeaderRows(headers);
     if (headerErr) errs.headers = headerErr;
     setErrors(errs);
@@ -194,6 +195,27 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
   }
 
   const filledHeaderCount = headers.filter((h) => h.key.trim() && h.value).length;
+
+  const profileOptions: SelectOption<string>[] = React.useMemo(() => {
+    const base: SelectOption<string>[] = [
+      { value: "", label: COPY.profile.noneOption },
+      { value: "*", label: COPY.profile.anyOption },
+    ];
+    if (profile && profile !== "*" && !availableProfiles.some((p) => p.id === profile)) {
+      base.push({ value: profile, label: `Only ${profile} (not created yet)` });
+    }
+    for (const p of availableProfiles) {
+      base.push({ value: p.id, label: `Only ${p.id}` });
+    }
+    return base;
+  }, [availableProfiles, profile]);
+
+  const profileHint =
+    profile === "*"
+      ? COPY.profile.hintAny
+      : profile
+      ? COPY.profile.hintPinned(profile)
+      : COPY.profile.hintNone;
 
   return (
     <form onSubmit={handleSubmit}>
@@ -282,225 +304,210 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
 
           {profilesEnabled && (
             <div>
-              <label className="text-sm font-medium block mb-1.5" htmlFor="prov-profile">
+              <label className="text-sm font-medium block mb-1.5">
                 {COPY.profile.label}
               </label>
-              <select
-                id="prov-profile"
+              <Select
                 value={profile}
-                onChange={(e) => setProfile(e.target.value)}
-                className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-              >
-                <option value="">{COPY.profile.noneOption}</option>
-                <option value="*">{COPY.profile.anyOption}</option>
-                {profile && profile !== "*" && !availableProfiles.some((p) => p.id === profile) && (
-                  <option value={profile}>Only {profile} (not created yet)</option>
-                )}
-                {availableProfiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    Only {p.id}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground mt-1.5">
-                {profile === "*"
-                  ? COPY.profile.hintAny
-                  : profile
-                  ? COPY.profile.hintPinned(profile)
-                  : COPY.profile.hintNone}
-              </p>
+                options={profileOptions}
+                onChange={setProfile}
+                fullWidth
+              />
+              <p className="text-xs text-muted-foreground mt-1.5">{profileHint}</p>
             </div>
           )}
 
-          <div>
-            <label className="text-sm font-medium block mb-1.5" htmlFor="prov-max">
-              {COPY.maxConcurrent.label}
-            </label>
-            <input
-              id="prov-max"
-              type="number"
-              min="1"
-              value={maxConcurrent}
-              onChange={(e) => {
-                setMaxConcurrent(e.target.value);
-                setErrors((p) => ({ ...p, maxConcurrent: "" }));
-              }}
-              placeholder={COPY.maxConcurrent.placeholder}
-              className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-            {errors.maxConcurrent ? (
-              <p className="text-xs text-destructive mt-1">{errors.maxConcurrent}</p>
-            ) : (
-              <p className="text-xs text-muted-foreground mt-1.5">{COPY.maxConcurrent.hint}</p>
-            )}
-          </div>
-
-          <div className="grid gap-5 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-sm font-medium" htmlFor="prov-priority">
-                  {COPY.priority.label}
-                </label>
-                <input
-                  id="prov-priority"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={priority}
-                  onChange={(e) => {
-                    const n = Number(e.target.value);
-                    if (Number.isFinite(n) && n >= 1) setPriority(n);
-                  }}
-                  className="w-16 h-8 px-2 text-xs rounded-md border border-input bg-background font-mono text-right focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
-              <Slider
-                value={priority}
-                onValueChange={setPriority}
-                min={1}
-                max={20}
-                aria-label={COPY.priority.label}
+              <label className="text-sm font-medium block mb-1.5" htmlFor="prov-max">
+                {COPY.maxConcurrent.label}
+              </label>
+              <input
+                id="prov-max"
+                type="number"
+                min="1"
+                value={maxConcurrent}
+                onChange={(e) => {
+                  setMaxConcurrent(e.target.value);
+                  setErrors((p) => ({ ...p, maxConcurrent: "" }));
+                }}
+                placeholder={COPY.maxConcurrent.placeholder}
+                className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
               />
-              <p className="text-xs text-foreground mt-1.5">{priorityEffect.label}</p>
-              <p className="text-xs text-muted-foreground mt-1">{COPY.priority.hintStatic}</p>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-sm font-medium" htmlFor="prov-weight">
-                  {COPY.weight.label}
-                </label>
-                <input
-                  id="prov-weight"
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={weight}
-                  onChange={(e) => {
-                    const n = Number(e.target.value);
-                    if (Number.isFinite(n) && n >= 1) setWeight(n);
-                  }}
-                  className="w-16 h-8 px-2 text-xs rounded-md border border-input bg-background font-mono text-right focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
-              <Slider
-                value={weight}
-                onValueChange={setWeight}
-                min={1}
-                max={20}
-                aria-label={COPY.weight.label}
-              />
-              <p className="text-xs text-foreground mt-1.5">{weightEffect.label}</p>
-              <p className="text-xs text-muted-foreground mt-1">{COPY.weight.hintStatic}</p>
-            </div>
-          </div>
-
-          <div className="pt-1">
-            <button
-              type="button"
-              onClick={() => setAdvancedOpen((o) => !o)}
-              aria-expanded={advancedOpen}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ChevronRight
-                className={cn(
-                  "h-3 w-3 transition-transform",
-                  advancedOpen && "rotate-90",
-                )}
-                strokeWidth={2}
-              />
-              {COPY.advanced.label}
-              {filledHeaderCount > 0 && !advancedOpen && (
-                <span className="text-muted-foreground">
-                  ({filledHeaderCount} custom{" "}
-                  {filledHeaderCount === 1 ? "header" : "headers"})
-                </span>
+              {errors.maxConcurrent ? (
+                <p className="text-xs text-destructive mt-1">{errors.maxConcurrent}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1.5">{COPY.maxConcurrent.hint}</p>
               )}
-            </button>
+            </div>
 
-            {advancedOpen && (
-              <div className="mt-3 border-l border-border pl-4">
-                <label className="text-sm font-medium block">{COPY.advanced.headersLabel}</label>
-                <p className="text-xs text-muted-foreground mt-1 mb-2">
-                  {COPY.advanced.headersHint}
-                </p>
+            <div>
+              <label className="text-sm font-medium block mb-1.5" htmlFor="prov-priority">
+                {COPY.priority.label}
+              </label>
+              <input
+                id="prov-priority"
+                type="number"
+                min="1"
+                value={priority}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (Number.isFinite(n) && n >= 1) setPriority(n);
+                }}
+                placeholder="100"
+                className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              {errors.priority ? (
+                <p className="text-xs text-destructive mt-1">{errors.priority}</p>
+              ) : (
+                <>
+                  <p className="text-xs text-foreground mt-1.5">{priorityEffect.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{COPY.priority.hintStatic}</p>
+                </>
+              )}
+            </div>
 
-                {headers.length > 0 && (
-                  <div className="space-y-2 mb-2">
-                    {headers.map((h) => {
-                      const shown = !!revealed[h.id];
-                      return (
-                        <div key={h.id} className="flex gap-2 items-start">
-                          <input
-                            value={h.key}
-                            onChange={(e) => updateHeader(h.id, { key: e.target.value })}
-                            placeholder={COPY.advanced.headerNamePlaceholder}
-                            className="w-1/3 h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-                          />
-                          <div className="flex-1 relative">
-                            <input
-                              value={h.value}
-                              onChange={(e) => updateHeader(h.id, { value: e.target.value })}
-                              placeholder={COPY.advanced.headerValuePlaceholder}
-                              type={shown ? "text" : "password"}
-                              autoComplete="off"
-                              spellCheck={false}
-                              className="w-full h-9 px-3 pr-9 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-                            />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setRevealed((prev) => ({ ...prev, [h.id]: !shown }))
-                              }
-                              aria-label={shown ? "Hide value" : "Show value"}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 inline-flex items-center justify-center rounded hover:bg-muted/60 text-muted-foreground"
-                            >
-                              {shown ? (
-                                <EyeOff className="h-3.5 w-3.5" strokeWidth={1.75} />
-                              ) : (
-                                <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
-                              )}
-                            </button>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => removeHeader(h.id)}
-                            aria-label="Remove header"
-                            className="h-9 w-9 inline-flex items-center justify-center rounded-md hover:bg-muted/60 text-muted-foreground shrink-0"
-                          >
-                            <X className="h-3.5 w-3.5" strokeWidth={2} />
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-8 text-xs gap-1.5"
-                  onClick={addHeaderRow}
-                >
-                  <Plus className="h-3 w-3" strokeWidth={2} />
-                  {COPY.advanced.addHeader}
-                </Button>
-
-                {errors.headers && (
-                  <p className="text-xs text-destructive mt-2">{errors.headers}</p>
-                )}
-              </div>
-            )}
+            <div>
+              <label className="text-sm font-medium block mb-1.5" htmlFor="prov-weight">
+                {COPY.weight.label}
+              </label>
+              <input
+                id="prov-weight"
+                type="number"
+                min="1"
+                value={weight}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  if (Number.isFinite(n) && n >= 1) setWeight(n);
+                }}
+                placeholder="100"
+                className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              {errors.weight ? (
+                <p className="text-xs text-destructive mt-1">{errors.weight}</p>
+              ) : (
+                <>
+                  <p className="text-xs text-foreground mt-1.5">{weightEffect.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{COPY.weight.hintStatic}</p>
+                </>
+              )}
+            </div>
           </div>
-
-          {submitError && (
-            <p className="text-xs text-destructive">{submitError}</p>
-          )}
         </CardContent>
       </Card>
 
-      <div className="mt-4 flex justify-end gap-2">
+      <div className="mt-5">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((o) => !o)}
+          aria-expanded={advancedOpen}
+          className="w-full inline-flex items-center gap-2 px-4 py-3 rounded-lg border border-border bg-card hover:bg-muted/40 transition-colors text-left"
+        >
+          <ChevronRight
+            className={cn(
+              "h-4 w-4 text-muted-foreground transition-transform",
+              advancedOpen && "rotate-90",
+            )}
+            strokeWidth={2}
+          />
+          <div className="flex-1">
+            <div className="text-sm font-medium">{COPY.advanced.label}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              Custom headers for Bearer, API-key, or reverse-proxy auth.
+              {filledHeaderCount > 0
+                ? ` ${filledHeaderCount} configured.`
+                : ""}
+            </div>
+          </div>
+        </button>
+
+        {advancedOpen && (
+          <Card className="mt-3">
+            <CardContent className="p-6 space-y-3">
+              <div>
+                <label className="text-sm font-medium block">
+                  {COPY.advanced.headersLabel}
+                </label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {COPY.advanced.headersHint}
+                </p>
+              </div>
+
+              {headers.length > 0 && (
+                <div className="space-y-2">
+                  {headers.map((h) => {
+                    const shown = !!revealed[h.id];
+                    return (
+                      <div key={h.id} className="flex gap-2 items-start">
+                        <input
+                          value={h.key}
+                          onChange={(e) => updateHeader(h.id, { key: e.target.value })}
+                          placeholder={COPY.advanced.headerNamePlaceholder}
+                          className="w-1/3 h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                        />
+                        <div className="flex-1 relative">
+                          <input
+                            value={h.value}
+                            onChange={(e) => updateHeader(h.id, { value: e.target.value })}
+                            placeholder={COPY.advanced.headerValuePlaceholder}
+                            type={shown ? "text" : "password"}
+                            autoComplete="off"
+                            spellCheck={false}
+                            className="w-full h-9 px-3 pr-9 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRevealed((prev) => ({ ...prev, [h.id]: !shown }))
+                            }
+                            aria-label={shown ? "Hide value" : "Show value"}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 inline-flex items-center justify-center rounded hover:bg-muted/60 text-muted-foreground"
+                          >
+                            {shown ? (
+                              <EyeOff className="h-3.5 w-3.5" strokeWidth={1.75} />
+                            ) : (
+                              <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
+                            )}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeHeader(h.id)}
+                          aria-label="Remove header"
+                          className="h-9 w-9 inline-flex items-center justify-center rounded-md hover:bg-muted/60 text-muted-foreground shrink-0"
+                        >
+                          <X className="h-3.5 w-3.5" strokeWidth={2} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                onClick={addHeaderRow}
+              >
+                <Plus className="h-3 w-3" strokeWidth={2} />
+                {COPY.advanced.addHeader}
+              </Button>
+
+              {errors.headers && (
+                <p className="text-xs text-destructive">{errors.headers}</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {submitError && (
+        <p className="text-xs text-destructive mt-3">{submitError}</p>
+      )}
+
+      <div className="mt-5 flex justify-end gap-2">
         <Button
           type="button"
           variant="ghost"

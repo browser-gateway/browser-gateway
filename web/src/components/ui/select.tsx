@@ -20,12 +20,12 @@ interface Props<T extends string> {
   className?: string;
   align?: "left" | "right";
   width?: string;
+  fullWidth?: boolean;
 }
 
-/** Custom Select styled to match the SaaS dashboard picker — same
- *  trigger geometry (h-8 rounded-md border-border bg-background), same menu
- *  (bg-card border rounded-[10px] shadow-menu), same dismiss-on-outside-click.
- *  Replaces the native `<select>` (which renders using the OS's menu chrome). */
+/** Custom Select matching SaaS `WorkspacePicker` and `RouterPicker` — same
+ *  trigger geometry, same menu, same dismiss-on-outside-click. Replaces the
+ *  native `<select>` (which renders using the OS's menu chrome). */
 export function Select<T extends string>({
   value,
   options,
@@ -35,6 +35,7 @@ export function Select<T extends string>({
   className,
   align = "left",
   width = "min-w-[14rem]",
+  fullWidth = false,
 }: Props<T>) {
   const [open, setOpen] = React.useState(false);
   const wrapperRef = React.useRef<HTMLDivElement>(null);
@@ -43,7 +44,7 @@ export function Select<T extends string>({
   const active = options.find((o) => o.value === value) ?? null;
 
   return (
-    <div ref={wrapperRef} className={cn("relative", className)}>
+    <div ref={wrapperRef} className={cn("relative", fullWidth && "w-full", className)}>
       <button
         type="button"
         aria-haspopup="menu"
@@ -51,21 +52,24 @@ export function Select<T extends string>({
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
         className={cn(
-          "inline-flex items-center gap-2 h-8 px-3 rounded-md border border-border bg-background text-sm font-medium hover:bg-muted/40 disabled:opacity-60",
+          "inline-flex items-center gap-2 h-9 px-3 rounded-md border border-input bg-background text-sm font-medium hover:bg-muted/40 disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-ring",
+          fullWidth && "w-full justify-between",
         )}
       >
-        {label ? (
-          <span className="text-muted-foreground text-xs">{label}</span>
-        ) : null}
-        <span>{active?.label ?? value}</span>
-        <ChevronDown className="h-3 w-3 text-muted-foreground" strokeWidth={1.75} />
+        <span className="inline-flex items-center gap-2 min-w-0">
+          {label ? (
+            <span className="text-muted-foreground text-xs shrink-0">{label}</span>
+          ) : null}
+          <span className="truncate">{active?.label ?? value}</span>
+        </span>
+        <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.75} />
       </button>
       {open ? (
         <div
           role="menu"
           className={cn(
-            "absolute top-9 bg-card border border-border rounded-[10px] p-1.5 shadow-md z-40",
-            width,
+            "absolute top-10 bg-card border border-border rounded-[10px] p-1.5 shadow-lg z-40",
+            fullWidth ? "w-full" : width,
             align === "right" ? "right-0" : "left-0",
           )}
         >

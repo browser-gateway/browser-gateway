@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Plus, Server } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Select, type SelectOption } from "@/components/ui/select";
 import { ProviderCard } from "@/components/provider-card";
 import { ProviderDeleteDialog } from "@/components/provider-delete-dialog";
 import {
@@ -19,7 +19,7 @@ import {
 } from "@/lib/api";
 import type { SiblingProvider } from "@shared/provider-form";
 
-const STRATEGY_OPTIONS: { value: Strategy; label: string; hint: string }[] = [
+const STRATEGY_OPTIONS: SelectOption<Strategy>[] = [
   { value: "priority-chain", label: "Priority chain", hint: "Always use the highest-priority provider that has room." },
   { value: "round-robin", label: "Round robin", hint: "Spread sessions evenly across providers." },
   { value: "least-connections", label: "Least busy", hint: "Send to whichever provider has the fewest active sessions." },
@@ -131,20 +131,14 @@ export default function ProvidersPage() {
       {providers.length > 0 && status && (
         <Card>
           <CardContent className="px-5 py-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <span className="text-xs font-medium text-foreground">Routing</span>
-            <select
-              value={status.strategy}
-              onChange={(e) => void handleStrategyChange(e.target.value as Strategy)}
+            <Select
+              value={status.strategy as Strategy}
+              options={STRATEGY_OPTIONS}
+              onChange={(v) => void handleStrategyChange(v)}
               disabled={savingStrategy}
-              className="h-8 px-2 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
-              aria-label="Routing strategy"
-            >
-              {STRATEGY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              label="Routing"
+              width="min-w-[18rem]"
+            />
             <span className="text-xs text-muted-foreground">
               {STRATEGY_OPTIONS.find((o) => o.value === status.strategy)?.hint ??
                 "How the gateway picks which provider handles each session."}
