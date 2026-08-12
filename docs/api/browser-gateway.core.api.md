@@ -72,9 +72,9 @@ export class Gateway extends EventEmitter {
     // (undocumented)
     readonly selector: ProviderSelector;
     // (undocumented)
-    selectProvider(targetProviderId?: string, profileId?: string | null): ProviderState | null;
+    selectProvider(targetProviderId?: string, profileId?: string | null, readOnly?: boolean): ProviderState | null;
     // (undocumented)
-    selectProviderWithFallbacks(targetProviderId?: string, profileId?: string | null): ProviderState[];
+    selectProviderWithFallbacks(targetProviderId?: string, profileId?: string | null, readOnly?: boolean): ProviderState[];
     // (undocumented)
     readonly sessions: SessionTracker;
     // (undocumented)

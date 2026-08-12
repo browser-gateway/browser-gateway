@@ -95,13 +95,21 @@ export class Gateway extends EventEmitter {
     );
   }
 
-  selectProvider(targetProviderId?: string, profileId?: string | null): ProviderState | null {
-    const candidates = this.selector.getCandidates({ targetProviderId, profileId });
+  selectProvider(
+    targetProviderId?: string,
+    profileId?: string | null,
+    readOnly?: boolean,
+  ): ProviderState | null {
+    const candidates = this.selector.getCandidates({ targetProviderId, profileId, readOnly });
     return candidates[0] ?? null;
   }
 
-  selectProviderWithFallbacks(targetProviderId?: string, profileId?: string | null): ProviderState[] {
-    return this.selector.getCandidates({ targetProviderId, profileId });
+  selectProviderWithFallbacks(
+    targetProviderId?: string,
+    profileId?: string | null,
+    readOnly?: boolean,
+  ): ProviderState[] {
+    return this.selector.getCandidates({ targetProviderId, profileId, readOnly });
   }
 
   acquireSlot(providerId: string, sessionId: string): boolean {

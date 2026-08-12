@@ -337,7 +337,7 @@ export function createWebSocketHandler(
     }
 
     const tryConnect = async (): Promise<boolean> => {
-      const candidates = gateway.selectProviderWithFallbacks(targetProviderId, profileId);
+      const candidates = gateway.selectProviderWithFallbacks(targetProviderId, profileId, readOnly);
 
       if (candidates.length === 0 && gateway.registry.size() === 0) {
         return false;

@@ -47,6 +47,7 @@ export default function PlaygroundPage() {
   const [profilesEnabled, setProfilesEnabled] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [selectedProfile, setSelectedProfile] = useState<string>("");
+  const [saveProfile, setSaveProfile] = useState<boolean>(false);
   const [keepAliveSeconds, setKeepAliveSeconds] = useState<number>(DEFAULT_KEEP_ALIVE_SECONDS);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -211,13 +212,14 @@ export default function PlaygroundPage() {
     client.connect({
       provider: selectedProvider,
       profile: selectedProfile || undefined,
+      readOnly: selectedProfile ? !saveProfile : undefined,
       token: authEnabled ? realToken : null,
       maxWidth: DEFAULT_VIEWPORT.width,
       maxHeight: DEFAULT_VIEWPORT.height,
       keepAliveSeconds,
     });
     clientRef.current = client;
-  }, [selectedProvider, selectedProfile, authEnabled, realToken, urlInput, keepAliveSeconds]);
+  }, [selectedProvider, selectedProfile, saveProfile, authEnabled, realToken, urlInput, keepAliveSeconds]);
 
   const handleStop = useCallback(() => {
     clientRef.current?.close();
@@ -496,6 +498,19 @@ export default function PlaygroundPage() {
                 onChange={setSelectedProfile}
                 disabled={status === "live" || status === "connecting"}
               />
+            )}
+
+            {profilesEnabled && selectedProfile && (
+              <label className="flex items-center gap-2 text-[12px] text-muted-foreground select-none">
+                <input
+                  type="checkbox"
+                  checked={saveProfile}
+                  onChange={(e) => setSaveProfile(e.target.checked)}
+                  disabled={status === "live" || status === "connecting"}
+                  className="size-3.5 accent-foreground rounded"
+                />
+                Save changes to profile
+              </label>
             )}
 
             <Select
