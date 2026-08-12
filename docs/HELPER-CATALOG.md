@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-08-11
+Generated: 2026-08-12
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -66,6 +66,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `encodeBlob(dek: Buffer, dekVersion: number, plaintext: Buffer, profileId: string, opts: EncodeBlobOptions = {}) → EncodedBlob` (line 34)
 - **fn** `decodeBlobHeader(blob: Buffer) → DecodedHeader` (line 67)
 - **fn** `decodeBlob(blob: Buffer, dek: Buffer, expectedProfileId: string) → Buffer` (line 105)
+### `src/core/profile/capture-current-origin.ts`
+
+- **interface** `interface OriginSnapshot` (line 4)
+- **fn** `captureCurrentOriginSnapshot(client: HelperPoolCdpClient, sessionId: string | undefined, timeoutMs = 5_000, contextId?: number) → Promise<OriginSnapshot | null>` (line 35) — Snapshots the live top-frame origin + full localStorage via `Runtime.evaluate`
 ### `src/core/profile/capture-full.ts`
 
 - **interface** `interface CaptureFullOptions` (line 13)

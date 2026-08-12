@@ -1,12 +1,17 @@
 import {
   PROFILE_ID_REGEX,
   PROFILE_VERSION,
+  captureCurrentOriginSnapshot,
   captureFullStateOnClient,
   injectStateEager,
   type CapturedProfile,
+  type CdpCookie,
+  type GetAllCookiesResponse,
+  type OriginStorage,
   type ProfileLimits,
+  type SkippedOrigin,
 } from "../../core/profile/index.js";
-import { mergeAndPrepareProfile } from "../../core/profile/save.js";
+import { mergeAndPrepareProfile, type MergeAndPrepareResult } from "../../core/profile/save.js";
 import type { CdpMessage, CdpPlugin, SessionState } from "../types.js";
 import { PluginCdpClient } from "./profile-cdp-client.js";
 import type { LockToken, ProfileStorage } from "./profile-storage.js";
@@ -32,7 +37,7 @@ export interface ProfilePluginOpts {
   readOnly?: boolean;
   /** Top-K origins to inject eagerly. Default 20. */
   eagerOriginLimit?: number;
-  /** Number of helper pages the inject/capture pool opens. Default 4. */
+  /** Number of helper pages the inject pool opens. Default 4. */
   helperPages?: number;
   /** Size limits enforced on commit. See `enforceProfileLimits`. */
   limits?: ProfileLimits;
@@ -40,6 +45,12 @@ export interface ProfilePluginOpts {
   lockTtlMs?: number;
   /** Per-CDP-command budget for inject (ms). Default 10_000. */
   cdpTimeoutMs?: number;
+  /** Per-origin snapshot timeout (ms). Default 5_000. */
+  snapshotTimeoutMs?: number;
+  /** "on-navigate" (default) snapshots each origin as the user leaves it and
+   *  flushes at close. "on-close" runs the legacy walk-every-origin capture
+   *  via helper pages. Use "on-close" as an emergency rollback only. */
+  captureMode?: "on-navigate" | "on-close";
   /** Called on non-fatal issues. */
   logger?: (msg: string, data?: Record<string, unknown>) => void;
 }
@@ -61,18 +72,33 @@ export class ProfilePluginError extends Error {
   }
 }
 
+interface PageState {
+  topFrameId: string | null;
+  activeOrigin: string | null;
+}
+
 /** Injects a captured profile at session start; captures + persists at
- *  session end. Runs on the same CDP connection the client uses — no
- *  second WebSocket, works uniformly across cloud providers where the old
- *  bookend model failed silently. */
+ *  session end. Runs on the same CDP connection the client uses. Snapshots
+ *  each visited origin's localStorage on top-frame navigation (via
+ *  `Page.frameStartedLoading`) so a browser destroyed at WS close leaves
+ *  nothing to reconstruct — works uniformly across cloud providers where
+ *  the old post-close bookend model failed silently. */
 export class ProfilePlugin implements CdpPlugin {
   readonly name = "profile";
 
   private client: PluginCdpClient | null = null;
+  private state: SessionState | null = null;
   private lockToken: LockToken | null = null;
   private loadedProfile: CapturedProfile | null = null;
   private isExisting = false;
   private started = false;
+
+  private readonly captureMode: "on-navigate" | "on-close";
+  private readonly captureEnabled: boolean;
+  private readonly snapshotTimeoutMs: number;
+
+  private readonly pages = new Map<string, PageState>();
+  private readonly originsSnapshot = new Map<string, OriginStorage>();
 
   constructor(private readonly opts: ProfilePluginOpts) {
     if (!PROFILE_ID_REGEX.test(opts.profileId)) {
@@ -84,6 +110,10 @@ export class ProfilePlugin implements CdpPlugin {
         "ProfilePlugin needs either `storage` or `preloaded`",
       );
     }
+    this.captureMode = opts.captureMode ?? "on-navigate";
+    this.snapshotTimeoutMs = opts.snapshotTimeoutMs ?? 5_000;
+    const willSave = opts.preloaded ? Boolean(opts.preloaded.onSave) : !opts.readOnly;
+    this.captureEnabled = willSave && this.captureMode === "on-navigate";
   }
 
   async onSessionStart(state: SessionState): Promise<void> {
@@ -119,6 +149,7 @@ export class ProfilePlugin implements CdpPlugin {
     }
 
     this.client = new PluginCdpClient(state);
+    this.state = state;
     this.started = true;
 
     try {
@@ -142,41 +173,119 @@ export class ProfilePlugin implements CdpPlugin {
     }
   }
 
+  onCommand(msg: CdpMessage): void {
+    if (!this.started || !this.captureEnabled) return;
+    if (msg.method !== "Page.navigate") return;
+    const sessionId = msg.sessionId;
+    if (!sessionId) return;
+    const pageState = this.pages.get(sessionId);
+    if (!pageState?.activeOrigin) return;
+    const nextUrl = (msg.params as { url?: string } | undefined)?.url;
+    if (typeof nextUrl !== "string" || !nextUrl.startsWith("http")) return;
+    let nextOrigin: string;
+    try { nextOrigin = new URL(nextUrl).origin; } catch { return; }
+    if (nextOrigin === pageState.activeOrigin) return;
+    const expectedOrigin = pageState.activeOrigin;
+    const client = this.client;
+    if (!client) return;
+    void this.snapshotAndStash(client, sessionId, expectedOrigin);
+  }
+
+  private async snapshotAndStash(
+    client: PluginCdpClient,
+    sessionId: string,
+    expectedOrigin: string,
+  ): Promise<void> {
+    const snap = await captureCurrentOriginSnapshot(client, sessionId, this.snapshotTimeoutMs);
+    if (!snap || snap.origin !== expectedOrigin) return;
+    this.originsSnapshot.set(snap.origin, {
+      localStorage: snap.localStorage,
+      sessionStorage: {},
+      lastVisitedAt: new Date().toISOString(),
+    });
+  }
+
   onEvent(msg: CdpMessage): void {
     if (!this.started || !this.client) return;
     this.client.dispatchEvent(msg);
+
+    if (!this.captureEnabled) return;
+
+    const method = msg.method;
+    if (!method) return;
+
+    if (method === "Target.attachedToTarget") {
+      const p = msg.params as
+        | { sessionId?: string; targetInfo?: { type?: string } }
+        | undefined;
+      if (!p?.sessionId || p.targetInfo?.type !== "page") return;
+      this.pages.set(p.sessionId, { topFrameId: null, activeOrigin: null });
+      this.state?.sendInternalOneWay("Page.enable", {}, p.sessionId);
+      return;
+    }
+
+    if (method === "Target.detachedFromTarget") {
+      const p = msg.params as { sessionId?: string } | undefined;
+      if (p?.sessionId) this.pages.delete(p.sessionId);
+      return;
+    }
+
+    const sessionId = msg.sessionId;
+    if (!sessionId) return;
+    const pageState = this.pages.get(sessionId);
+    if (!pageState) return;
+
+    if (method === "Page.frameNavigated") {
+      const p = msg.params as
+        | { frame?: { id?: string; parentId?: string | null; url?: string } }
+        | undefined;
+      const frame = p?.frame;
+      if (!frame?.id || frame.parentId != null) return;
+      pageState.topFrameId = frame.id;
+      const url = frame.url;
+      if (typeof url !== "string" || !url.startsWith("http")) return;
+      let originStr: string;
+      try {
+        originStr = new URL(url).origin;
+      } catch {
+        return;
+      }
+      pageState.activeOrigin = originStr;
+      return;
+    }
+
+    // In-page (link/form) navs bypass Page.navigate; onCommand can't see
+    // them. Fall back to Page.frameRequestedNavigation: fires when the
+    // browser decides a client-initiated nav is coming but has NOT started
+    // it yet, so the OLD execution context is still fully live.
+    if (method === "Page.frameRequestedNavigation") {
+      const p = msg.params as { frameId?: string; url?: string } | undefined;
+      if (p?.frameId !== pageState.topFrameId) return;
+      const expectedOrigin = pageState.activeOrigin;
+      if (!expectedOrigin) return;
+      let nextOrigin: string | null = null;
+      if (typeof p.url === "string" && p.url.startsWith("http")) {
+        try { nextOrigin = new URL(p.url).origin; } catch { /* fall through */ }
+      }
+      if (nextOrigin === expectedOrigin) return;
+      const client = this.client;
+      void this.snapshotAndStash(client, sessionId, expectedOrigin);
+    }
   }
 
   async onSessionEnd(_state: SessionState, _reason: string): Promise<void> {
     if (!this.started || !this.client) return;
-    // Read-only + preloaded (no onSave) OR no lock + no preloaded save →
-    // no state to write back.
     const willSave = this.opts.preloaded?.onSave ?? (!this.opts.readOnly && this.lockToken);
     if (!willSave || !this.loadedProfile) {
       await this.releaseLockSilent();
       return;
     }
 
-    const helperPages = this.opts.helperPages ?? 4;
     let saved = false;
-
     try {
-      const captureResult = await captureFullStateOnClient(
-        this.client,
-        Object.keys(this.loadedProfile.storage),
-        { helperPages, includeCookieDerivedOrigins: true },
-      );
-
-      const prepared = mergeAndPrepareProfile({
-        loadedStorage: this.loadedProfile.storage,
-        loadedCookies: this.loadedProfile.cookies,
-        loadedIndexeddb: this.loadedProfile.indexeddb,
-        capturedCookies: captureResult.cookies,
-        capturedStorage: captureResult.storage,
-        capturedSkippedOrigins: captureResult.skippedOrigins,
-        capturedDurationMs: captureResult.durationMs,
-        limits: this.opts.limits,
-      });
+      const prepared = this.captureMode === "on-navigate"
+        ? await this.buildCapturedOnNavigate()
+        : await this.buildCapturedOnClose();
 
       if (prepared.action === "preserved-empty-capture") {
         this.opts.logger?.("profile: 0 cookies captured but previous had — preserved", {
@@ -223,8 +332,71 @@ export class ProfilePlugin implements CdpPlugin {
     }
   }
 
+  private async buildCapturedOnNavigate(): Promise<MergeAndPrepareResult> {
+    const client = this.client!;
+    const started = Date.now();
+
+    await this.snapshotActivePages();
+
+    let cookies: CdpCookie[] = [];
+    try {
+      const cookieResp = (await client.send("Storage.getCookies")) as GetAllCookiesResponse | null;
+      cookies = cookieResp?.cookies ?? [];
+    } catch (err) {
+      this.opts.logger?.("profile: Storage.getCookies failed", {
+        profileId: this.opts.profileId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    const capturedStorage: Record<string, OriginStorage> = {};
+    for (const [origin, data] of this.originsSnapshot) {
+      capturedStorage[origin] = data;
+    }
+    const skipped: SkippedOrigin[] = [];
+
+    return mergeAndPrepareProfile({
+      loadedStorage: this.loadedProfile!.storage,
+      loadedCookies: this.loadedProfile!.cookies,
+      loadedIndexeddb: this.loadedProfile!.indexeddb,
+      capturedCookies: cookies,
+      capturedStorage,
+      capturedSkippedOrigins: skipped,
+      capturedDurationMs: Date.now() - started,
+      limits: this.opts.limits,
+    });
+  }
+
+  private async buildCapturedOnClose(): Promise<MergeAndPrepareResult> {
+    const helperPages = this.opts.helperPages ?? 4;
+    const captureResult = await captureFullStateOnClient(
+      this.client!,
+      Object.keys(this.loadedProfile!.storage),
+      { helperPages, includeCookieDerivedOrigins: true },
+    );
+    return mergeAndPrepareProfile({
+      loadedStorage: this.loadedProfile!.storage,
+      loadedCookies: this.loadedProfile!.cookies,
+      loadedIndexeddb: this.loadedProfile!.indexeddb,
+      capturedCookies: captureResult.cookies,
+      capturedStorage: captureResult.storage,
+      capturedSkippedOrigins: captureResult.skippedOrigins,
+      capturedDurationMs: captureResult.durationMs,
+      limits: this.opts.limits,
+    });
+  }
+
+  private async snapshotActivePages(): Promise<void> {
+    const client = this.client!;
+    const tasks: Promise<void>[] = [];
+    for (const [sessionId, pageState] of this.pages) {
+      if (!pageState.activeOrigin) continue;
+      tasks.push(this.snapshotAndStash(client, sessionId, pageState.activeOrigin));
+    }
+    await Promise.all(tasks);
+  }
+
   private async releaseLockSilent(): Promise<void> {
-    // Preloaded mode — the caller owns the lock.
     if (this.opts.preloaded || !this.lockToken || !this.opts.storage) return;
     const token = this.lockToken;
     this.lockToken = null;
