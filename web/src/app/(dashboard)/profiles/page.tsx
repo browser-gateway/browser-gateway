@@ -6,12 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@/components/ui/dropdown-menu";
-import {
   Table,
   TableBody,
   TableCell,
@@ -361,25 +355,32 @@ export default function ProfilesPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1.5">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger render={<Button variant="outline" size="sm" disabled={busy !== null} />}>
-                            {copiedId === p.id || copiedId === `${p.id}:ro` ? (
-                              <><Check className="size-3.5 mr-1.5" />Copied</>
-                            ) : (
-                              <><Copy className="size-3.5 mr-1.5" />Copy URL<ChevronDown className="size-3 ml-1 opacity-60" /></>
-                            )}
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-72">
-                            <DropdownMenuItem onClick={() => handleCopyUrl(p.id)} className="flex-col items-start gap-0.5 py-2">
-                              <span className="flex items-center gap-1.5 text-[13px]"><Copy className="size-3.5" />Copy connect URL</span>
-                              <span className="text-[11px] text-muted-foreground pl-5">Loads {p.id} and saves changes back on disconnect. One session at a time.</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleCopyUrl(p.id, true)} className="flex-col items-start gap-0.5 py-2">
-                              <span className="flex items-center gap-1.5 text-[13px]"><Eye className="size-3.5" />Copy read-only URL</span>
-                              <span className="text-[11px] text-muted-foreground pl-5">Loads {p.id} without locking it. Many sessions can share it at once. Nothing is saved back.</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={busy !== null}
+                          onClick={() => handleCopyUrl(p.id)}
+                          title={`Loads ${p.id} and saves changes back on disconnect. One session at a time.`}
+                        >
+                          {copiedId === p.id ? (
+                            <><Check className="size-3.5 mr-1.5" />Copied</>
+                          ) : (
+                            <><Copy className="size-3.5 mr-1.5" />Copy read-write</>
+                          )}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={busy !== null}
+                          onClick={() => handleCopyUrl(p.id, true)}
+                          title={`Loads ${p.id} without locking. Many sessions can share it. Nothing saves back.`}
+                        >
+                          {copiedId === `${p.id}:ro` ? (
+                            <><Check className="size-3.5 mr-1.5" />Copied</>
+                          ) : (
+                            <><Eye className="size-3.5 mr-1.5" />Copy read-only</>
+                          )}
+                        </Button>
                         <a
                           href={exportProfileUrl(p.id)}
                           download
