@@ -261,7 +261,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **type** `type Strategy` (line 8)
 - **interface** `interface SelectOptions` (line 15)
-- **class** `class ProviderSelector` (line 33)
+- **class** `class ProviderSelector` (line 42)
 ### `src/core/tracking/concurrency.ts`
 
 - **class** `class ConcurrencyTracker` (line 4)

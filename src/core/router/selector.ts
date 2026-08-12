@@ -28,6 +28,15 @@ export interface SelectOptions {
    * is requesting `?profile=<value>`.
    */
   profileId?: string | null;
+  /**
+   * When true, session is read-only (state injected but never captured back).
+   * Bypasses the profile-eligibility rules — since no state is written to the
+   * canonical profile, cross-profile leak on a shared upstream is impossible,
+   * so any healthy CDP provider is eligible regardless of pinning or
+   * `multiProfile` config. Default false (matches historical write-back
+   * eligibility semantics).
+   */
+  readOnly?: boolean;
 }
 
 export class ProviderSelector {
@@ -46,12 +55,13 @@ export class ProviderSelector {
   }
 
   getCandidates(opts: SelectOptions = {}): ProviderState[] {
+    const skipProfileCheck = opts.readOnly === true;
     if (opts.targetProviderId !== undefined) {
       const pinned = this.registry.get(opts.targetProviderId);
       if (!pinned) return [];
       if (this.cooldown.isInCooldown(pinned)) return [];
       if (!hasFreeSlot(pinned)) return [];
-      if (!isEligibleProviderForProfile(pinned, opts.profileId)) return [];
+      if (!skipProfileCheck && !isEligibleProviderForProfile(pinned, opts.profileId)) return [];
       return [pinned];
     }
 
@@ -60,7 +70,7 @@ export class ProviderSelector {
     const available = all.filter((b) => {
       if (this.cooldown.isInCooldown(b)) return false;
       if (!hasFreeSlot(b)) return false;
-      if (!isEligibleProviderForProfile(b, opts.profileId)) return false;
+      if (!skipProfileCheck && !isEligibleProviderForProfile(b, opts.profileId)) return false;
       return true;
     });
 
