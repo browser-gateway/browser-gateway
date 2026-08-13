@@ -11,6 +11,7 @@ import type { Logger } from "pino";
 import type { Gateway } from "../core/index.js";
 import type { GatewayConfig } from "../core/types.js";
 import { isHttpUrl, fetchCdpVersion } from "../core/providers/cdp.js";
+import { probeProviderCapabilities } from "../core/providers/capabilities.js";
 import { writeConfig } from "./config/writer.js";
 import { parseProviderConfigBody, parseWebhookBody, parseYamlGatewayConfig } from "./validation.js";
 import { loadedConfigPath } from "./config/loader.js";
@@ -437,6 +438,26 @@ export function createApp(
     const parsed = parseProviderConfigBody(body);
     if (parsed.errors) {
       return c.json({ error: "Invalid provider config", details: parsed.errors }, 400);
+    }
+
+    if (parsed.data.multiProfile === true) {
+      const caps = await probeProviderCapabilities(parsed.data.url, {
+        perStepTimeoutMs: 5_000,
+        totalTimeoutMs: 15_000,
+      });
+      if (caps.providerKind !== "browserserve") {
+        return c.json(
+          {
+            error: "multiProfile:true is only valid on browserserve providers",
+            details: [
+              "The probe reached this upstream but it did not identify as browserserve.",
+              "Remove `multiProfile: true` from this provider, or point at a browserserve instance.",
+              "External providers can only serve profile sessions with a `profile: \"<name>\"` pin (one slot per profile).",
+            ],
+          },
+          400,
+        );
+      }
     }
 
     gateway.config.providers[id] = parsed.data;

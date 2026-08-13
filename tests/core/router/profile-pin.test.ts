@@ -39,6 +39,8 @@ beforeEach(() => {
   for (const [id, p] of Object.entries(cfg().providers)) {
     registry.register(id, p, { autoProbe: false });
   }
+  const runtime = registry.get("runtime-slot");
+  if (runtime) runtime.detectedKind = "browserserve";
   cooldown = new CooldownTracker(cfg().gateway.cooldown);
   selector = new ProviderSelector(registry, cooldown, "priority-chain");
 });

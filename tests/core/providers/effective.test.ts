@@ -69,12 +69,38 @@ describe("isEligibleProviderForProfile", () => {
     expect(isEligibleProviderForProfile(p, null)).toBe(true);
   });
 
-  it("generic providers keep the static config rules", () => {
+  it("detected browserserve honors multiProfile:true trivially", () => {
+    const p = provider({ detectedKind: "browserserve", multiProfile: true });
+    expect(isEligibleProviderForProfile(p, "alpha")).toBe(true);
+    expect(isEligibleProviderForProfile(p, "bravo")).toBe(true);
+  });
+
+  it("pinned generic providers accept the pinned profile only", () => {
     expect(isEligibleProviderForProfile(provider({ profile: "alpha" }), "alpha")).toBe(true);
     expect(isEligibleProviderForProfile(provider({ profile: "alpha" }), "bravo")).toBe(false);
+  });
+
+  it("stateless-only generic providers reject any profile request", () => {
     expect(isEligibleProviderForProfile(provider({}), "alpha")).toBe(false);
     expect(isEligibleProviderForProfile(provider({}), null)).toBe(true);
-    expect(isEligibleProviderForProfile(provider({ multiProfile: true }), "bravo")).toBe(true);
+  });
+
+  it("multiProfile:true on a non-browserserve provider is IGNORED", () => {
+    const p = provider({ multiProfile: true });
+    expect(isEligibleProviderForProfile(p, "bravo")).toBe(false);
+    expect(isEligibleProviderForProfile(p, "alpha")).toBe(false);
+    expect(isEligibleProviderForProfile(p, null)).toBe(true);
+  });
+
+  it("multiProfile:true is IGNORED while probe pending (detectedKind: null)", () => {
+    const p = provider({ multiProfile: true, detectedKind: null });
+    expect(isEligibleProviderForProfile(p, "alpha")).toBe(false);
+  });
+
+  it("pinned takes precedence when multiProfile is also set on non-browserserve", () => {
+    const p = provider({ profile: "alpha", multiProfile: true });
+    expect(isEligibleProviderForProfile(p, "alpha")).toBe(true);
+    expect(isEligibleProviderForProfile(p, "bravo")).toBe(false);
   });
 });
 

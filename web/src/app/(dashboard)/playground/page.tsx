@@ -47,7 +47,7 @@ export default function PlaygroundPage() {
   const [profilesEnabled, setProfilesEnabled] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [selectedProfile, setSelectedProfile] = useState<string>("");
-  const [saveProfile, setSaveProfile] = useState<boolean>(false);
+  const [saveProfile, setSaveProfile] = useState<boolean>(true);
   const [keepAliveSeconds, setKeepAliveSeconds] = useState<number>(DEFAULT_KEEP_ALIVE_SECONDS);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [status, setStatus] = useState<Status>("idle");

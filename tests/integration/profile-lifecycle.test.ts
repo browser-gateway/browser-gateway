@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer } from "ws";
+import { enableBrowserserveDropOff, type BrowserserveDropOffState } from "./profile-fixtures/browserserve-mock.js";
 
 const GATEWAY_PORT = 20100;
 const PROVIDER_PORT = 20101;
@@ -40,6 +41,7 @@ interface MockCdpProvider {
   cookies: MockCookie[];
   getCookiesCalls: number;
   setCookiesCalls: Array<MockCookie[]>;
+  dropOff: BrowserserveDropOffState;
   resetCallLog: () => void;
 }
 
@@ -53,9 +55,11 @@ function createMockCdpProvider(port: number): MockCdpProvider {
     cookies: [],
     getCookiesCalls: 0,
     setCookiesCalls: [],
+    dropOff: null as unknown as BrowserserveDropOffState,
     resetCallLog: () => {
       state.getCookiesCalls = 0;
       state.setCookiesCalls = [];
+      state.dropOff.reset();
     },
   };
 
@@ -97,6 +101,7 @@ function createMockCdpProvider(port: number): MockCdpProvider {
         JSON.stringify({
           Browser: "MockCDP/1.0",
           "Protocol-Version": "1.3",
+          "Browserserve-Version": "test-1.0",
           webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/test`,
         }),
       );
@@ -104,6 +109,12 @@ function createMockCdpProvider(port: number): MockCdpProvider {
     }
     res.writeHead(404).end();
   });
+
+  state.dropOff = enableBrowserserveDropOff(server, () => ({
+    cookies: state.cookies,
+    localStorage: [],
+    indexeddb: [],
+  }));
 
   server.listen(port);
   return state;
@@ -220,7 +231,7 @@ describe("Phase 3: ?profile= lifecycle wiring", () => {
     // Give the gateway a beat to commit
     await sleep(800);
 
-    expect(provider.getCookiesCalls).toBeGreaterThanOrEqual(1);
+    expect(provider.dropOff.pickUpCalls).toBeGreaterThanOrEqual(1);
   }, 15_000);
 
   it("second connect with same profile id injects the captured cookie", async () => {
@@ -233,9 +244,9 @@ describe("Phase 3: ?profile= lifecycle wiring", () => {
     ws.close();
     await sleep(800);
 
-    expect(provider.setCookiesCalls.length).toBeGreaterThanOrEqual(1);
-    const injected = provider.setCookiesCalls[0]!;
-    expect(injected.find((c) => c.name === "session")?.value).toBe("alice");
+    expect(provider.dropOff.dropOffCalls).toBeGreaterThanOrEqual(1);
+    const injected = provider.dropOff.latestPayload?.cookies as MockCookie[] | undefined;
+    expect(injected?.find((c) => c.name === "session")?.value).toBe("alice");
   }, 15_000);
 
   it("rejects ?profile= with invalid characters", async () => {

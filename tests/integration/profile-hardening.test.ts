@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer } from "ws";
+import { enableBrowserserveDropOff, type BrowserserveDropOffState } from "./profile-fixtures/browserserve-mock.js";
 
 const GATEWAY_PORT = 20300;
 const PROVIDER_PORT = 20301;
@@ -25,8 +26,8 @@ const CONFIG_PATH = "/tmp/bg-profile-hardening-test.yml";
 const PROFILE_DIR = mkdtempSync(join(tmpdir(), "bg-profile-hardening-test-"));
 const ENCRYPTION_KEY = Buffer.alloc(32, "h").toString("base64");
 
-function createMockProvider(port: number): { server: Server; wss: WebSocketServer; state: { cookies: Array<Record<string, unknown>>; getCookiesDelayMs: number; getCookiesCalls: number; setCookiesCalls: number } } {
-  const state = { cookies: [] as Array<Record<string, unknown>>, getCookiesDelayMs: 0, getCookiesCalls: 0, setCookiesCalls: 0 };
+function createMockProvider(port: number): { server: Server; wss: WebSocketServer; state: { cookies: Array<Record<string, unknown>>; getCookiesDelayMs: number; getCookiesCalls: number; setCookiesCalls: number; dropOff: BrowserserveDropOffState } } {
+  const state = { cookies: [] as Array<Record<string, unknown>>, getCookiesDelayMs: 0, getCookiesCalls: 0, setCookiesCalls: 0, dropOff: null as unknown as BrowserserveDropOffState };
   const server = createServer();
   const wss = new WebSocketServer({ server, path: "/devtools/browser/test" });
   wss.on("connection", (ws) => {
@@ -53,12 +54,18 @@ function createMockProvider(port: number): { server: Server; wss: WebSocketServe
       res.end(JSON.stringify({
         Browser: "MockCDP/1.0",
         "Protocol-Version": "1.3",
+        "Browserserve-Version": "test-1.0",
         webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/test`,
       }));
       return;
     }
     res.writeHead(404).end();
   });
+  state.dropOff = enableBrowserserveDropOff(server, () => ({
+    cookies: state.cookies,
+    localStorage: [],
+    indexeddb: [],
+  }));
   server.listen(port);
   return { server, wss, state };
 }

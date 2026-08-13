@@ -270,6 +270,9 @@ export const ProviderConfigSchema: z.ZodObject<{
 //
 // @public (undocumented)
 export class ProviderRegistry implements ProviderStore {
+    awaitInitialProbes(opts?: {
+        maxWaitMs?: number;
+    }): Promise<void>;
     // (undocumented)
     get(id: string): ProviderState | undefined;
     // (undocumented)

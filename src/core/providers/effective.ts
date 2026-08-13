@@ -1,11 +1,10 @@
 import type { ProviderConfig, ProviderState } from "../types.js";
 
 /**
- * Given a provider's config and the caller's requested profile, decide whether
- * that provider slot is eligible to serve the request. Three provider roles:
- *   - pinned (`profile: "X"`): serves only profile X
- *   - multi-profile (`multiProfile: true`): serves any profile including none
- *   - stateless-only (neither): serves only stateless (no `?profile=`) traffic
+ * Static config-shape check: does the provider's declared `profile` / `multiProfile`
+ * config admit the requested profile? Optimistic — does not know whether the provider
+ * can safely serve multi-profile at runtime. Use `isEligibleProviderForProfile`
+ * for routing decisions.
  */
 export function isEligibleForProfile(
   config: ProviderConfig,
@@ -17,16 +16,20 @@ export function isEligibleForProfile(
 }
 
 /**
- * Profile eligibility with vendor detection applied: a detected browserserve
- * provider serves any profile (each session is a fresh isolated browser), in
- * addition to the static config rules (`multiProfile`, `profile` pin).
+ * Runtime profile-eligibility. A provider slot is eligible to serve the requested
+ * profile when it is a detected browserserve instance (fresh Chrome per session)
+ * or carries an explicit `profile: "X"` pin matching the request. `config.multiProfile`
+ * is not trusted on non-browserserve providers because shared external browser
+ * instances retain profile-A residue (HttpOnly cookies, disk storage, service workers)
+ * that leaks into subsequent profile-B sessions.
  */
 export function isEligibleProviderForProfile(
   provider: ProviderState,
   requestedProfile: string | null | undefined,
 ): boolean {
   if (provider.detectedKind === "browserserve") return true;
-  return isEligibleForProfile(provider.config, requestedProfile);
+  if (requestedProfile == null) return provider.config.profile == null;
+  return provider.config.profile === requestedProfile;
 }
 
 /**

@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer } from "ws";
+import { enableBrowserserveDropOff } from "./profile-fixtures/browserserve-mock.js";
 
 const GATEWAY_PORT = 20400;
 const PROVIDER_PORT = 20401;
@@ -66,12 +67,18 @@ function createMockProvider(port: number): { server: Server; wss: WebSocketServe
       res.end(JSON.stringify({
         Browser: "MockCDP/1.0",
         "Protocol-Version": "1.3",
+        "Browserserve-Version": "test-1.0",
         webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/pipe`,
       }));
       return;
     }
     res.writeHead(404).end();
   });
+  enableBrowserserveDropOff(server, () => ({
+    cookies: storedCookies,
+    localStorage: [],
+    indexeddb: [],
+  }));
   server.listen(port);
   return { server, wss: wssPipe };
 }

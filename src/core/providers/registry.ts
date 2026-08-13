@@ -121,6 +121,34 @@ export class ProviderRegistry implements ProviderStore {
     if (typeof timer.unref === "function") timer.unref();
   }
 
+  /**
+   * Awaits every provider's capability status to leave `pending`/`probing`,
+   * or the deadline. Callers use this at boot to avoid the race where a
+   * client connects for `?profile=X` before the capability probe has
+   * classified the provider as browserserve, which would cause the first
+   * request to 503 unless the provider is statically pinned. Bounded — also
+   * awaits scheduled re-probes (used when the upstream was slow to start).
+   */
+  async awaitInitialProbes(opts: { maxWaitMs?: number } = {}): Promise<void> {
+    const deadline = Date.now() + (opts.maxWaitMs ?? 5_000);
+    while (Date.now() < deadline) {
+      const inflight = [...this.inflightProbes.values()];
+      if (inflight.length > 0) {
+        const remaining = Math.max(0, deadline - Date.now());
+        await Promise.race([
+          Promise.allSettled(inflight),
+          new Promise<void>((resolve) => setTimeout(resolve, remaining)),
+        ]);
+      }
+      const anyProbing = [...this.providers.keys()].some((id) => {
+        const status = this.capabilities.get(id)?.status;
+        return status === "pending" || status === "probing";
+      });
+      if (!anyProbing && this.inflightProbes.size === 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
   getCapabilityRecord(id: string): CapabilityRecord | undefined {
     return this.capabilities.get(id);
   }
