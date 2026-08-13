@@ -72,11 +72,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `captureCurrentOriginSnapshot(client: HelperPoolCdpClient, sessionId: string | undefined, timeoutMs = 5_000, contextId?: number) → Promise<OriginSnapshot | null>` (line 35) — Snapshots the live top-frame origin + full localStorage via `Runtime.evaluate`
 ### `src/core/profile/capture-full.ts`
 
-- **interface** `interface CaptureFullOptions` (line 13)
-- **interface** `interface CaptureFullResult` (line 26)
-- **fn** `captureFullStateOnClient(client: HelperPoolCdpClient, originsToCapture: string[], opts: Omit<CaptureFullOptions, "totalTimeoutMs"> = {}) → Promise<CaptureFullResult>` (line 49) — Captures cookies and per-origin localStorage on an already-connected client.
-- **fn** `captureFullStateViaTransient(providerWsUrl: string, originsToCapture: string[], opts: CaptureFullOptions = {}) → Promise<CaptureFullResult>` (line 82) — Opens its own WS to the provider, captures, then closes the WS.
-- **fn** `originsFromCookies(cookies: CdpCookie[]) → string[]` (line 156) — Returns https origin candidates derived from a cookie list.
+- **interface** `interface CaptureFullOptions` (line 14)
+- **interface** `interface CaptureFullResult` (line 27)
+- **fn** `captureFullStateOnClient(client: HelperPoolCdpClient, originsToCapture: string[], opts: Omit<CaptureFullOptions, "totalTimeoutMs"> = {}) → Promise<CaptureFullResult>` (line 50) — Captures cookies and per-origin localStorage on an already-connected client.
+- **fn** `captureFullStateViaTransient(providerWsUrl: string, originsToCapture: string[], opts: CaptureFullOptions = {}) → Promise<CaptureFullResult>` (line 83) — Opens its own WS to the provider, captures, then closes the WS.
+- **fn** `originsFromCookies(cookies: CdpCookie[]) → string[]` (line 157) — Returns https origin candidates derived from a cookie list.
 ### `src/core/profile/capture.ts`
 
 - **interface** `interface CaptureOptions` (line 14)
@@ -176,6 +176,21 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface EnforceResult` (line 12)
 - **const** `const DEFAULT_PROFILE_LIMITS` (line 27)
 - **fn** `enforceProfileLimits(profile: CapturedProfile, limits: ProfileLimits = {}) → EnforceResult` (line 34) — Enforces size and origin-count caps on a profile. Returns a new profile; input untouched.
+### `src/core/profile/marker.ts`
+
+- **const** `const MARKER_DOMAIN` (line 25) — Provider residue marker: a small sentinel planted at profile-inject time on
+- **const** `const MARKER_ORIGIN` (line 26)
+- **const** `const MARKER_NAME` (line 27)
+- **const** `const MARKER_STORAGE_KEY` (line 28)
+- **interface** `interface ProviderMarker` (line 30)
+- **interface** `interface MarkerCookieLike` (line 36)
+- **fn** `isMarkerCookie(cookie: MarkerCookieLike) → boolean` (line 42) — True when a cookie is a gateway-planted residue marker (should never be captured).
+- **fn** `encodeMarker(m: ProviderMarker) → string` (line 49) — base64-encode marker payload; isomorphic (btoa is available in Node 16+, Workers, browsers).
+- **fn** `decodeMarker(value: string) → ProviderMarker | null` (line 58) — Reverse of encodeMarker. Returns null when the cookie value isn't a well-formed marker.
+- **fn** `filterMarkerCookies(cookies: T[]) → T[]` (line 79) — Filters gateway-planted marker cookies out of a cookie array before profile capture.
+- **fn** `isMarkerOrigin(origin: string) → boolean` (line 84) — True when an origin is the synthetic marker origin (with or without trailing slash).
+- **fn** `stripMarkerFromStorage(localStorageMap: Record<string, string>) → Record<string, string>` (line 90) — Removes the marker localStorage entry from an origin's storage snapshot in place.
+- **fn** `stripMarkerOrigin(storage: Record<string, T>) → Record<string, T>` (line 99) — Removes the whole marker origin entry from a captured `storage` map. Used on the
 ### `src/core/profile/save.ts`
 
 - **interface** `interface MergeAndPrepareResult` (line 13) — Result of {@link mergeAndPrepareProfile}. `refused`/`preserved` mean the
@@ -307,8 +322,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
 ### `src/server/live/upgrade.ts`
 
-- **interface** `interface CreateLiveHandlerDeps` (line 40)
-- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 47)
+- **interface** `interface CreateLiveHandlerDeps` (line 41)
+- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 48)
 ### `src/server/mcp/ax-tree.ts`
 
 - **fn** `clearRefs() → void` (line 28)
@@ -390,7 +405,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class NodeProfileStorage` (line 17) — Node-side {@link ProfileStorage} adapter. Wraps the existing
 ### `src/server/profile/preloaded-profile-plugin.ts`
 
-- **fn** `makeProfilePluginFromAcquired(acquired: AcquiredProfile, profileLifecycle: ProfileLifecycle, logger: Logger) → ProfilePlugin` (line 9) — Wraps an already-acquired profile as a preloaded {@link ProfilePlugin}.
+- **fn** `makeProfilePluginFromAcquired(acquired: AcquiredProfile, profileLifecycle: ProfileLifecycle, logger: Logger, opts: { providerId?: string; skipResidueCheck?: boolean } = {}) → ProfilePlugin` (line 9) — Wraps an already-acquired profile as a preloaded {@link ProfilePlugin}.
 ### `src/server/replay/constants.ts`
 
 - **const** `const SESSION_ID_REGEX` (line 1)
@@ -514,15 +529,16 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 >` (line 76) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/pipeline-relay.ts`
 
-- **interface** `interface PipelineRelayOpts` (line 14)
-- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<boolean>` (line 32) — Two-phase pipeline handoff for `/v1/connect`:
+- **interface** `interface PipelineRelayOpts` (line 15)
+- **type** `type PipelineRelayResult` (line 27)
+- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<PipelineRelayResult>` (line 38) — Two-phase pipeline handoff for `/v1/connect`:
 ### `src/server/ws/probe.ts`
 
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000, headers?: Record<string, string>) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **interface** `interface PipelineReplayContext` (line 149)
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 154)
+- **interface** `interface PipelineReplayContext` (line 155)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 160)
 ### `src/server/ws/upstream-open.ts`
 
 - **fn** `openUpstream(url: string, timeoutMs: number, headers?: Record<string, string>) → Promise<{ ok: true; ws: WebSocket } | { ok: false; err: string }>` (line 7) — Open a Node `ws` upstream and race it against a timeout. Resolves once

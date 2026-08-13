@@ -316,49 +316,10 @@ describe("D2: tampered on-disk blob — decrypt fails loudly", () => {
   }, 30_000);
 });
 
-describe.skip("D3: inject fails on provider A, succeeds on B — failover works (needs pinned-external CDP-inject fixture)", () => {
-  it("when inject fails on the priority-1 provider, the gateway retries on the priority-2 provider", async () => {
-    // Seed: BOTH providers return a cookie so the seeding commit captures one
-    // regardless of which provider gets used (cooldown could shift selection).
-    provA.state.rejectSetCookies = false;
-    provB.state.rejectSetCookies = false;
-    const SEED = [{ name: "d3", value: "fromprev", domain: ".t", path: "/", secure: true, httpOnly: false }];
-    provA.state.storedCookies = SEED;
-    provB.state.storedCookies = SEED;
-
-    const ws1 = await openProfile("d3-profile");
-    ws1.close();
-    await sleep(2_000);
-
-    // Verify the seed actually persisted with cookies (blob size > a tiny empty blob)
-    const blobPath = join(PROFILE_DIR, "d3-profile", "data.enc");
-    expect(existsSync(blobPath)).toBe(true);
-    const seedBlob = readFileSync(blobPath);
-    expect(seedBlob.length).toBeGreaterThan(150);
-
-    // Now provA rejects setCookies. Second reconnect must succeed by failing
-    // over to provB.
-    provA.state.rejectSetCookies = true;
-    provB.state.rejectSetCookies = false;
-    provB.state.storedCookies = [];
-
-    const setCallsA_before = provA.state.setCookiesCalls;
-    const setCallsB_before = provB.state.setCookiesCalls;
-
-    const second = await checkConnect("d3-profile");
-    expect(second.ok).toBe(true);
-    await sleep(800);
-
-    // provB MUST have received setCookies during inject (failover proof)
-    expect(provB.state.setCookiesCalls).toBeGreaterThan(setCallsB_before);
-    // and the gateway either tried A first (and failed) or skipped A due to cooldown:
-    const totalAttempts = (provA.state.setCookiesCalls - setCallsA_before)
-      + (provB.state.setCookiesCalls - setCallsB_before);
-    expect(totalAttempts).toBeGreaterThanOrEqual(1);
-
-    provA.state.rejectSetCookies = false;
-  }, 30_000);
-});
+// D3 (inject fails on provider A, gateway fails over to provider B) is exercised
+// end-to-end against pinned-external CDP mocks in `profile-inject-failure.test.ts`.
+// It cannot run in this file because the mocks here are browserserve-marked, so
+// the profile flows through the drop-off HTTP channel rather than CDP inject.
 
 describe("D4: KCV mismatch on bootstrap — refuses to start with helpful error", () => {
   it("bootstrap throws ProfileBootstrapError when the env key doesn't match the stored KCV", async () => {
@@ -434,42 +395,8 @@ describe("D6: DELETE while session active — 409, profile preserved", () => {
   }, 30_000);
 });
 
-describe.skip("D7: capture-on-commit hangs — previous state preserved + lock released (needs pinned-external CDP-inject fixture)", () => {
-  it("when Storage.getCookies hangs past commitTimeoutMs, lock releases and previous state stays", async () => {
-    // Seed with BOTH providers returning cookies in case routing shifts
-    provA.state.malformedGetCookies = false;
-    provB.state.malformedGetCookies = false;
-    provA.state.getCookiesDelayMs = 0;
-    provB.state.getCookiesDelayMs = 0;
-    const SEED = [{ name: "d7", value: "good", domain: ".t", path: "/", secure: true, httpOnly: false }];
-    provA.state.storedCookies = SEED;
-    provB.state.storedCookies = SEED;
-
-    const ws1 = await openProfile("d7-profile");
-    ws1.close();
-    await sleep(1_800);
-
-    const blobBefore = readFileSync(join(PROFILE_DIR, "d7-profile", "data.enc"));
-    expect(blobBefore.length).toBeGreaterThan(150); // seed verified
-
-    // Hang BOTH providers' Storage.getCookies — no matter which the gateway
-    // selects for the commit, capture should time out.
-    provA.state.getCookiesDelayMs = 5_000;
-    provB.state.getCookiesDelayMs = 5_000;
-
-    const ws2 = await openProfile("d7-profile");
-    ws2.close();
-    // Wait past commit timeout (1500ms) + slack
-    await sleep(3_000);
-
-    // Previous state preserved — bytes unchanged on disk
-    const blobAfter = readFileSync(join(PROFILE_DIR, "d7-profile", "data.enc"));
-    expect(blobAfter.equals(blobBefore)).toBe(true);
-
-    // Lock must have been released — restoring quick capture lets reconnect succeed
-    provA.state.getCookiesDelayMs = 0;
-    provB.state.getCookiesDelayMs = 0;
-    const third = await checkConnect("d7-profile");
-    expect(third.ok).toBe(true);
-  }, 30_000);
-});
+// D7 (capture-on-close hangs past commitTimeoutMs — previous state preserved,
+// lock released) is exercised end-to-end against pinned-external CDP mocks in
+// `profile-inject-failure.test.ts`. It cannot run here because the mocks are
+// browserserve-marked, so capture flows through the drop-off HTTP channel
+// rather than Storage.getCookies over CDP.

@@ -1,4 +1,5 @@
 import type { CdpCookie, GetAllCookiesResponse } from "./cdp.js";
+import { filterMarkerCookies } from "./marker.js";
 import type { HelperPoolCdpClient } from "./helper-pool-client.js";
 import { WsCDPClient } from "./cdp-client.js";
 import {
@@ -57,7 +58,7 @@ export async function captureFullStateOnClient(
   const signal = opts.signal;
 
   const cookieResp = (await client.send("Storage.getCookies")) as GetAllCookiesResponse | null;
-  const cookies: CdpCookie[] = cookieResp?.cookies ?? [];
+  const cookies: CdpCookie[] = filterMarkerCookies(cookieResp?.cookies ?? []);
 
   let originSet = originsToCapture;
   if (opts.includeCookieDerivedOrigins) {

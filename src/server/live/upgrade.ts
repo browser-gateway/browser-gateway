@@ -12,6 +12,7 @@ import { resolveWsUrl } from "../../core/providers/cdp.js";
 import { LifecycleError, type ProfileLifecycle, type AcquiredProfile } from "../profile/lifecycle.js";
 import { Pipeline, type PipelineSocket } from "../../pipeline/pipeline.js";
 import { ScreencastBridgePlugin } from "../../pipeline/plugins/screencast-bridge.js";
+import { ProfileResidueError } from "../../pipeline/plugins/profile.js";
 import type { CdpPlugin } from "../../pipeline/types.js";
 import { openUpstream } from "../ws/upstream-open.js";
 import { makeProfilePluginFromAcquired } from "../profile/preloaded-profile-plugin.js";
@@ -155,9 +156,15 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         logger: (msg, data) => logger.info(data ?? {}, msg),
       });
 
+      const isBrowserserveProfile = acquired !== null && provider.detectedKind === "browserserve";
       const plugins: CdpPlugin[] = [];
       if (acquired && profileLifecycle) {
-        plugins.push(makeProfilePluginFromAcquired(acquired, profileLifecycle, logger));
+        plugins.push(makeProfilePluginFromAcquired(
+          acquired,
+          profileLifecycle,
+          logger,
+          { providerId: provider.id, skipResidueCheck: isBrowserserveProfile },
+        ));
       }
       plugins.push(bridge);
 
@@ -176,6 +183,21 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
 
       const startResult = await pipeline.start();
       if (!startResult.ok) {
+        if (startResult.error instanceof ProfileResidueError) {
+          const r = startResult.error;
+          logger.warn(
+            { providerId, currentProfile: r.currentProfile, requestedProfile: r.requestedProfile },
+            "live: profile residue detected on provider",
+          );
+          sendViewerError(
+            viewer,
+            "PROFILE_RESIDUE",
+            `provider ${provider.id} currently holds profile "${r.currentProfile}"; requested "${r.requestedProfile}"`,
+          );
+          try { viewer.close(1011, "profile residue"); } catch { /* ignore */ }
+          if (acquired && profileLifecycle) await profileLifecycle.release(acquired).catch(() => undefined);
+          return;
+        }
         const errMsg = startResult.error instanceof Error ? startResult.error.message : String(startResult.error);
         logger.warn({ providerId, plugin: startResult.plugin, error: errMsg }, "live: pipeline setup failed");
         sendViewerError(viewer, "SETUP_FAILED", `${startResult.plugin}: ${errMsg}`);

@@ -61,7 +61,6 @@ function createMockProvider(port: number): MockProvider {
       res.end(JSON.stringify({
         Browser: "MockCDP/1.0",
         "Protocol-Version": "1.3",
-        "Browserserve-Version": "test-1.0",
         webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/test`,
       }));
       return;
@@ -86,7 +85,7 @@ providers:
     limits:
       maxConcurrent: 4
     priority: 1
-    multiProfile: true
+    profile: rest-alpha
 dashboard:
   enabled: false
 logging:
@@ -233,7 +232,7 @@ describe("Phase 4: profile REST API", () => {
     expect((r.body as { authEnabled: boolean }).authEnabled).toBe(true);
   });
 
-  it.skip("creates a profile via WS session, then lists it (needs pinned-external CDP-inject fixture)", async () => {
+  it("creates a profile via WS session, then lists it", async () => {
     provider.setCookies([
       { name: "rest-test", value: "v1", domain: ".example.com", path: "/", secure: true, httpOnly: true },
     ]);
@@ -248,7 +247,7 @@ describe("Phase 4: profile REST API", () => {
     expect(body.profiles[0]!.dekVersion).toBe(1);
   });
 
-  it.skip("get single: returns metadata for one profile (depends on prior skipped test)", async () => {
+  it("get single: returns metadata for one profile", async () => {
     const r = await getJson("/v1/profiles/rest-alpha", { headers: authHeaders });
     expect(r.status).toBe(200);
     const body = r.body as { id: string; sizeBytes: number };
@@ -266,7 +265,7 @@ describe("Phase 4: profile REST API", () => {
     expect(r.status).toBe(400);
   });
 
-  it.skip("export: returns binary blob with the right content-type and disposition (depends on prior skipped test)", async () => {
+  it("export: returns binary blob with the right content-type and disposition", async () => {
     const r = await getBinary("/v1/profiles/rest-alpha/export", { headers: authHeaders });
     expect(r.status).toBe(200);
     expect(r.contentType).toBe("application/octet-stream");
@@ -280,7 +279,7 @@ describe("Phase 4: profile REST API", () => {
     expect(r.status).toBe(404);
   });
 
-  it.skip("export → delete → import round-trip restores the profile (depends on prior skipped test)", async () => {
+  it("export → delete → import round-trip restores the profile", async () => {
     // 1. Export
     const exported = await getBinary("/v1/profiles/rest-alpha/export", { headers: authHeaders });
     expect(exported.status).toBe(200);

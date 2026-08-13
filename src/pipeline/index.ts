@@ -19,7 +19,7 @@ export type {
   ReplayStorage,
   ScreencastCapturePluginOpts,
 } from "./plugins/screencast-capture.js";
-export { ProfilePlugin, ProfilePluginError } from "./plugins/profile.js";
+export { ProfilePlugin, ProfilePluginError, ProfileResidueError } from "./plugins/profile.js";
 export type {
   ProfilePluginOpts,
   ProfilePluginPreloaded,

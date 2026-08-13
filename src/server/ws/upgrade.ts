@@ -28,6 +28,7 @@ import { parseAllowedOrigins } from "../util/request.js";
 import type { ReplayConfig } from "../../core/types.js";
 import { handlePipelineRelay } from "./pipeline-relay.js";
 import { ScreencastCapturePlugin } from "../../pipeline/plugins/screencast-capture.js";
+import { ProfileResidueError } from "../../pipeline/plugins/profile.js";
 import { NodeReplayStorage } from "../replay/node-storage.js";
 import { CHUNK_MAX_BYTES, CHUNK_MAX_ELAPSED_MS } from "../replay/constants.js";
 import type { CdpPlugin } from "../../pipeline/types.js";
@@ -103,7 +104,12 @@ function buildPluginList(inputs: PluginListInputs): CdpPlugin[] {
   const plugins: CdpPlugin[] = [];
 
   if (inputs.acquired && !inputs.isBrowserserveProfile && inputs.profileLifecycle) {
-    plugins.push(makeProfilePluginFromAcquired(inputs.acquired, inputs.profileLifecycle, inputs.logger));
+    plugins.push(makeProfilePluginFromAcquired(
+      inputs.acquired,
+      inputs.profileLifecycle,
+      inputs.logger,
+      { providerId: inputs.providerId },
+    ));
   }
 
   if (inputs.sessionRecord && inputs.pipelineReplay) {
@@ -336,6 +342,8 @@ export function createWebSocketHandler(
       return;
     }
 
+    let lastResidueError: ProfileResidueError | undefined;
+
     const tryConnect = async (): Promise<boolean> => {
       const candidates = gateway.selectProviderWithFallbacks(targetProviderId, profileId, readOnly);
 
@@ -364,16 +372,23 @@ export function createWebSocketHandler(
           logger,
         });
 
-        const connected = plugins.length > 0
-          ? await handlePipelineRelay({
-              gateway, logger, req, socket, head, provider, sessionId,
-              plugins,
-              reconnectRegistry,
-            })
-          : await pipeToProvider(
-              gateway, logger, transport, socket, head, req, sessionId, provider, reconnectRegistry,
-              profileLifecycle, acquired,
-            );
+        let connected: boolean;
+        if (plugins.length > 0) {
+          const relayResult = await handlePipelineRelay({
+            gateway, logger, req, socket, head, provider, sessionId,
+            plugins,
+            reconnectRegistry,
+          });
+          if (!relayResult.connected && relayResult.residue) {
+            lastResidueError = relayResult.residue;
+          }
+          connected = relayResult.connected;
+        } else {
+          connected = await pipeToProvider(
+            gateway, logger, transport, socket, head, req, sessionId, provider, reconnectRegistry,
+            profileLifecycle, acquired,
+          );
+        }
 
         if (connected) {
           acquired = null;
@@ -397,7 +412,15 @@ export function createWebSocketHandler(
         { sessionId, queueSize: gateway.queueSize, targetProviderId, profileId },
         "connection failed, all providers exhausted",
       );
-      if (targetProviderId) {
+      if (lastResidueError) {
+        respondError(socket, 409, {
+          error: "provider_holds_different_profile",
+          providerId: lastResidueError.providerId,
+          currentProfile: lastResidueError.currentProfile,
+          requestedProfile: lastResidueError.requestedProfile,
+          hint: "This provider currently holds a different profile's state. Retry with a different provider, or wait for the browser instance to release.",
+        });
+      } else if (targetProviderId) {
         respondError(socket, 503, { error: `Provider '${targetProviderId}' unavailable (cooldown, saturated, or not eligible for profile)` });
       } else if (profileId !== null && !anyProviderEligibleForProfile(gateway, profileId)) {
         respondError(socket, 400, {
