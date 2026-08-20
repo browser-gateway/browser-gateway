@@ -17,9 +17,10 @@ ENV HUSKY=0
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
-# next.config.ts reads ../package.json at build time to bake the version
-# into the dashboard sidebar, so the gateway's package.json must be present.
+# prebuild reads ../package.json + ../src/live-client, materialises version.json
+# + src/vendor/live-client/ inside web/ so this stage has zero ".." reads.
 COPY package.json /app/package.json
+COPY src/live-client /app/src/live-client
 RUN npm run build
 
 # Stage 3: Production

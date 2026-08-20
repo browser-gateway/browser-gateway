@@ -5,4 +5,4 @@ export {
   type ConnectOpts,
   type FrameMeta,
   type LiveClientEvents,
-} from "../../../src/live-client/index";
+} from "../vendor/live-client/index";

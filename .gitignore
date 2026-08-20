@@ -17,3 +17,5 @@ jscpd-report/
 .api-extractor-tmp/
 reports/
 profiles/
+web/src/vendor/
+web/version.json
