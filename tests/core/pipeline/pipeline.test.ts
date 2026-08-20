@@ -349,6 +349,120 @@ describe("Pipeline", () => {
     expect(result.reason).toBe("plugin-requested-close");
   });
 
+  it("onActivity fires on first client message", async () => {
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    const calls: number[] = [];
+    const p = new Pipeline(upstream, "wss://test/", {
+      plugins: [],
+      onSessionEndTimeoutMs: 100,
+      onActivity: (t) => calls.push(t),
+    });
+    const s = await p.start();
+    if (!s.ok) throw new Error("unexpected start failure");
+    const done = p.run(client);
+    await new Promise((r) => setTimeout(r, 5));
+
+    const before = Date.now();
+    client.receive(jsonMsg({ id: 1, method: "Page.enable" }));
+    const after = Date.now();
+    expect(calls.length).toBe(1);
+    expect(calls[0]!).toBeGreaterThanOrEqual(before);
+    expect(calls[0]!).toBeLessThanOrEqual(after);
+
+    client.close();
+    await done;
+  });
+
+  it("onActivity is throttled to activityThrottleMs", async () => {
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    const calls: number[] = [];
+    const p = new Pipeline(upstream, "wss://test/", {
+      plugins: [],
+      onSessionEndTimeoutMs: 100,
+      activityThrottleMs: 60_000,
+      onActivity: (t) => calls.push(t),
+    });
+    const s = await p.start();
+    if (!s.ok) throw new Error("unexpected start failure");
+    const done = p.run(client);
+    await new Promise((r) => setTimeout(r, 5));
+
+    for (let i = 0; i < 100; i++) {
+      client.receive(jsonMsg({ id: i, method: "Page.enable" }));
+    }
+    expect(calls.length).toBe(1);
+
+    client.close();
+    await done;
+  });
+
+  it("onActivity throttle window slides — second call fires after throttleMs", async () => {
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    const calls: number[] = [];
+    const p = new Pipeline(upstream, "wss://test/", {
+      plugins: [],
+      onSessionEndTimeoutMs: 100,
+      activityThrottleMs: 30,
+      onActivity: (t) => calls.push(t),
+    });
+    const s = await p.start();
+    if (!s.ok) throw new Error("unexpected start failure");
+    const done = p.run(client);
+    await new Promise((r) => setTimeout(r, 5));
+
+    client.receive(jsonMsg({ id: 1, method: "Page.enable" }));
+    expect(calls.length).toBe(1);
+    await new Promise((r) => setTimeout(r, 40));
+    client.receive(jsonMsg({ id: 2, method: "Page.enable" }));
+    expect(calls.length).toBe(2);
+
+    client.close();
+    await done;
+  });
+
+  it("onActivity does not fire on 0 client messages", async () => {
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    const calls: number[] = [];
+    const p = new Pipeline(upstream, "wss://test/", {
+      plugins: [],
+      onSessionEndTimeoutMs: 100,
+      onActivity: (t) => calls.push(t),
+    });
+    const s = await p.start();
+    if (!s.ok) throw new Error("unexpected start failure");
+    const done = p.run(client);
+    await new Promise((r) => setTimeout(r, 5));
+
+    client.close();
+    await done;
+    expect(calls.length).toBe(0);
+  });
+
+  it("throwing onActivity does not kill the session", async () => {
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    const p = new Pipeline(upstream, "wss://test/", {
+      plugins: [],
+      onSessionEndTimeoutMs: 100,
+      onActivity: () => { throw new Error("boom"); },
+    });
+    const s = await p.start();
+    if (!s.ok) throw new Error("unexpected start failure");
+    const done = p.run(client);
+    await new Promise((r) => setTimeout(r, 5));
+
+    client.receive(jsonMsg({ id: 1, method: "Page.enable" }));
+    expect(parseSent(upstream)).toEqual([{ id: 1, method: "Page.enable" }]);
+
+    client.close();
+    const result = await done;
+    expect(result.reason).toBe("client-closed");
+  });
+
   it("state.close is idempotent — second call is a no-op", async () => {
     const client = new FakeSocket();
     const upstream = new FakeSocket();

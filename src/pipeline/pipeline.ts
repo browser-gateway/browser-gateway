@@ -47,6 +47,9 @@ export class Pipeline {
   private readonly dropThresholdBytes: number;
   private readonly maxSessionMs?: number;
   private readonly idleTimeoutMs?: number;
+  private readonly onActivity?: (activityAtMs: number) => void;
+  private readonly activityThrottleMs: number;
+  private lastReportedActivityAt = 0;
 
   private readonly ids = new InternalIdSpace();
   private readonly state: SessionStateImpl;
@@ -77,6 +80,8 @@ export class Pipeline {
     this.dropThresholdBytes = opts.dropThresholdBytes ?? DEFAULT_DROP_THRESHOLD_BYTES;
     this.maxSessionMs = opts.maxSessionMs;
     this.idleTimeoutMs = opts.idleTimeoutMs;
+    this.onActivity = opts.onActivity;
+    this.activityThrottleMs = opts.activityThrottleMs ?? 60_000;
 
     this.state = new SessionStateImpl(upstreamUrl);
     this.state.sendInternal = <T>(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<T> => {
@@ -176,10 +181,23 @@ export class Pipeline {
     }
   }
 
+  private reportActivity(nowMs: number): void {
+    if (!this.onActivity) return;
+    if (nowMs - this.lastReportedActivityAt < this.activityThrottleMs) return;
+    this.lastReportedActivityAt = nowMs;
+    try {
+      this.onActivity(nowMs);
+    } catch {
+      /* onActivity failures NEVER kill the session */
+    }
+  }
+
   private onClientMessage(evt: unknown): void {
     const data = extractData(evt);
     if (data === undefined) return;
-    this.lastClientActivityAt = Date.now();
+    const now = Date.now();
+    this.lastClientActivityAt = now;
+    this.reportActivity(now);
     this.counters.bytesOut += byteLengthOf(data);
     this.counters.messageCount++;
 

@@ -104,4 +104,11 @@ export interface PipelineOptions {
   /** Drop upstream frames when the client socket's `bufferedAmount` exceeds
    *  this many bytes. Default 1_000_000. */
   dropThresholdBytes?: number;
+  /** Called with the wallclock ms of client-side activity, throttled by
+   *  `activityThrottleMs`. Fires at most once per throttle window. MUST NOT
+   *  throw or block — failures are swallowed. Use to persist `last_activity_at`
+   *  without polluting telemetry on idle sessions. */
+  onActivity?: (activityAtMs: number) => void;
+  /** Throttle window in ms for `onActivity`. Default 60_000. */
+  activityThrottleMs?: number;
 }
