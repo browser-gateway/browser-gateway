@@ -17,10 +17,12 @@ ENV HUSKY=0
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 COPY web/ ./
-# prebuild reads ../package.json + ../src/live-client, materialises version.json
-# + src/vendor/live-client/ inside web/ so this stage has zero ".." reads.
+# prebuild reads ../package.json + ../src/live-client + ../dist/provider-form,
+# materialises version.json + src/vendor/* inside web/ so this stage has zero
+# ".." reads at Next.js compile time.
 COPY package.json /app/package.json
 COPY src/live-client /app/src/live-client
+COPY --from=builder /app/dist/provider-form /app/dist/provider-form
 RUN npm run build
 
 # Stage 3: Production
