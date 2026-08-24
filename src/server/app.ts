@@ -419,6 +419,25 @@ export function createApp(
     return c.json({ providers });
   });
 
+  app.post("/v1/providers/probe", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+    const url = typeof body.url === "string" ? body.url : "";
+    if (!url) return c.json({ error: "url is required" }, 400);
+    try {
+      const caps = await probeProviderCapabilities(url, {
+        perStepTimeoutMs: 2_000,
+        totalTimeoutMs: 5_000,
+      });
+      return c.json({
+        detectedKind: caps.providerKind,
+        advertisedMaxConcurrent: caps.advertisedMaxConcurrent,
+      });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return c.json({ error: reason }, 200);
+    }
+  });
+
   app.post("/v1/providers", async (c) => {
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
     const id = body.id as string | undefined;

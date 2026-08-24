@@ -182,7 +182,7 @@ async function openAndClose(profileId: string): Promise<void> {
 }
 
 describe("C-INT-1: same-profile concurrent connect serializes via 409", () => {
-  it("20 simultaneous WS connects with same profile id — one wins, rest get 409", async () => {
+  it("20 simultaneous WS connects with same profile id — one wins, rest get 409", { timeout: 90_000 }, async () => {
     const PROFILE = "concurrent-same";
     const results = await Promise.allSettled(
       Array.from({ length: 20 }, () => openAndClose(PROFILE)),

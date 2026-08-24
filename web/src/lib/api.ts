@@ -216,6 +216,25 @@ export async function testProvider(
   return res.json();
 }
 
+export async function probeProvider(
+  url: string,
+  headers: Record<string, string> | undefined,
+  signal: AbortSignal,
+): Promise<{ detectedKind: "browserserve" | "generic"; advertisedMaxConcurrent: number | null }> {
+  const body: Record<string, unknown> = { url };
+  if (headers && Object.keys(headers).length > 0) body.headers = headers;
+  const res = await fetch(`${API_BASE}/v1/providers/probe`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    credentials: "include",
+    signal,
+  });
+  const data = await res.json() as { detectedKind?: "browserserve" | "generic"; advertisedMaxConcurrent?: number | null; error?: string };
+  if (data.error || !data.detectedKind) throw new Error(data.error ?? "probe returned no kind");
+  return { detectedKind: data.detectedKind, advertisedMaxConcurrent: data.advertisedMaxConcurrent ?? null };
+}
+
 export async function fetchHealth() {
   const res = await fetch(`${API_BASE}/health`);
   if (!res.ok) throw new Error(`Health API error: ${res.status}`);

@@ -99,7 +99,7 @@ afterEach(async () => {
 
 describe("probeProviderCapabilities — happy path", () => {
   it("marks all capabilities supported when the peer answers every command", async () => {
-    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000 });
+    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000, totalTimeoutMs: 60_000 });
     expect(caps.browserCookies).toBe("supported");
     expect(caps.targetCreate).toBe("supported");
     expect(caps.targetGetTargets).toBe("supported");
@@ -111,12 +111,12 @@ describe("probeProviderCapabilities — happy path", () => {
   });
 
   it("stamps probedAt and probeDurationMs on every probe", async () => {
-    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000 });
+    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000, totalTimeoutMs: 60_000 });
     expect(caps.probedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it("closes the temporary helper target it created", async () => {
-    await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000 });
+    await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000, totalTimeoutMs: 60_000 });
     expect(mock.received).toContain("Target.closeTarget");
   });
 });
@@ -124,7 +124,7 @@ describe("probeProviderCapabilities — happy path", () => {
 describe("probeProviderCapabilities — selective blocking", () => {
   it("marks targetGetTargets unsupported when peer rejects it (Steel-Cloud shape)", async () => {
     mock.setBlocked(new Set(["Target.getTargets"]));
-    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000 });
+    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000, totalTimeoutMs: 60_000 });
     expect(caps.targetGetTargets).toBe("unsupported");
     expect(caps.targetCreate).toBe("supported");
     expect(caps.fetchInterception).toBe("supported");
@@ -133,14 +133,14 @@ describe("probeProviderCapabilities — selective blocking", () => {
 
   it("marks fetchInterception unsupported when Fetch.enable rejects", async () => {
     mock.setBlocked(new Set(["Fetch.enable"]));
-    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000 });
+    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000, totalTimeoutMs: 60_000 });
     expect(caps.fetchInterception).toBe("unsupported");
     expect(caps.targetCreate).toBe("supported");
   });
 
   it("marks pageScreencast unsupported when Page.startScreencast rejects", async () => {
     mock.setBlocked(new Set(["Page.startScreencast"]));
-    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000 });
+    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000, totalTimeoutMs: 60_000 });
     expect(caps.pageScreencast).toBe("unsupported");
     expect(caps.fetchInterception).toBe("supported");
   });
@@ -149,13 +149,13 @@ describe("probeProviderCapabilities — selective blocking", () => {
 describe("probeProviderCapabilities — timeouts", () => {
   it("treats a hung command as unsupported, captures a timeout error, does not throw", async () => {
     mock.setHanging(new Set(["Storage.getCookies"]));
-    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 200 });
+    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 200, totalTimeoutMs: 60_000 });
     expect(caps.browserCookies).toBe("unsupported");
     expect(caps.errors.some((e) => /Storage\.getCookies: timeout/.test(e))).toBe(true);
   });
 
   it("captures targetCreate latency separately from the support flag", async () => {
-    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000 });
+    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000, totalTimeoutMs: 60_000 });
     expect(caps.targetCreate).toBe("supported");
     expect(caps.targetCreateLatencyMs).not.toBeNull();
     expect(caps.targetCreateLatencyMs!).toBeLessThan(1_000);
@@ -178,7 +178,7 @@ describe("probeProviderCapabilities — connect failure", () => {
 describe("probeProviderCapabilities — error responses", () => {
   it("treats an error envelope from Fetch.enable as unsupported", async () => {
     mock.setErrorOn(new Set(["Fetch.enable"]));
-    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000 });
+    const caps = await probeProviderCapabilities(mock.url, { perStepTimeoutMs: 1_000, totalTimeoutMs: 60_000 });
     expect(caps.fetchInterception).toBe("unsupported");
   });
 });

@@ -20,6 +20,7 @@ import {
   addProvider,
   updateProvider,
   testProvider,
+  probeProvider,
   type ProviderConfigItem,
   type ProfileMetaItem,
 } from "@/lib/api";
@@ -34,8 +35,12 @@ import {
   validateHeaderRows,
   headersToRecord,
   recordToHeaderRows,
+  isProbeableUrl,
+  providerProbeCacheKey,
+  selectProfileHint,
   type HeaderRow,
   type SiblingProvider,
+  type ProviderProbeState,
 } from "@shared/provider-form";
 
 interface Props {
@@ -69,6 +74,8 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
 
   const [saving, setSaving] = React.useState(false);
   const [testing, setTesting] = React.useState(false);
+  const [probe, setProbe] = React.useState<ProviderProbeState>({ status: "idle" });
+  const probeCacheRef = React.useRef<Map<string, ProviderProbeState>>(new Map());
   const [testResult, setTestResult] = React.useState<
     { ok: boolean; latencyMs: number; error?: string } | null
   >(null);
@@ -79,6 +86,43 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
     () => (isEdit && initial ? siblings.filter((s) => s.slug !== initial.id) : siblings),
     [siblings, initial, isEdit],
   );
+
+  const outboundHeadersForProbe = React.useMemo(() => headersToRecord(headers), [headers]);
+
+  React.useEffect(() => {
+    const trimmed = url.trim();
+    if (!isProbeableUrl(trimmed)) {
+      setProbe({ status: "idle" });
+      return;
+    }
+    const key = providerProbeCacheKey(trimmed, outboundHeadersForProbe);
+    const cached = probeCacheRef.current.get(key);
+    if (cached) {
+      setProbe(cached);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setProbe({ status: "probing" });
+      probeProvider(trimmed, outboundHeadersForProbe, controller.signal)
+        .then((result) => {
+          const next: ProviderProbeState = { status: "done", result };
+          probeCacheRef.current.set(key, next);
+          setProbe(next);
+        })
+        .catch((err) => {
+          if (controller.signal.aborted) return;
+          const next: ProviderProbeState = { status: "unknown" };
+          probeCacheRef.current.set(key, next);
+          setProbe(next);
+          void err;
+        });
+    }, 500);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [url, outboundHeadersForProbe]);
 
   const priorityEffect = React.useMemo(
     () =>
@@ -211,12 +255,7 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
     return base;
   }, [availableProfiles, profile]);
 
-  const profileHint =
-    profile === "*"
-      ? COPY.profile.hintAny
-      : profile
-      ? COPY.profile.hintPinned(profile)
-      : COPY.profile.hintNone;
+  const profileHint = selectProfileHint(profile, probe, COPY.profile);
 
   return (
     <form onSubmit={handleSubmit}>

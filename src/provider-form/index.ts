@@ -32,3 +32,13 @@ export {
 } from "./validate.js";
 
 export { PROVIDER_FORM_COPY } from "./copy.js";
+
+export {
+  isProbeableUrl,
+  providerProbeCacheKey,
+  selectProfileHint,
+  type ProviderProbeFn,
+  type ProviderProbeKind,
+  type ProviderProbeResult,
+  type ProviderProbeState,
+} from "./probe.js";
