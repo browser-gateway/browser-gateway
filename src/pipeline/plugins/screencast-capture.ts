@@ -207,27 +207,40 @@ export class ScreencastCapturePlugin implements CdpPlugin {
       frameCount: 0,
       sizeBytes: 0,
     });
+    const w = this.opts.viewportWidth ?? 1280;
+    const h = this.opts.viewportHeight ?? 720;
     state.sendInternalOneWay("Page.enable", {}, cdpSessionId);
-    // must run before Page.startScreencast — puppeteer/puppeteer#10527
-    state.sendInternalOneWay(
-      "Page.setDeviceMetricsOverride",
-      {
-        width: this.opts.viewportWidth ?? 1280,
-        height: this.opts.viewportHeight ?? 720,
-        deviceScaleFactor: this.opts.deviceScaleFactor ?? 1,
-        mobile: false,
-      },
-      cdpSessionId,
-    );
-    state.sendInternalOneWay(
-      "Page.startScreencast",
-      {
-        format: this.opts.format,
-        quality: this.opts.quality,
-        everyNthFrame: this.opts.everyNthFrame,
-      },
-      cdpSessionId,
-    );
+    // must ack before Page.startScreencast — puppeteer/puppeteer#10527
+    void state
+      .sendInternal(
+        "Page.setDeviceMetricsOverride",
+        {
+          width: w,
+          height: h,
+          deviceScaleFactor: this.opts.deviceScaleFactor ?? 1,
+          mobile: false,
+        },
+        cdpSessionId,
+      )
+      .then(() =>
+        state.sendInternal(
+          "Page.startScreencast",
+          {
+            format: this.opts.format,
+            quality: this.opts.quality,
+            everyNthFrame: this.opts.everyNthFrame,
+            maxWidth: w,
+            maxHeight: h,
+          },
+          cdpSessionId,
+        ),
+      )
+      .catch((err) => {
+        this.opts.logger?.("screencast arm failed", {
+          targetId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      });
   }
 
   private handleScreencastFrame(state: SessionState, msg: CdpMessage): void {
