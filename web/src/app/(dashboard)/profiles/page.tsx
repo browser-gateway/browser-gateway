@@ -124,26 +124,35 @@ export default function ProfilesPage() {
         file.type.includes("json") || file.name.toLowerCase().endsWith(".json");
       if (isJson) {
         const text = await file.text();
-        const parsed = JSON.parse(text) as unknown;
-        const looksPlaywright =
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          throw new Error("File is not valid JSON.");
+        }
+        const looksPlaywrightObject =
           parsed !== null &&
           typeof parsed === "object" &&
-          Array.isArray((parsed as { cookies?: unknown }).cookies) &&
-          Array.isArray((parsed as { origins?: unknown }).origins);
-        if (!looksPlaywright) {
+          !Array.isArray(parsed) &&
+          Array.isArray((parsed as { cookies?: unknown }).cookies);
+        const looksBareArray = Array.isArray(parsed);
+        if (!looksPlaywrightObject && !looksBareArray) {
           throw new Error(
-            "JSON file did not look like a Playwright storageState. For encrypted profile blobs, upload the .bgp file.",
+            "JSON did not look like a Playwright storageState or a cookie array. For encrypted profile blobs, upload the .bgp file.",
           );
         }
-        const idFromName = file.name.replace(/\.storagestate\.json$|\.json$/i, "");
-        const id =
-          window.prompt(
-            "Import as profile id (lowercase letters, digits, dots, dashes, underscores):",
-            idFromName,
-          ) ?? "";
-        if (!id.trim()) return;
+        const id = file.name
+          .replace(/\.storagestate\.json$|\.json$/i, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9._-]/g, "-")
+          .replace(/^[-_.]+|[-_.]+$/g, "");
+        if (!id) {
+          throw new Error(
+            `Cannot derive a profile id from filename "${file.name}". Rename it (e.g. github.storagestate.json).`,
+          );
+        }
         const { importProfilePlaywright } = await import("@/lib/api");
-        const result = await importProfilePlaywright(id.trim(), parsed);
+        const result = await importProfilePlaywright(id, parsed);
         setMessage({
           type: "success",
           text: `Imported ${result.imported} (${result.bytes} bytes, Playwright)`,
