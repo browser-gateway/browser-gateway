@@ -335,13 +335,13 @@ export default function ProfilesPage() {
                 </TableRow>
               ) : data.count === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={5} className="text-center py-12">
-                    <div className="space-y-2 max-w-md mx-auto">
+                  <TableCell colSpan={5} className="py-12">
+                    <div className="flex flex-col items-center gap-2 text-center px-4">
                       <p className="text-[13px] text-muted-foreground">
                         No profiles saved yet.
                       </p>
                       {enabled && (
-                        <p className="text-[12px] text-muted-foreground/80">
+                        <p className="text-[12px] text-muted-foreground/80 max-w-xl">
                           Connect with{" "}
                           <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] text-foreground">?profile=&lt;id&gt;</code>{" "}
                           on the WebSocket URL. One will be created automatically when your session ends.
