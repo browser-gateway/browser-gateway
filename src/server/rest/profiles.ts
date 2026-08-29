@@ -8,6 +8,11 @@ import {
   PROFILE_ID_REGEX,
   PROFILE_VERSION,
 } from "../../core/profile/index.js";
+import {
+  capturedProfileToStorageState,
+  storageStateToCapturedProfile,
+} from "../../core/profile/playwright-format.js";
+import type { CapturedProfile } from "../../core/profile/types.js";
 import type { FilesystemProfileStore } from "../profile/filesystem-store.js";
 import { loadedConfigPath } from "../config/loader.js";
 import { enableProfilesFlow, disableProfilesFlow } from "../setup/profiles-setup.js";
@@ -215,8 +220,50 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
     if (!PROFILE_ID_REGEX.test(id)) {
       return c.json({ error: "Invalid profile id" }, 400);
     }
+    const format = c.req.query("format") ?? "bgp";
     const blob = await store.getRaw(id);
     if (!blob) return c.json({ error: "Not found" }, 404);
+
+    if (format === "playwright") {
+      let header;
+      try {
+        header = decodeBlobHeader(blob);
+      } catch (err) {
+        return c.json(
+          { error: `Blob header unreadable: ${err instanceof Error ? err.message : String(err)}` },
+          500,
+        );
+      }
+      const dek = dekByVersion.get(header.dekVersion);
+      if (!dek) {
+        return c.json(
+          { error: `Blob requires DEK version ${header.dekVersion} which is not in this gateway's key ring` },
+          400,
+        );
+      }
+      let captured: CapturedProfile;
+      try {
+        const plaintext = decodeBlob(blob, dek, id);
+        captured = JSON.parse(plaintext.toString("utf8")) as CapturedProfile;
+      } catch (err) {
+        return c.json(
+          { error: `Failed to decrypt profile: ${err instanceof Error ? err.message : String(err)}` },
+          500,
+        );
+      }
+      const state = capturedProfileToStorageState(captured);
+      return new Response(JSON.stringify(state, null, 2), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Disposition": `attachment; filename="${id}.storagestate.json"`,
+        },
+      });
+    }
+
+    if (format !== "bgp") {
+      return c.json({ error: `Unknown format '${format}'. Supported: bgp, playwright.` }, 400);
+    }
 
     return new Response(new Uint8Array(blob), {
       status: 200,
@@ -230,6 +277,56 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
 
   app.post("/profiles/import", async (c) => {
     const contentType = c.req.header("content-type") ?? "";
+    const format = c.req.query("format") ?? (contentType.includes("application/json") ? "playwright" : "bgp");
+
+    if (format === "playwright") {
+      const id = c.req.query("id");
+      if (!id || !PROFILE_ID_REGEX.test(id)) {
+        return c.json({ error: "Query param 'id' is required and must match the profile id format" }, 400);
+      }
+      let json: unknown;
+      try {
+        json = await c.req.json();
+      } catch {
+        return c.json({ error: "Body must be valid JSON" }, 400);
+      }
+      let captured: CapturedProfile;
+      try {
+        captured = storageStateToCapturedProfile(json);
+      } catch (err) {
+        return c.json(
+          { error: `Invalid Playwright storageState: ${err instanceof Error ? err.message : String(err)}` },
+          400,
+        );
+      }
+      const dekVersions = Array.from(dekByVersion.keys());
+      if (dekVersions.length === 0) {
+        return c.json({ error: "No encryption keys configured" }, 500);
+      }
+      const dekVersion = Math.max(...dekVersions);
+      const dek = dekByVersion.get(dekVersion)!;
+      const plaintext = Buffer.from(JSON.stringify(captured), "utf8");
+      const encoded = encodeBlob(dek, dekVersion, plaintext, id);
+
+      const token = await store.lock(id, 5_000);
+      if (!token) {
+        return c.json(
+          { error: "Profile is in use by an active session — try again later" },
+          409,
+        );
+      }
+      try {
+        await store.putRaw(id, encoded.bytes);
+        logger.info(
+          { profileId: id, bytes: encoded.totalLen, source: "playwright" },
+          "profile imported via REST (playwright storageState)",
+        );
+        return c.json({ imported: id, bytes: encoded.totalLen, format: "playwright" });
+      } finally {
+        await store.unlock(id, token);
+      }
+    }
+
     let blob: Buffer;
     try {
       if (contentType.includes("application/octet-stream") || contentType === "") {
@@ -237,7 +334,7 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
         blob = Buffer.from(ab);
       } else {
         return c.json(
-          { error: "Content-Type must be application/octet-stream" },
+          { error: "Content-Type must be application/octet-stream (for bgp) or application/json (for playwright)" },
           415,
         );
       }

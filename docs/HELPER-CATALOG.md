@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-08-23
+Generated: 2026-08-29
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -191,6 +191,16 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `isMarkerOrigin(origin: string) → boolean` (line 84) — True when an origin is the synthetic marker origin (with or without trailing slash).
 - **fn** `stripMarkerFromStorage(localStorageMap: Record<string, string>) → Record<string, string>` (line 90) — Removes the marker localStorage entry from an origin's storage snapshot in place.
 - **fn** `stripMarkerOrigin(storage: Record<string, T>) → Record<string, T>` (line 99) — Removes the whole marker origin entry from a captured `storage` map. Used on the
+### `src/core/profile/playwright-format.ts`
+
+- **const** `const PlaywrightCookieSchema` (line 7)
+- **const** `const PlaywrightOriginSchema` (line 18)
+- **const** `const PlaywrightStorageStateSchema` (line 25)
+- **type** `type PlaywrightCookie` (line 30)
+- **type** `type PlaywrightOrigin` (line 31)
+- **type** `type PlaywrightStorageState` (line 32)
+- **fn** `capturedProfileToStorageState(profile: CapturedProfile) → PlaywrightStorageState` (line 40) — Convert a captured profile to Playwright's `storageState` JSON shape.
+- **fn** `storageStateToCapturedProfile(input: unknown) → CapturedProfile` (line 60) — Convert a Playwright `storageState` JSON to a captured profile.
 ### `src/core/profile/save.ts`
 
 - **interface** `interface MergeAndPrepareResult` (line 13) — Result of {@link mergeAndPrepareProfile}. `refused`/`preserved` mean the
@@ -454,10 +464,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `withProfilePage(deps: WithProfilePageDeps, profileId: string, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 42)
 ### `src/server/rest/profiles.ts`
 
-- **interface** `interface ProfileRestDeps` (line 17)
-- **interface** `interface DisabledProfileDeps` (line 24)
-- **fn** `createDisabledProfileRoutes(deps: DisabledProfileDeps = {}) → Hono` (line 48) — Profile routes that respond gracefully when the profiles feature is OFF.
-- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 116) — Profile management REST routes.
+- **interface** `interface ProfileRestDeps` (line 22)
+- **interface** `interface DisabledProfileDeps` (line 29)
+- **fn** `createDisabledProfileRoutes(deps: DisabledProfileDeps = {}) → Hono` (line 53) — Profile routes that respond gracefully when the profiles feature is OFF.
+- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 121) — Profile management REST routes.
 ### `src/server/rest/replays.ts`
 
 - **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 26)

@@ -340,4 +340,102 @@ describe("Phase 4: profile REST API", () => {
     });
     expect(r.status).toBe(400);
   });
+
+  it("export playwright: returns storageState JSON with cookies + origins", async () => {
+    const r = await fetch(
+      `http://localhost:${GATEWAY_PORT}/v1/profiles/rest-alpha/export?format=playwright`,
+      { headers: authHeaders },
+    );
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toContain("application/json");
+    expect(r.headers.get("content-disposition")).toContain("rest-alpha.storagestate.json");
+    const body = (await r.json()) as { cookies: unknown[]; origins: unknown[] };
+    expect(Array.isArray(body.cookies)).toBe(true);
+    expect(Array.isArray(body.origins)).toBe(true);
+  });
+
+  it("import playwright: creates a profile from storageState JSON", async () => {
+    const state = {
+      cookies: [
+        {
+          name: "imported",
+          value: "yes",
+          domain: ".playwright.test",
+          path: "/",
+          expires: -1,
+          httpOnly: false,
+          secure: true,
+          sameSite: "Lax",
+        },
+      ],
+      origins: [
+        {
+          origin: "https://playwright.test",
+          localStorage: [{ name: "theme", value: "dark" }],
+        },
+      ],
+    };
+    const r = await fetch(
+      `http://localhost:${GATEWAY_PORT}/v1/profiles/import?format=playwright&id=pw-imported`,
+      {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify(state),
+      },
+    );
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { imported: string; format: string };
+    expect(body.imported).toBe("pw-imported");
+    expect(body.format).toBe("playwright");
+    const listed = await getJson("/v1/profiles", { headers: authHeaders });
+    const items = (listed.body as { profiles: { id: string }[] }).profiles;
+    expect(items.find((p) => p.id === "pw-imported")).toBeTruthy();
+    await fetch(`http://localhost:${GATEWAY_PORT}/v1/profiles/pw-imported`, {
+      method: "DELETE",
+      headers: authHeaders,
+    });
+  });
+
+  it("import playwright: rejects when id query param is missing or malformed", async () => {
+    const state = { cookies: [], origins: [] };
+    const r1 = await fetch(
+      `http://localhost:${GATEWAY_PORT}/v1/profiles/import?format=playwright`,
+      {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify(state),
+      },
+    );
+    expect(r1.status).toBe(400);
+
+    const r2 = await fetch(
+      `http://localhost:${GATEWAY_PORT}/v1/profiles/import?format=playwright&id=-invalid`,
+      {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify(state),
+      },
+    );
+    expect(r2.status).toBe(400);
+  });
+
+  it("import playwright: rejects malformed storageState JSON", async () => {
+    const r = await fetch(
+      `http://localhost:${GATEWAY_PORT}/v1/profiles/import?format=playwright&id=bad-json`,
+      {
+        method: "POST",
+        headers: { ...authHeaders, "content-type": "application/json" },
+        body: JSON.stringify({ cookies: "not-an-array", origins: [] }),
+      },
+    );
+    expect(r.status).toBe(400);
+  });
+
+  it("export: rejects unknown format", async () => {
+    const r = await fetch(
+      `http://localhost:${GATEWAY_PORT}/v1/profiles/rest-alpha/export?format=bogus`,
+      { headers: authHeaders },
+    );
+    expect(r.status).toBe(400);
+  });
 });
