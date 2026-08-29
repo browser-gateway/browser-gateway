@@ -379,8 +379,9 @@ export async function deleteProfile(id: string): Promise<void> {
   }
 }
 
-export function exportProfileUrl(id: string): string {
-  return `${API_BASE}/v1/profiles/${encodeURIComponent(id)}/export`;
+export function exportProfileUrl(id: string, format: "bgp" | "playwright" = "bgp"): string {
+  const suffix = format === "playwright" ? "?format=playwright" : "";
+  return `${API_BASE}/v1/profiles/${encodeURIComponent(id)}/export${suffix}`;
 }
 
 export async function importProfile(blob: Blob): Promise<{ imported: string; bytes: number }> {
@@ -390,6 +391,27 @@ export async function importProfile(blob: Blob): Promise<{ imported: string; byt
     body: blob,
     ...fetchOpts,
   });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Import failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function importProfilePlaywright(
+  id: string,
+  storageState: unknown,
+): Promise<{ imported: string; bytes: number; format: "playwright" }> {
+  const res = await fetch(
+    `${API_BASE}/v1/profiles/import?format=playwright&id=${encodeURIComponent(id)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(storageState),
+      ...fetchOpts,
+    },
+  );
   if (res.status === 401) throw new AuthError();
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string };

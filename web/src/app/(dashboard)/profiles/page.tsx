@@ -120,8 +120,38 @@ export default function ProfilesPage() {
   async function handleImport(file: File) {
     setBusy("__import__");
     try {
-      const result = await importProfile(file);
-      setMessage({ type: "success", text: `Imported ${result.imported} (${result.bytes} bytes)` });
+      const isJson =
+        file.type.includes("json") || file.name.toLowerCase().endsWith(".json");
+      if (isJson) {
+        const text = await file.text();
+        const parsed = JSON.parse(text) as unknown;
+        const looksPlaywright =
+          parsed !== null &&
+          typeof parsed === "object" &&
+          Array.isArray((parsed as { cookies?: unknown }).cookies) &&
+          Array.isArray((parsed as { origins?: unknown }).origins);
+        if (!looksPlaywright) {
+          throw new Error(
+            "JSON file did not look like a Playwright storageState. For encrypted profile blobs, upload the .bgp file.",
+          );
+        }
+        const idFromName = file.name.replace(/\.storagestate\.json$|\.json$/i, "");
+        const id =
+          window.prompt(
+            "Import as profile id (lowercase letters, digits, dots, dashes, underscores):",
+            idFromName,
+          ) ?? "";
+        if (!id.trim()) return;
+        const { importProfilePlaywright } = await import("@/lib/api");
+        const result = await importProfilePlaywright(id.trim(), parsed);
+        setMessage({
+          type: "success",
+          text: `Imported ${result.imported} (${result.bytes} bytes, Playwright)`,
+        });
+      } else {
+        const result = await importProfile(file);
+        setMessage({ type: "success", text: `Imported ${result.imported} (${result.bytes} bytes)` });
+      }
       await reload();
     } catch (err) {
       setMessage({
@@ -382,12 +412,26 @@ export default function ProfilesPage() {
                           )}
                         </Button>
                         <a
-                          href={exportProfileUrl(p.id)}
+                          href={exportProfileUrl(p.id, "bgp")}
                           download
                           title={`Export ${p.id} as an encrypted .bgp file`}
                         >
                           <Button variant="ghost" size="sm" disabled={busy !== null} aria-label="Export">
                             <Download className="size-3.5" />
+                          </Button>
+                        </a>
+                        <a
+                          href={exportProfileUrl(p.id, "playwright")}
+                          download={`${p.id}.storagestate.json`}
+                          title={`Export ${p.id} as a Playwright storageState JSON`}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy !== null}
+                            aria-label="Export as Playwright storageState"
+                          >
+                            <span className="text-xs">PW</span>
                           </Button>
                         </a>
                         <Button
