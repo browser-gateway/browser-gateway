@@ -419,13 +419,13 @@ describe("Phase 4: profile REST API", () => {
     expect(r2.status).toBe(400);
   });
 
-  it("import playwright: rejects malformed storageState JSON", async () => {
+  it("import playwright: rejects a cookie missing required fields", async () => {
     const r = await fetch(
       `http://localhost:${GATEWAY_PORT}/v1/profiles/import?format=playwright&id=bad-json`,
       {
         method: "POST",
         headers: { ...authHeaders, "content-type": "application/json" },
-        body: JSON.stringify({ cookies: "not-an-array", origins: [] }),
+        body: JSON.stringify({ cookies: [{ name: "only-a-name" }], origins: [] }),
       },
     );
     expect(r.status).toBe(400);
