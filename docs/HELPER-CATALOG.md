@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-08-29
+Generated: 2026-08-30
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -200,7 +200,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type PlaywrightOrigin` (line 31)
 - **type** `type PlaywrightStorageState` (line 32)
 - **fn** `capturedProfileToStorageState(profile: CapturedProfile) → PlaywrightStorageState` (line 40) — Convert a captured profile to Playwright's `storageState` JSON shape.
-- **fn** `storageStateToCapturedProfile(input: unknown) → CapturedProfile` (line 60) — Convert a Playwright `storageState` JSON to a captured profile.
+- **fn** `storageStateToCapturedProfile(input: unknown) → CapturedProfile` (line 67) — Convert a Playwright-shaped JSON payload to a captured profile.
 ### `src/core/profile/save.ts`
 
 - **interface** `interface MergeAndPrepareResult` (line 13) — Result of {@link mergeAndPrepareProfile}. `refused`/`preserved` mean the
