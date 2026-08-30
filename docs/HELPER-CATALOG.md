@@ -438,9 +438,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface ReplayFrameRecord` (line 1)
 - **interface** `interface ReplayManifest` (line 16)
-- **interface** `interface ReplayMeta` (line 23)
-- **interface** `interface ReplayTargetSummary` (line 35)
-- **interface** `interface ReplayDetail` (line 43)
+- **interface** `interface ReplayMeta` (line 27)
+- **interface** `interface ReplayTargetSummary` (line 39)
+- **interface** `interface ReplayDetail` (line 47)
 ### `src/server/rest/content.ts`
 
 - **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 17)

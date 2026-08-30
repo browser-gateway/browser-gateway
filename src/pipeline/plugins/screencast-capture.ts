@@ -17,7 +17,12 @@ export interface ReplayStorage {
    *  (4 bytes) — matches the on-disk format the OSS ReplayStore reader
    *  expects (`byteOffset + 4` skip). */
   writeChunk(sessionId: string, chunkIndex: number, data: Uint8Array): Promise<void>;
-  /** Called once at session end. Persists the manifest + completion record. */
+  /** Called once at session end. Persists the manifest + completion record.
+   *  `summary.truncated` is set when capture was stopped early — "byte-cap"
+   *  for the per-session byte ceiling, "wallet-drained" for the wallet-probe
+   *  drain gate. Storage impls should propagate this to their metadata row
+   *  (D1 / DO SQL) so downstream surfaces (dashboard, MP4 exporter) can act
+   *  on it. */
   finalize(
     sessionId: string,
     manifest: ReplayManifest,
@@ -27,6 +32,7 @@ export interface ReplayStorage {
       sizeBytes: number;
       droppedFrames: number;
       duplicatesSkipped: number;
+      truncated?: "byte-cap" | "wallet-drained" | null;
     },
   ): Promise<void>;
 }
@@ -55,6 +61,18 @@ export interface ScreencastCapturePluginOpts {
   /** When true, drops frames whose `url` is the empty string (pre-navigation
    *  about:blank). Reduces manifest noise while the browser is booting. */
   filterEmptyUrl?: boolean;
+  /** Optional wallet-balance probe. When set, the plugin polls it every
+   *  walletProbeIntervalMs; if it returns balanceCents strictly less than
+   *  recordingRatePerMinuteCents, capture stops with truncationReason
+   *  "wallet-drained". The session's byte pipe keeps running. Any error
+   *  from the probe is swallowed (fail-open) so a transient DO/RPC failure
+   *  never terminates capture. Leave undefined for no probing (OSS default). */
+  walletProbe?: () => Promise<{ balanceCents: number }>;
+  /** Minimum wallet cents to keep capturing. Drain fires when the probe
+   *  returns balanceCents < this value. Defaults to 1. */
+  recordingRatePerMinuteCents?: number;
+  /** Poll interval for walletProbe in milliseconds. Defaults to 30000. */
+  walletProbeIntervalMs?: number;
   logger?: (msg: string, data?: Record<string, unknown>) => void;
 }
 
@@ -84,6 +102,8 @@ export class ScreencastCapturePlugin implements CdpPlugin {
   private duplicatesSkipped = 0;
   private totalBytes = 0;
   private capStopped = false;
+  private truncationReason: "byte-cap" | "wallet-drained" | null = null;
+  private walletProbeTimer: ReturnType<typeof setInterval> | null = null;
   private started = false;
   private chunkIndex = 0;
   private chunkBuffer: Uint8Array[] = [];
@@ -119,6 +139,55 @@ export class ScreencastCapturePlugin implements CdpPlugin {
     // target events regardless, and existing targets get picked up when
     // their attach event fires.
     void this.probeExistingTargets(state);
+    this.startWalletProbeTimer(state);
+  }
+
+  private startWalletProbeTimer(state: SessionState): void {
+    if (!this.opts.walletProbe) return;
+    const intervalMs = this.opts.walletProbeIntervalMs ?? 30_000;
+    const minCents = this.opts.recordingRatePerMinuteCents ?? 1;
+    const probe = this.opts.walletProbe;
+    this.walletProbeTimer = setInterval(() => {
+      if (!this.started || this.capStopped) {
+        this.clearWalletProbeTimer();
+        return;
+      }
+      probe()
+        .then((r) => {
+          if (!this.started || this.capStopped) return;
+          if (r.balanceCents < minCents) {
+            this.opts.logger?.("replay: wallet drained, stopping capture", {
+              sessionId: this.opts.sessionId,
+              balanceCents: r.balanceCents,
+              minCents,
+            });
+            this.stopCapture(state, "wallet-drained");
+          }
+        })
+        .catch((err) => {
+          this.opts.logger?.("replay: walletProbe failed, keeping capture running", {
+            sessionId: this.opts.sessionId,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        });
+    }, intervalMs);
+  }
+
+  private clearWalletProbeTimer(): void {
+    if (this.walletProbeTimer !== null) {
+      clearInterval(this.walletProbeTimer);
+      this.walletProbeTimer = null;
+    }
+  }
+
+  private stopCapture(state: SessionState, reason: "byte-cap" | "wallet-drained"): void {
+    if (this.capStopped) return;
+    this.capStopped = true;
+    this.truncationReason = reason;
+    this.clearWalletProbeTimer();
+    for (const t of this.targets.values()) {
+      state.sendInternalOneWay("Page.stopScreencast", {}, t.cdpSessionId);
+    }
   }
 
   private async probeExistingTargets(state: SessionState): Promise<void> {
@@ -177,6 +246,7 @@ export class ScreencastCapturePlugin implements CdpPlugin {
 
   async onSessionEnd(state: SessionState, _reason: string): Promise<void> {
     if (!this.started) return;
+    this.clearWalletProbeTimer();
     if (!this.capStopped) {
       for (const t of this.targets.values()) {
         state.sendInternalOneWay("Page.stopScreencast", {}, t.cdpSessionId);
@@ -189,6 +259,7 @@ export class ScreencastCapturePlugin implements CdpPlugin {
       format: this.opts.format,
       targets: Array.from(this.targets.values()).map((t) => t.targetId),
       frames: this.frames,
+      truncated: this.truncationReason,
     };
     await this.opts.storage.finalize(this.opts.sessionId, manifest, {
       endedAt: Date.now(),
@@ -196,6 +267,7 @@ export class ScreencastCapturePlugin implements CdpPlugin {
       sizeBytes: this.totalBytes,
       droppedFrames: this.droppedFrames,
       duplicatesSkipped: this.duplicatesSkipped,
+      truncated: this.truncationReason,
     });
   }
 
@@ -272,10 +344,7 @@ export class ScreencastCapturePlugin implements CdpPlugin {
           sessionId: this.opts.sessionId,
           totalBytes: this.totalBytes,
         });
-        this.capStopped = true;
-        for (const t of this.targets.values()) {
-          state.sendInternalOneWay("Page.stopScreencast", {}, t.cdpSessionId);
-        }
+        this.stopCapture(state, "byte-cap");
       }
       return;
     }
