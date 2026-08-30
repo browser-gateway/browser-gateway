@@ -193,14 +193,14 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `stripMarkerOrigin(storage: Record<string, T>) → Record<string, T>` (line 99) — Removes the whole marker origin entry from a captured `storage` map. Used on the
 ### `src/core/profile/playwright-format.ts`
 
-- **const** `const PlaywrightCookieSchema` (line 7)
-- **const** `const PlaywrightOriginSchema` (line 18)
-- **const** `const PlaywrightStorageStateSchema` (line 25)
-- **type** `type PlaywrightCookie` (line 30)
-- **type** `type PlaywrightOrigin` (line 31)
-- **type** `type PlaywrightStorageState` (line 32)
-- **fn** `capturedProfileToStorageState(profile: CapturedProfile) → PlaywrightStorageState` (line 40) — Convert a captured profile to Playwright's `storageState` JSON shape.
-- **fn** `storageStateToCapturedProfile(input: unknown) → CapturedProfile` (line 67) — Convert a Playwright-shaped JSON payload to a captured profile.
+- **const** `const PlaywrightCookieSchema` (line 10) — Matches Playwright's `context.addCookies` contract: only `name` and `value`
+- **const** `const PlaywrightOriginSchema` (line 27)
+- **const** `const PlaywrightStorageStateSchema` (line 34)
+- **type** `type PlaywrightCookie` (line 39)
+- **type** `type PlaywrightOrigin` (line 40)
+- **type** `type PlaywrightStorageState` (line 41)
+- **fn** `capturedProfileToStorageState(profile: CapturedProfile) → PlaywrightStorageState` (line 49) — Convert a captured profile to Playwright's `storageState` JSON shape.
+- **fn** `storageStateToCapturedProfile(input: unknown) → CapturedProfile` (line 76) — Convert a Playwright-shaped JSON payload to a captured profile.
 ### `src/core/profile/save.ts`
 
 - **interface** `interface MergeAndPrepareResult` (line 13) — Result of {@link mergeAndPrepareProfile}. `refused`/`preserved` mean the

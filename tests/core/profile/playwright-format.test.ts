@@ -155,12 +155,112 @@ describe("storageStateToCapturedProfile", () => {
     ).toThrow();
   });
 
+  it("accepts a bare cookie array (Puppeteer page.cookies + browser extensions)", () => {
+    const back = storageStateToCapturedProfile([
+      {
+        name: "session",
+        value: "abc",
+        domain: ".example.com",
+        path: "/",
+      },
+    ]);
+    expect(back.cookies).toHaveLength(1);
+    expect(back.cookies[0]?.name).toBe("session");
+    expect(back.storage).toEqual({});
+  });
+
+  it("accepts a partial object with only cookies (no origins)", () => {
+    const back = storageStateToCapturedProfile({
+      cookies: [
+        {
+          name: "session",
+          value: "abc",
+          domain: ".example.com",
+          path: "/",
+        },
+      ],
+    });
+    expect(back.cookies).toHaveLength(1);
+    expect(back.storage).toEqual({});
+  });
+
+  it("normalises Chrome-extension expirationDate + sameSite variants", () => {
+    const back = storageStateToCapturedProfile([
+      {
+        name: "c1",
+        value: "v1",
+        domain: ".example.com",
+        path: "/",
+        expirationDate: 1893456000,
+        sameSite: "no_restriction",
+      },
+      {
+        name: "c2",
+        value: "v2",
+        domain: ".example.com",
+        path: "/",
+        sameSite: "unspecified",
+      },
+      {
+        name: "c3",
+        value: "v3",
+        domain: ".example.com",
+        path: "/",
+        sameSite: "lax",
+      },
+    ]);
+    expect(back.cookies[0]?.expires).toBe(1893456000);
+    expect(back.cookies[0]?.sameSite).toBe("None");
+    expect(back.cookies[1]?.sameSite).toBe("Lax");
+    expect(back.cookies[2]?.sameSite).toBe("Lax");
+  });
+
   it("rejects non-URL origins", () => {
     expect(() =>
       storageStateToCapturedProfile({
         cookies: [],
         origins: [{ origin: "not-a-url", localStorage: [] }],
       }),
+    ).toThrow();
+  });
+
+  it("accepts a cookie with only url (extracts domain + path)", () => {
+    const back = storageStateToCapturedProfile([
+      {
+        name: "session",
+        value: "abc",
+        url: "https://example.com/app",
+      },
+    ]);
+    expect(back.cookies[0]?.domain).toBe("example.com");
+    expect(back.cookies[0]?.path).toBe("/app");
+  });
+
+  it("accepts a minimal cookie with only name + value + domain + path", () => {
+    const back = storageStateToCapturedProfile([
+      {
+        name: "session",
+        value: "v",
+        domain: "example.com",
+        path: "/",
+      },
+    ]);
+    expect(back.cookies[0]?.httpOnly).toBe(false);
+    expect(back.cookies[0]?.secure).toBe(false);
+    expect(back.cookies[0]?.sameSite).toBe("Lax");
+  });
+
+  it("rejects a cookie with neither url nor domain+path", () => {
+    expect(() =>
+      storageStateToCapturedProfile([{ name: "orphan", value: "v" }]),
+    ).toThrow();
+  });
+
+  it("rejects a cookie missing a value", () => {
+    expect(() =>
+      storageStateToCapturedProfile([
+        { name: "no-value", domain: "example.com", path: "/" },
+      ]),
     ).toThrow();
   });
 
