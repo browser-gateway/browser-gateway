@@ -18,10 +18,10 @@ export interface ReplayManifest {
   format: "png" | "jpeg";
   targets: string[];
   frames: ReplayFrameRecord[];
-  /** Set when capture was stopped before natural session close. `byte-cap`
-   *  means the per-session byte ceiling was hit; `wallet-drained` means the
-   *  wallet-probe drain gate fired. Absent or null on complete recordings. */
-  truncated?: "byte-cap" | "wallet-drained" | null;
+  /** Set when capture was stopped before natural session close. The plugin's
+   *  own byte-cap fires as `"byte-cap"`; external abort signals write their
+   *  own reason string verbatim. Absent or null on complete recordings. */
+  truncated?: string | null;
 }
 
 export interface ReplayMeta {

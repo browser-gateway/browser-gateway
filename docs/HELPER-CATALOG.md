@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-08-30
+Generated: 2026-08-31
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 

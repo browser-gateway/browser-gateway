@@ -41,7 +41,7 @@ class FakeStorage implements ReplayStorage {
     sizeBytes: number;
     droppedFrames: number;
     duplicatesSkipped: number;
-    truncated?: "byte-cap" | "wallet-drained" | null;
+    truncated?: string | null;
   } | null = null;
   writeChunkDelayMs = 0;
 
@@ -61,7 +61,7 @@ class FakeStorage implements ReplayStorage {
       sizeBytes: number;
       droppedFrames: number;
       duplicatesSkipped: number;
-      truncated?: "byte-cap" | "wallet-drained" | null;
+      truncated?: string | null;
     },
   ): Promise<void> {
     this.finalManifest = manifest;
@@ -84,9 +84,7 @@ async function driveScreencast(opts: {
   maxBytesPerSession?: number;
   chunkMaxBytes?: number;
   maxInFlightChunks?: number;
-  walletProbe?: () => Promise<{ balanceCents: number }>;
-  recordingRatePerMinuteCents?: number;
-  walletProbeIntervalMs?: number;
+  stopSignal?: AbortSignal;
 }) {
   const client = new FakeSocket();
   const upstream = new FakeSocket();
@@ -101,9 +99,7 @@ async function driveScreencast(opts: {
     chunkMaxBytes: opts.chunkMaxBytes ?? 25 * 1024 * 1024,
     chunkMaxElapsedMs: 60_000,
     maxInFlightChunks: opts.maxInFlightChunks,
-    walletProbe: opts.walletProbe,
-    recordingRatePerMinuteCents: opts.recordingRatePerMinuteCents,
-    walletProbeIntervalMs: opts.walletProbeIntervalMs,
+    stopSignal: opts.stopSignal,
   });
   const pipe = new Pipeline(upstream, "wss://test/", { plugins: [plugin], onSessionEndTimeoutMs: 500 });
   const s = await pipe.start();
@@ -454,13 +450,12 @@ describe("ScreencastCapturePlugin", () => {
     expect((storage.finalSummary?.duplicatesSkipped ?? 0)).toBeGreaterThanOrEqual(1);
   });
 
-  it("stops capture when walletProbe returns balance below the rate (fires Page.stopScreencast)", async () => {
+  it("stops capture when stopSignal aborts, using abort reason as truncation label", async () => {
     const storage = new FakeStorage();
+    const abort = new AbortController();
     const { upstream, client, done } = await driveScreencast({
       storage,
-      walletProbe: async () => ({ balanceCents: 0 }),
-      recordingRatePerMinuteCents: 1,
-      walletProbeIntervalMs: 20,
+      stopSignal: abort.signal,
     });
 
     const gt = parseSent(upstream).find((m) => m.method === "Target.getTargets");
@@ -469,7 +464,10 @@ describe("ScreencastCapturePlugin", () => {
       method: "Target.attachedToTarget",
       params: { sessionId: "S1", targetInfo: { targetId: "T1", type: "page" } },
     }));
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 10));
+
+    abort.abort("wallet-drained");
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(
       parseSent(upstream).some((m) => m.method === "Page.stopScreencast" && m.sessionId === "S1"),
@@ -481,13 +479,13 @@ describe("ScreencastCapturePlugin", () => {
     expect(storage.finalManifest?.truncated).toBe("wallet-drained");
   });
 
-  it("keeps capturing when walletProbe returns balance at or above the rate", async () => {
+  it("stops immediately when stopSignal is already aborted at session start", async () => {
     const storage = new FakeStorage();
+    const abort = new AbortController();
+    abort.abort("preemptive");
     const { upstream, client, done } = await driveScreencast({
       storage,
-      walletProbe: async () => ({ balanceCents: 100 }),
-      recordingRatePerMinuteCents: 1,
-      walletProbeIntervalMs: 20,
+      stopSignal: abort.signal,
     });
 
     const gt = parseSent(upstream).find((m) => m.method === "Target.getTargets");
@@ -500,7 +498,61 @@ describe("ScreencastCapturePlugin", () => {
       sessionId: "S1", method: "Page.screencastFrame",
       params: { data: FRAME_JPEG_1, sessionId: 1, metadata: {} },
     }));
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(
+      parseSent(upstream).some((m) => m.method === "Page.startScreencast" && m.sessionId === "S1"),
+    ).toBe(false);
+
+    client.close();
+    await done;
+    expect(storage.finalSummary?.truncated).toBe("preemptive");
+    expect(storage.finalSummary?.frameCount).toBe(0);
+  });
+
+  it("falls back to 'external-stop' when abort has no reason string", async () => {
+    const storage = new FakeStorage();
+    const abort = new AbortController();
+    const { upstream, client, done } = await driveScreencast({
+      storage,
+      stopSignal: abort.signal,
+    });
+
+    const gt = parseSent(upstream).find((m) => m.method === "Target.getTargets");
+    upstream.receive(jsonMsg({ id: gt!.id, result: { targetInfos: [] } }));
+    upstream.receive(jsonMsg({
+      method: "Target.attachedToTarget",
+      params: { sessionId: "S1", targetInfo: { targetId: "T1", type: "page" } },
+    }));
+    await new Promise((r) => setTimeout(r, 10));
+
+    abort.abort();
+    await new Promise((r) => setTimeout(r, 10));
+
+    client.close();
+    await done;
+    expect(storage.finalSummary?.truncated).toBe("external-stop");
+  });
+
+  it("captures normally when stopSignal is provided but never aborts", async () => {
+    const storage = new FakeStorage();
+    const abort = new AbortController();
+    const { upstream, client, done } = await driveScreencast({
+      storage,
+      stopSignal: abort.signal,
+    });
+
+    const gt = parseSent(upstream).find((m) => m.method === "Target.getTargets");
+    upstream.receive(jsonMsg({ id: gt!.id, result: { targetInfos: [] } }));
+    upstream.receive(jsonMsg({
+      method: "Target.attachedToTarget",
+      params: { sessionId: "S1", targetInfo: { targetId: "T1", type: "page" } },
+    }));
+    upstream.receive(jsonMsg({
+      sessionId: "S1", method: "Page.screencastFrame",
+      params: { data: FRAME_JPEG_1, sessionId: 1, metadata: {} },
+    }));
+    await new Promise((r) => setTimeout(r, 10));
 
     expect(
       parseSent(upstream).some((m) => m.method === "Page.stopScreencast" && m.sessionId === "S1"),
@@ -512,14 +564,9 @@ describe("ScreencastCapturePlugin", () => {
     expect(storage.finalSummary?.frameCount).toBe(1);
   });
 
-  it("keeps capturing when walletProbe throws (fail-open)", async () => {
+  it("captures normally when stopSignal is not provided at all", async () => {
     const storage = new FakeStorage();
-    const { upstream, client, done } = await driveScreencast({
-      storage,
-      walletProbe: async () => { throw new Error("DO unreachable"); },
-      recordingRatePerMinuteCents: 1,
-      walletProbeIntervalMs: 20,
-    });
+    const { upstream, client, done } = await driveScreencast({ storage });
 
     const gt = parseSent(upstream).find((m) => m.method === "Target.getTargets");
     upstream.receive(jsonMsg({ id: gt!.id, result: { targetInfos: [] } }));
@@ -531,36 +578,7 @@ describe("ScreencastCapturePlugin", () => {
       sessionId: "S1", method: "Page.screencastFrame",
       params: { data: FRAME_JPEG_1, sessionId: 1, metadata: {} },
     }));
-    await new Promise((r) => setTimeout(r, 100));
-
-    expect(
-      parseSent(upstream).some((m) => m.method === "Page.stopScreencast" && m.sessionId === "S1"),
-    ).toBe(false);
-
-    client.close();
-    await done;
-    expect(storage.finalSummary?.truncated).toBeFalsy();
-    expect(storage.finalSummary?.frameCount).toBe(1);
-  });
-
-  it("does not start the wallet timer when walletProbe is not provided", async () => {
-    const storage = new FakeStorage();
-    const { upstream, client, done } = await driveScreencast({
-      storage,
-      walletProbeIntervalMs: 20,
-    });
-
-    const gt = parseSent(upstream).find((m) => m.method === "Target.getTargets");
-    upstream.receive(jsonMsg({ id: gt!.id, result: { targetInfos: [] } }));
-    upstream.receive(jsonMsg({
-      method: "Target.attachedToTarget",
-      params: { sessionId: "S1", targetInfo: { targetId: "T1", type: "page" } },
-    }));
-    upstream.receive(jsonMsg({
-      sessionId: "S1", method: "Page.screencastFrame",
-      params: { data: FRAME_JPEG_1, sessionId: 1, metadata: {} },
-    }));
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 10));
 
     client.close();
     await done;
