@@ -17,7 +17,7 @@ import type { ProfileLifecycle } from "../profile/lifecycle.js";
 import { withBrowserPage } from "./executor.js";
 import type { PageOptions, PageResult } from "./executor.js";
 import { withProfilePage } from "./profile-executor.js";
-import { RestApiError } from "./schemas.js";
+import { RestApiError } from "../../rest-schemas/index.js";
 
 export interface DispatchDeps {
   pool: SessionPool;

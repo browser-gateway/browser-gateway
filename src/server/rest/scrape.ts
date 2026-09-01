@@ -3,9 +3,10 @@ import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { SessionPool } from "../../core/pool/index.js";
 import type { ProfileLifecycle } from "../profile/lifecycle.js";
-import { ScrapeRequestSchema } from "./schemas.js";
+import { ScrapeRequestSchema } from "../../rest-schemas/index.js";
+import { extractFormats } from "../../rest-schemas/helpers.js";
 import { dispatchPageAction } from "./dispatch.js";
-import { extractFormats, pageOptionsFromBody } from "./rest-helpers.js";
+import { pageOptionsFromBody } from "./rest-helpers.js";
 import type { Context } from "hono";
 
 interface SelectorResult {

@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-08-31
+Generated: 2026-09-01
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -17,6 +17,19 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface PendingCall` (line 5) — Pure CDP response dispatch — shared between `WsCDPClient` (Node ws) and
 - **fn** `dispatchCdpResponse(msg: { id?: unknown; error?: { message: string }; result?: unknown }, pending: Map<number, PendingCall>) → boolean` (line 14) — Given a decoded CDP message and a pending-call map, dispatch a response and
+### `src/core/cdp/page-runner.ts`
+
+- **interface** `interface PageOptions` (line 20) — Options that shape the pre-action page setup + navigation.
+- **class** `class AbortError` (line 41) — Thrown when {@link PageOptions.signal} aborts mid-run. Server callers should
+- **interface** `interface PageRunResult` (line 49) — Result payload from runPageAction.
+- **interface** `interface ScreenshotOpts` (line 81) — Screenshot capture options passed to Page.captureScreenshot.
+- **fn** `runPageAction(cdp: CdpProtocolClient, sessionId: string, options: PageOptions, action: (cdp: CdpProtocolClient, sessionId: string) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageRunResult<T>>` (line 107) — Run a user action against a page. Handles viewport/header/UA setup,
+- **fn** `captureScreenshot(cdp: CdpProtocolClient, sessionId: string, opts: ScreenshotOpts = {}) → Promise<Uint8Array>` (line 209) — Capture a full-viewport or clipped screenshot as a Uint8Array of image bytes.
+- **fn** `capturePageHTML(cdp: CdpProtocolClient, sessionId: string) → Promise<string>` (line 247) — Return the outer HTML of the current document. Equivalent to Playwright's
+- **interface** `interface EvaluateOpts` (line 254) — Options for {@link evaluateInPage}. Defaults mirror Playwright's `page.evaluate`
+- **fn** `evaluateInPage(cdp: CdpProtocolClient, sessionId: string, expression: string, opts: EvaluateOpts = {}) → Promise<T>` (line 264) — Run an arbitrary JS expression in the page context and return its value.
+- **fn** `captureElementScreenshot(cdp: CdpProtocolClient, sessionId: string, selector: string, opts: ScreenshotOpts = {}) → Promise<Uint8Array>` (line 298) — Capture a screenshot clipped to a CSS-selector-scoped element. Returns 0-byte
+- **fn** `scrollThroughPage(cdp: CdpProtocolClient, sessionId: string) → Promise<void>` (line 334) — Scroll from top to bottom in half-viewport steps to trigger lazy-loaded content,
 ### `src/core/cdp/protocol.ts`
 
 - **interface** `interface CdpTransport` (line 3) — Pure CDP protocol layer — request/response matching + event emission over a pluggable transport. Isomorphic.
@@ -443,7 +456,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface ReplayDetail` (line 47)
 ### `src/server/rest/content.ts`
 
-- **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 17)
+- **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 18)
 ### `src/server/rest/dispatch.ts`
 
 - **interface** `interface DispatchDeps` (line 22)
@@ -473,23 +486,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 26)
 ### `src/server/rest/rest-helpers.ts`
 
-- **type** `type BaseRequestFields` (line 19) — Shape of the common base fields shared by every REST endpoint request body
-- **fn** `pageOptionsFromBody(body: BaseRequestFields, c: Context) → PageOptions` (line 22) — Map a request body + Hono context to the executor's PageOptions shape.
-- **fn** `extractWithDefuddle(rawHtml: string, pageUrl: string, markdown: boolean) → unknown` (line 43) — Parse HTML with linkedom and extract content with Defuddle. Dynamic-imports
-- **fn** `metadataFromDefuddle(result: Awaited<ReturnType<typeof extractWithDefuddle>>) → Record<string, unknown>` (line 56) — Extract the standard set of metadata fields from a Defuddle result.
-- **fn** `extractFormats(rawHtml: string, pageUrl: string, innerText: () => Promise<string>, formats: ReadonlyArray<"html" | "text" | "markdown" | "readability">) → Promise<{ content: Record<string, string>; metadata: Record<string, unknown> | undefined }>` (line 77) — Run the standard format-extraction matrix used by `/v1/content` and
-### `src/server/rest/schemas.ts`
-
-- **const** `const ScreenshotRequestSchema` (line 51)
-- **type** `type ScreenshotRequest` (line 71) — Request body for `POST /v1/screenshot`. Inferred from {@link ScreenshotRequestSchema}.
-- **const** `const ContentRequestSchema` (line 75)
-- **type** `type ContentRequest` (line 82) — Request body for `POST /v1/content`. Inferred from {@link ContentRequestSchema}.
-- **const** `const ScrapeRequestSchema` (line 90)
-- **type** `type ScrapeRequest` (line 102) — Request body for `POST /v1/scrape`. Inferred from {@link ScrapeRequestSchema}.
-- **class** `class RestApiError` (line 104)
+- **type** `type BaseRequestFields` (line 17) — Shape of the common base fields shared by every REST endpoint request body
+- **fn** `pageOptionsFromBody(body: BaseRequestFields, c: Context) → PageOptions` (line 20) — Map a request body + Hono context to the executor's PageOptions shape.
 ### `src/server/rest/scrape.ts`
 
-- **fn** `handleScrape(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 28)
+- **fn** `handleScrape(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 29)
 ### `src/server/rest/screenshot.ts`
 
 - **fn** `handleScreenshot(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 12)

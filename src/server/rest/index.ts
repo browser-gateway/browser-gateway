@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Gateway } from "../../core/index.js";
 import type { SessionPool } from "../../core/pool/index.js";
 import type { ProfileLifecycle } from "../profile/lifecycle.js";
-import { RestApiError } from "./schemas.js";
+import { RestApiError } from "../../rest-schemas/index.js";
 import { handleScreenshot } from "./screenshot.js";
 import { handleContent } from "./content.js";
 import { handleScrape } from "./scrape.js";

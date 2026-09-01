@@ -3,7 +3,7 @@ import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { SessionPool } from "../../core/pool/index.js";
 import type { ProfileLifecycle } from "../profile/lifecycle.js";
-import { ScreenshotRequestSchema, RestApiError } from "./schemas.js";
+import { ScreenshotRequestSchema, RestApiError } from "../../rest-schemas/index.js";
 import { scrollThroughPage } from "./executor.js";
 import { dispatchPageAction } from "./dispatch.js";
 import { pageOptionsFromBody } from "./rest-helpers.js";

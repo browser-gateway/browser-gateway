@@ -4,7 +4,7 @@ import {
   ContentRequestSchema,
   ScrapeRequestSchema,
   RestApiError,
-} from "../../src/server/rest/schemas.js";
+} from "../../src/rest-schemas/index.js";
 
 describe("ScreenshotRequestSchema", () => {
   it("should accept minimal valid request", () => {

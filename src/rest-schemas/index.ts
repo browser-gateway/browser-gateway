@@ -1,3 +1,8 @@
+/** Isomorphic Zod schemas + error class for the REST API surface
+ *  (`/v1/screenshot`, `/v1/content`, `/v1/scrape`). Consumed by both the OSS
+ *  server (`src/server/rest/*`) and any downstream runtime that speaks the
+ *  same request shape (Cloudflare Workers etc.). No `node:` imports. */
+
 import { z } from "zod";
 
 const ViewportSchema = z.object({
@@ -101,6 +106,7 @@ export const ScrapeRequestSchema = z.object({
 /** Request body for `POST /v1/scrape`. Inferred from {@link ScrapeRequestSchema}. @public */
 export type ScrapeRequest = z.infer<typeof ScrapeRequestSchema>;
 
+/** Structured error thrown by REST handlers. Server layer maps `.status` to HTTP. */
 export class RestApiError extends Error {
   constructor(
     public status: number,

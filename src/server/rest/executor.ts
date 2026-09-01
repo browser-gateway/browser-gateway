@@ -1,7 +1,7 @@
 import type { Page } from "playwright-core";
 import type { Logger } from "pino";
 import type { SessionPool } from "../../core/pool/index.js";
-import { RestApiError } from "./schemas.js";
+import { RestApiError } from "../../rest-schemas/index.js";
 import { runPageAction } from "./page-runner.js";
 
 export interface PageOptions {

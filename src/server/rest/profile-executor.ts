@@ -29,7 +29,7 @@ import type { Logger } from "pino";
 import type { Gateway } from "../../core/gateway.js";
 import { resolveWsUrl } from "../../core/providers/cdp.js";
 import { ProfileLifecycle, LifecycleError } from "../profile/lifecycle.js";
-import { RestApiError } from "./schemas.js";
+import { RestApiError } from "../../rest-schemas/index.js";
 import type { PageOptions, PageResult } from "./executor.js";
 import { runPageAction } from "./page-runner.js";
 

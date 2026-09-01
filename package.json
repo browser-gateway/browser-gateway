@@ -1,6 +1,6 @@
 {
   "name": "browser-gateway",
-  "version": "0.4.18",
+  "version": "0.4.19",
   "description": "OpenRouter for browsers. One endpoint, any provider: failover, load balancing, persistent profiles, session replay, REST API, MCP server, dashboard.",
   "mcpName": "io.github.browser-gateway/browser-gateway",
   "keywords": [
@@ -95,6 +95,18 @@
     "./provider-form": {
       "types": "./dist/provider-form/index.d.ts",
       "default": "./dist/provider-form/index.js"
+    },
+    "./page-runner": {
+      "types": "./dist/core/cdp/page-runner.d.ts",
+      "default": "./dist/core/cdp/page-runner.js"
+    },
+    "./rest-schemas": {
+      "types": "./dist/rest-schemas/index.d.ts",
+      "default": "./dist/rest-schemas/index.js"
+    },
+    "./rest-schemas/helpers": {
+      "types": "./dist/rest-schemas/helpers.d.ts",
+      "default": "./dist/rest-schemas/helpers.js"
     }
   },
   "bin": {
