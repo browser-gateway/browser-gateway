@@ -10,7 +10,7 @@ export interface LoadedProfile {
 
 /** Storage backend for {@link ProfilePlugin}. Node adapter reads/writes a
  *  local filesystem via the existing `ProfileStore`; a Workers adapter can
- *  wire R2 + a D1 profile_lock table against the same interface. */
+ *  wire object storage + a per-profile lock table against the same interface. */
 export interface ProfileStorage {
   /** Load an existing profile blob and decrypt it. Returns `null` if no
    *  such profile exists yet (new-profile flow). Throws on decrypt failure

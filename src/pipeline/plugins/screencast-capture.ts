@@ -7,7 +7,7 @@ import type { CdpMessage, CdpPlugin, SessionState } from "../types.js";
 import { base64ToBytes } from "../socket-io.js";
 
 /** Backing store the plugin writes chunked frames + metadata to. Isomorphic:
- *  Node fs impl lives in `src/server/replay/node-storage.ts`; a Workers R2
+ *  Node fs impl lives in `src/server/replay/node-storage.ts`; an object-store
  *  impl can plug the same interface in later. */
 export interface ReplayStorage {
   /** Called once at session start, before any writeChunk. */

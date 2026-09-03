@@ -53,12 +53,12 @@ export interface CdpPlugin {
   readonly name: string;
   /** Called once after the pipeline connects to upstream and before any
    *  client messages are dispatched. Await async setup here (fetch profile
-   *  from R2, prime state, subscribe to a domain). The pipeline waits up
-   *  to `PipelineOptions.onSessionStartTimeoutMs` per plugin. */
+   *  from storage, prime state, subscribe to a domain). The pipeline waits
+   *  up to `PipelineOptions.onSessionStartTimeoutMs` per plugin. */
   onSessionStart?(state: SessionState): Promise<void>;
   /** Called once before the pipeline disconnects. Await state persistence
-   *  here (R2 uploads, D1 writes, profile commits). The pipeline waits up
-   *  to `PipelineOptions.onSessionEndTimeoutMs` per plugin. */
+   *  here (blob uploads, index writes, profile commits). The pipeline waits
+   *  up to `PipelineOptions.onSessionEndTimeoutMs` per plugin. */
   onSessionEnd?(state: SessionState, reason: string): Promise<void>;
   /** Client → upstream command. Return `null` to drop, a `CdpMessage` to
    *  rewrite, or `undefined` (implicit) to forward as-is. MUST NOT return
