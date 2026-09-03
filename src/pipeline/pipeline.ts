@@ -11,6 +11,7 @@ import type {
   PipelineResult,
 } from "./types.js";
 
+const DEFAULT_ON_SESSION_START_TIMEOUT_MS = 15_000;
 const DEFAULT_ON_SESSION_END_TIMEOUT_MS = 15_000;
 const DEFAULT_DROP_THRESHOLD_BYTES = 1_000_000;
 
@@ -43,6 +44,7 @@ export class Pipeline {
   private readonly upstream: PipelineSocket;
   private readonly plugins: readonly CdpPlugin[];
   private readonly logger: (event: PipelineLogEvent) => void;
+  private readonly onSessionStartTimeoutMs: number;
   private readonly onSessionEndTimeoutMs: number;
   private readonly dropThresholdBytes: number;
   private readonly maxSessionMs?: number;
@@ -76,6 +78,7 @@ export class Pipeline {
     this.upstream = upstream;
     this.plugins = opts.plugins;
     this.logger = opts.logger ?? (() => {});
+    this.onSessionStartTimeoutMs = opts.onSessionStartTimeoutMs ?? DEFAULT_ON_SESSION_START_TIMEOUT_MS;
     this.onSessionEndTimeoutMs = opts.onSessionEndTimeoutMs ?? DEFAULT_ON_SESSION_END_TIMEOUT_MS;
     this.dropThresholdBytes = opts.dropThresholdBytes ?? DEFAULT_DROP_THRESHOLD_BYTES;
     this.maxSessionMs = opts.maxSessionMs;
@@ -120,7 +123,7 @@ export class Pipeline {
     for (const p of this.plugins) {
       if (!p.onSessionStart) continue;
       try {
-        await p.onSessionStart(this.state);
+        await withTimeout(p.onSessionStart(this.state), this.onSessionStartTimeoutMs, `onSessionStart/${p.name}`);
       } catch (err) {
         this.logger({ kind: "plugin-error", data: { plugin: p.name, hook: "onSessionStart", err: errToString(err) } });
         this.closed = true;

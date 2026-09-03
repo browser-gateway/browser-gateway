@@ -53,7 +53,8 @@ export interface CdpPlugin {
   readonly name: string;
   /** Called once after the pipeline connects to upstream and before any
    *  client messages are dispatched. Await async setup here (fetch profile
-   *  from R2, prime state, subscribe to a domain). */
+   *  from R2, prime state, subscribe to a domain). The pipeline waits up
+   *  to `PipelineOptions.onSessionStartTimeoutMs` per plugin. */
   onSessionStart?(state: SessionState): Promise<void>;
   /** Called once before the pipeline disconnects. Await state persistence
    *  here (R2 uploads, D1 writes, profile commits). The pipeline waits up
@@ -94,6 +95,10 @@ export interface PipelineOptions {
   plugins: CdpPlugin[];
   /** Optional logger. Called for lifecycle events + errors. Never throws. */
   logger?: (event: PipelineLogEvent) => void;
+  /** Max ms to wait for each plugin's `onSessionStart` before force-closing
+   *  the upstream and failing the pipeline with `{ok:false, plugin}`.
+   *  Default 15_000. */
+  onSessionStartTimeoutMs?: number;
   /** Max ms to wait for each plugin's `onSessionEnd` before force-closing.
    *  Default 15_000. */
   onSessionEndTimeoutMs?: number;

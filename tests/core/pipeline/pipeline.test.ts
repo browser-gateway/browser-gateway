@@ -182,6 +182,28 @@ describe("Pipeline", () => {
     expect(events).toEqual(["start", "end"]);
   });
 
+  it("onSessionStart timeout — hung plugin fails start with ok:false, does not wedge", async () => {
+    const upstream = new FakeSocket();
+    const plugin: CdpPlugin = {
+      name: "hangs-on-start",
+      onSessionStart: () => new Promise(() => { /* never resolves */ }),
+    };
+    const errors: string[] = [];
+    const p = new Pipeline(upstream, "wss://test/", {
+      plugins: [plugin],
+      onSessionStartTimeoutMs: 100,
+      logger: (e) => { if (e.kind === "plugin-error") errors.push(String(e.data.err)); },
+    });
+    const start = Date.now();
+    const res = await p.start();
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(500);
+    expect(res.ok).toBe(false);
+    if (res.ok) throw new Error("unreachable");
+    expect(res.plugin).toBe("hangs-on-start");
+    expect(errors.length).toBe(1);
+  });
+
   it("onSessionEnd timeout doesn't hang the pipeline forever", async () => {
     const client = new FakeSocket();
     const upstream = new FakeSocket();
