@@ -5,7 +5,7 @@
 <h1 align="center">browser-gateway</h1>
 
 <p align="center">
-  <strong>OpenRouter for browsers.</strong>
+  <strong>OpenRouter for cloud browsers.</strong>
   <br />
   One endpoint that routes across every browser provider you use: automatic failover, persistent profiles, session replay, REST API, MCP server, dashboard.
   <br />
