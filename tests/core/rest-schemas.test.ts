@@ -85,11 +85,19 @@ describe("ScreenshotRequestSchema", () => {
     ).toThrow();
   });
 
-  it("should reject timeout above maximum", () => {
+  it("should accept timeout at the 120s max (raised for slow external providers)", () => {
+    const result = ScreenshotRequestSchema.parse({
+      url: "https://example.com",
+      timeout: 120000,
+    });
+    expect(result.timeout).toBe(120000);
+  });
+
+  it("should reject timeout above 120s maximum", () => {
     expect(() =>
       ScreenshotRequestSchema.parse({
         url: "https://example.com",
-        timeout: 120000,
+        timeout: 120001,
       }),
     ).toThrow();
   });

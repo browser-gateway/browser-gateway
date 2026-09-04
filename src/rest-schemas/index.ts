@@ -27,7 +27,7 @@ const BaseFields = {
   viewport: ViewportSchema.optional(),
   waitForSelector: z.string().optional(),
   waitForTimeout: z.number().int().min(0).max(30000).optional(),
-  timeout: z.number().int().min(1000).max(60000).default(30000),
+  timeout: z.number().int().min(1000).max(120000).default(30000),
   retries: z.number().int().min(0).max(5).default(2),
   headers: z.record(z.string(), z.string()).optional(),
   userAgent: z.string().optional(),
