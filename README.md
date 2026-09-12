@@ -44,6 +44,8 @@
   <a href="https://docs.browsergateway.com/rest-api">REST API</a>
   &nbsp;·&nbsp;
   <a href="https://docs.browsergateway.com/dashboard">Dashboard</a>
+  &nbsp;·&nbsp;
+  <a href="https://discord.gg/TM8Yuvukp">Discord</a>
 </p>
 
 <p align="center">
