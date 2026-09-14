@@ -460,7 +460,3 @@ MIT - see [LICENSE](LICENSE).
 ## Contact
 
 Questions, security reports, or partnership inquiries: `hello@browsergateway.com`.
-
----
-
-<sub>Maintained by <a href="https://monostellar.com">Monostellar Labs</a>.</sub>
