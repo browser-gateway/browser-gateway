@@ -11,6 +11,7 @@
  * those continue as JSON for log aggregators while the human-readable banner
  * goes straight to stdout.
  */
+import { redactConnectionUrl } from "../../core/redact.js";
 import type { GatewayConfig, ProviderState } from "../../core/types.js";
 
 const isTTY = process.stdout.isTTY && process.env.NO_COLOR === undefined;
@@ -106,7 +107,7 @@ export function printStartupBanner(opts: BannerOptions): void {
   );
   for (const p of providers) {
     const mark = p.healthy ? `${c.green}✓${c.reset}` : `${c.red}✗${c.reset}`;
-    const maskedUrl = maskUrl(p.config.url);
+    const maskedUrl = redactConnectionUrl(p.config.url);
     lines.push(`    ${mark} ${pad(p.id, 22)}${c.dim}${maskedUrl}${c.reset}`);
   }
   // Use healthyCount in a status hint when there's at least one provider but
@@ -154,7 +155,3 @@ export function printStartupBanner(opts: BannerOptions): void {
   process.stdout.write(lines.join("\n") + "\n");
 }
 
-/** Hide query-string secrets like ?token=... or ?apiKey=... before printing. */
-function maskUrl(url: string): string {
-  return url.replace(/([?&])(token|apiKey|key|secret|password)=[^&]*/gi, "$1$2=***");
-}

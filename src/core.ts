@@ -62,3 +62,4 @@ export {
 } from "./core/profile/capture-full.js";
 export { PROFILE_VERSION, PROFILE_ID_REGEX } from "./core/profile/index.js";
 export { mergeAndPrepareProfile } from "./core/profile/save.js";
+export { redactConnectionUrl, redactHeaders, redactConnectionUrlsInText } from "./core/redact.js";

@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-09-01
+Generated: 2026-09-19
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -42,8 +42,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class CdpProtocolClient` (line 62) — CDP protocol client. Composes a transport with call/response matching + event dispatch.
 ### `src/core/gateway.ts`
 
-- **interface** `interface GatewayEvents` (line 18) — Map of events emitted by the {@link Gateway} class. Useful for typing
-- **class** `class Gateway` (line 41)
+- **interface** `interface GatewayEvents` (line 19) — Map of events emitted by the {@link Gateway} class. Useful for typing
+- **class** `class Gateway` (line 42)
 ### `src/core/notifications/deliver.ts`
 
 - **interface** `interface WebhookPayload` (line 3) — Pure webhook delivery with retry. Isomorphic — Node, Cloudflare Workers, Bun, Deno.
@@ -295,6 +295,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/proxy/session.ts`
 
 - **class** `class SessionTracker` (line 3)
+### `src/core/redact.ts`
+
+- **fn** `redactConnectionUrl(url: string) → string` (line 13) — Masks credentials in a connection URL: userinfo and any secret-looking query
+- **fn** `redactHeaders(headers: Record<string, string> | undefined) → Record<string, string>` (line 29) — Masks every header value whose name carries credentials.
+- **fn** `redactConnectionUrlsInText(text: string) → string` (line 40) — Masks `token=`, `apikey=`, `user:pass@` and friends inside a config blob.
 ### `src/core/router/selector.ts`
 
 - **type** `type Strategy` (line 8)
@@ -334,8 +339,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 44)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 139)
+- **interface** `interface ProfileAppDeps` (line 42) — Mask query-string credentials inside provider URLs. Targets the param names
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 137)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
@@ -517,8 +522,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `disableProfilesFlow(input: ProfilesSetupInput) → ProfilesSetupResult` (line 82)
 ### `src/server/startup/banner.ts`
 
-- **interface** `interface BannerOptions` (line 53)
-- **fn** `printStartupBanner(opts: BannerOptions) → void` (line 69)
+- **interface** `interface BannerOptions` (line 54)
+- **fn** `printStartupBanner(opts: BannerOptions) → void` (line 70)
 ### `src/server/transport/node.ts`
 
 - **class** `class NodeTcpPipeTransport` (line 32) — Node-native WebSocket relay: raw TCP/TLS + `Duplex.pipe`.
@@ -556,21 +561,5 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 
-### `tests/profile/lib/load-env.ts`
-
-- **fn** `loadCredsEnv() → void` (line 11)
-- **fn** `requireEnv(name: string) → string` (line 42)
-### `tests/profile/lib/remote-cdp.ts`
-
-- **interface** `interface RemoteChrome` (line 3)
-- **interface** `interface ConnectOptions` (line 15)
-- **fn** `connectBrowser(wsUrl: string, opts: ConnectOptions = {}) → Promise<Browser>` (line 29) — Low-level: connect puppeteer-core to a known WS URL and return just the Browser.
-- **fn** `connectCdp(wsUrl: string, opts: ConnectOptions = {}) → Promise<RemoteChrome>` (line 46) — Connect puppeteer-core to a known CDP WebSocket URL and return a ready-to-use
-- **fn** `connectRemoteChrome(baseUrl: string, opts: ConnectOptions = {}) → Promise<RemoteChrome>` (line 69) — Connect to a remote Chrome whose /json/version endpoint reveals the WebSocket
-- **fn** `clearProfile(cdp: CDPSession) → Promise<void>` (line 94) — Clear all profile state from a remote Chrome so the next test starts from a clean baseline.
-- **fn** `bypassLocalTunnelWarning(cdp: CDPSession) → Promise<void>` (line 108) — Inject the localtunnel bypass header so the first navigation doesn't get
-### `tests/profile/lib/test-server.ts`
-
-- **interface** `interface TestServer` (line 4)
-- **fn** `startTestServer(host = "0.0.0.0") → Promise<TestServer>` (line 9)
+_(no exports detected)_
 

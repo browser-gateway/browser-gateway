@@ -1,3 +1,4 @@
+import { redactConnectionUrlsInText } from "../core/redact.js";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
@@ -36,10 +37,7 @@ const MAX_CONFIG_YAML_BYTES = 1024 * 1024;
  * `access_token`, `key`, `password`). Used by `GET /v1/config` so the YAML
  * returned to non-cookie callers can't be used to harvest provider tokens.
  */
-function redactProviderUrlsInYaml(yaml: string): string {
-  const PARAMS = /([?&](?:token|apikey|api_key|access_token|key|password|secret)=)([^&\s"']+)/gi;
-  return yaml.replace(PARAMS, "$1***");
-}
+
 
 export interface ProfileAppDeps {
   store: FilesystemProfileStore;
@@ -631,7 +629,7 @@ export function createApp(
     const cookie = getCookie(c.req.header("cookie"), COOKIE_NAME);
     const cookieAuth = !!(token && cookie && verifySession(cookie, sessionSecret));
     return c.json({
-      yaml: cookieAuth ? yaml : redactProviderUrlsInYaml(yaml),
+      yaml: cookieAuth ? yaml : redactConnectionUrlsInText(yaml),
       path,
       exists: true,
       redacted: !cookieAuth,

@@ -1,3 +1,4 @@
+import { redactConnectionUrl } from "./redact.js";
 import { EventEmitter } from "node:events";
 import type { Logger } from "pino";
 import type { GatewayConfig, ProviderState } from "./types.js";
@@ -74,7 +75,7 @@ export class Gateway extends EventEmitter {
 
     for (const [id, providerConfig] of Object.entries(config.providers)) {
       this.registry.register(id, providerConfig);
-      this.logger.info({ providerId: id, url: this.maskUrl(providerConfig.url) }, "provider registered");
+      this.logger.info({ providerId: id, url: redactConnectionUrl(providerConfig.url) }, "provider registered");
     }
 
     this.selector = new ProviderSelector(
@@ -357,15 +358,4 @@ export class Gateway extends EventEmitter {
     this.logger.info("gateway stopped");
   }
 
-  private maskUrl(url: string): string {
-    try {
-      const parsed = new URL(url);
-      for (const [key] of parsed.searchParams) {
-        parsed.searchParams.set(key, "***");
-      }
-      return parsed.toString();
-    } catch {
-      return "***";
-    }
-  }
 }
