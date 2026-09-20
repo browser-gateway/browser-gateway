@@ -60,7 +60,7 @@ const RESOURCE_HELP: Record<string, { title: string; description: string; overvi
   providers: {
     title: "Providers",
     description: "CRUD for provider entries in gateway.yml.",
-    overview: "Add, list, update, delete, and test browser provider entries. Adding via API writes to `gateway.yml` on disk atomically.",
+    overview: "Add, list, update, delete, and test browser provider entries. Adding via API writes to `gateway.yml` on disk atomically.\n\n`GET /v1/providers` masks credentials before it answers: any secret-looking query parameter in a provider URL (`token`, `apiKey`, `key`, `secret`, `password` and friends), any username or password embedded in the URL, and the value of any header whose name carries a credential (such as `Authorization`) all come back as `***`. Sending a masked value straight back in a `PUT` keeps the stored secret, so a dashboard edit form can round-trip its own view safely.",
   },
   config: {
     title: "Config",
@@ -80,17 +80,17 @@ const RESOURCE_HELP: Record<string, { title: string; description: string; overvi
   screenshot: {
     title: "Screenshot",
     description: "One-shot screenshot of any URL, no client code required.",
-    overview: "Sends a page load + screenshot request to a browser session from the pool. Supports viewport, format (png/jpeg), clip regions, full-page, and profile injection.",
+    overview: "Sends a page load + screenshot request to a browser session from the pool. Supports viewport, format (png/jpeg), clip regions, full-page, and profile injection. The `url` must be an `http` or `https` address on a public host. Addresses on the same machine or on a private network are refused unless the hostname is listed under `rest.allowedPrivateHosts` in `gateway.yml`.",
   },
   content: {
     title: "Content",
     description: "Extract page content (HTML, markdown, or text) from any URL.",
-    overview: "Loads a page in a pooled browser and returns the requested content format. Supports selector-scoped extraction and profile injection.",
+    overview: "Loads a page in a pooled browser and returns the requested content format. Supports selector-scoped extraction and profile injection. The `url` must be an `http` or `https` address on a public host. Addresses on the same machine or on a private network are refused unless the hostname is listed under `rest.allowedPrivateHosts` in `gateway.yml`.",
   },
   scrape: {
     title: "Scrape",
     description: "Structured data extraction from a page.",
-    overview: "Loads a page in a pooled browser and extracts data via CSS selectors or a page script. Supports profile injection.",
+    overview: "Loads a page in a pooled browser and extracts data via CSS selectors or a page script. Supports profile injection. The `url` must be an `http` or `https` address on a public host. Addresses on the same machine or on a private network are refused unless the hostname is listed under `rest.allowedPrivateHosts` in `gateway.yml`.",
   },
   auth: {
     title: "Auth Info",
@@ -221,7 +221,9 @@ function renderOverview(all: Record<string, RouteEntry[]>): string {
     "- **Control endpoints** (`/v1/providers`, `/v1/config`, `/v1/profiles`, `/v1/replays`, `/v1/sessions`, `/v1/status`): manage the gateway itself.",
     "- **Compat + dashboard** (`/health`, `/json/version`, `/web/*`): Chrome-compat endpoints and the dashboard.",
     "",
-    "All `/v1/*` endpoints require the `BG_TOKEN` header (or `?token=` query param) if `BG_TOKEN` is set. `/health` and `/json/version` are always public.",
+    "When `BG_TOKEN` is set, every `/v1/*` endpoint on this page requires either an `Authorization: Bearer <BG_TOKEN>` header or the dashboard's session cookie. A `?token=` query parameter is not accepted here, because query strings end up in the access logs of any proxy in front of the gateway. The WebSocket endpoint `/v1/connect` still takes `?token=`, since CDP clients cannot set headers on a WebSocket handshake. `/health` and `/json/version` are always public.",
+    "",
+    "Requests that change something (`POST`, `PUT`, `PATCH`, `DELETE`) must send `Content-Type: application/json` when they carry a body, or the gateway answers `415`. A request arriving with a `Sec-Fetch-Site: cross-site` header, which browsers add when one site calls another, is answered `403`.",
     "",
     "## All endpoints",
     "",

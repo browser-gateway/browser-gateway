@@ -203,6 +203,11 @@ curl -X POST http://localhost:9500/v1/content \
   -d '{"url": "https://example.com", "formats": ["markdown"]}'
 ```
 
+These endpoints accept `http` and `https` URLs on public hosts only. Loopback,
+link-local and private-range addresses are refused, and hostnames are resolved and
+re-checked. To reach an internal host, list it under `rest.allowedPrivateHosts` in
+`gateway.yml`.
+
 Dashboard at `http://localhost:9500/web`.
 
 ### As an MCP Server (for AI agents)
