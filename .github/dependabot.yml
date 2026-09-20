@@ -10,6 +10,15 @@ updates:
         dependency-type: development
       production-dependencies:
         dependency-type: production
+    ignore:
+      # Vitest 5 breaks Stryker's per-mutant test filter, so the mutation score
+      # silently collapses while the suite still passes. stryker-js#6210.
+      - dependency-name: vitest
+        update-types: [version-update:semver-major]
+      # TypeScript majors need an api-extractor run and a manual pass over the
+      # public API surface lockfile, so they do not belong in a grouped PR.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: npm
     directory: /web
@@ -30,3 +39,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Track the active Node LTS line by hand. Dependabot offers every new
+      # major, including the odd-numbered ones that never become LTS.
+      - dependency-name: node
+        update-types: [version-update:semver-major]

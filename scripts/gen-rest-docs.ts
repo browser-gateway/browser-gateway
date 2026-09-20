@@ -195,7 +195,7 @@ function renderResource(key: string, routes: RouteEntry[]): string {
   lines.push("| Method | Path | Description |");
   lines.push("|---|---|---|");
   for (const r of routes) {
-    const desc = r.jsdoc ? r.jsdoc.replace(/\|/g, "\\|") : "";
+    const desc = r.jsdoc ? r.jsdoc.replace(/[\\|]/g, "\\$&") : "";
     lines.push(`| \`${r.method}\` | \`${r.path}\` | ${desc} |`);
   }
   lines.push("");
