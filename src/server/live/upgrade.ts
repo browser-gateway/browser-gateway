@@ -3,8 +3,9 @@
  *  ScreencastBridgePlugin, and profile inject/capture rides the same pipeline
  *  via ProfilePlugin when `?profile=` is present. */
 import type { IncomingMessage } from "node:http";
+import { safeTokenCompare } from "../util/token-compare.js";
 import type { Duplex } from "node:stream";
-import { timingSafeEqual } from "node:crypto";
+
 import { WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
@@ -16,11 +17,6 @@ import { ProfileResidueError } from "../../pipeline/plugins/profile.js";
 import type { CdpPlugin } from "../../pipeline/types.js";
 import { openUpstream } from "../ws/upstream-open.js";
 import { makeProfilePluginFromAcquired } from "../profile/preloaded-profile-plugin.js";
-
-function safeTokenCompare(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
-}
 
 function extractBearer(header: string | undefined): string | undefined {
   if (!header || !header.startsWith("Bearer ")) return undefined;

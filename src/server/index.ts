@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { createServer } from "node:http";
+import { safeTokenCompare } from "./util/token-compare.js";
 import type { Duplex } from "node:stream";
 import { existsSync, readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
@@ -46,7 +47,7 @@ import { parseAllowedOrigins } from "./util/request.js";
 import { isHostAllowed, isOriginAllowed, parseAllowedHosts } from "./util/origin.js";
 import { createMcpServer, createSessionManager } from "./mcp/server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 function findWebDir(): string | undefined {
   const candidates = [
@@ -315,12 +316,10 @@ async function startServer() {
       }
 
       if (token) {
-        const reqToken =
-          reqUrl.searchParams.get("token") ??
-          (req.headers.authorization?.startsWith("Bearer ")
-            ? req.headers.authorization.slice(7)
-            : undefined);
-        if (!reqToken || reqToken.length !== token.length || !timingSafeEqual(Buffer.from(reqToken), Buffer.from(token))) {
+        const reqToken = req.headers.authorization?.startsWith("Bearer ")
+          ? req.headers.authorization.slice(7)
+          : undefined;
+        if (!reqToken || !safeTokenCompare(reqToken, token)) {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Unauthorized" }));
           return;

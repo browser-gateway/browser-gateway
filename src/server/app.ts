@@ -1,4 +1,5 @@
 import { redactConnectionUrl, redactConnectionUrlsInText, redactHeaders } from "../core/redact.js";
+import { safeTokenCompare } from "./util/token-compare.js";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
@@ -46,11 +47,6 @@ function getPackageVersion(): string {
   } catch {
     return "0.0.0";
   }
-}
-
-function safeTokenCompare(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
 const MIME_TYPES: Record<string, string> = {

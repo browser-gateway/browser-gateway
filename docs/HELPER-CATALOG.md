@@ -348,8 +348,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 36)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 212)
+- **interface** `interface ProfileAppDeps` (line 37)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 208)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
@@ -359,8 +359,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
 ### `src/server/live/upgrade.ts`
 
-- **interface** `interface CreateLiveHandlerDeps` (line 41)
-- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 48)
+- **interface** `interface CreateLiveHandlerDeps` (line 37)
+- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 44)
 ### `src/server/mcp/ax-tree.ts`
 
 - **fn** `clearRefs() → void` (line 28)
@@ -553,6 +553,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `getEffectiveProtocolNode(req: IncomingMessage) → "http" | "https"` (line 20) — Same as `getEffectiveProtocol` but operates on a raw Node `IncomingMessage`.
 - **fn** `getEffectiveHost(c: { req: { header: (name: string) => string | undefined } }) → string` (line 36) — Return the effective host the client used to reach us, honoring
 - **fn** `parseAllowedOrigins(value: string | undefined) → Set<string>` (line 44) — Parse `BG_ALLOWED_ORIGINS` (comma-separated). Empty / unset returns
+### `src/server/util/token-compare.ts`
+
+- **fn** `safeTokenCompare(a: string, b: string) → boolean` (line 8) — Compares two tokens in time independent of their contents and their lengths.
 ### `src/server/validation.ts`
 
 - **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 16) — Format a Zod error into a human-readable list of "path: message" strings.
@@ -573,8 +576,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000, headers?: Record<string, string>) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **interface** `interface PipelineReplayContext` (line 121)
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 126)
+- **interface** `interface PipelineReplayContext` (line 117)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 122)
 ### `src/server/ws/upstream-open.ts`
 
 - **fn** `openUpstream(url: string, timeoutMs: number, headers?: Record<string, string>) → Promise<{ ok: true; ws: WebSocket } | { ok: false; err: string }>` (line 7) — Open a Node `ws` upstream and race it against a timeout. Resolves once

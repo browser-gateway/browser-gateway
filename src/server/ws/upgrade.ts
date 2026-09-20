@@ -1,6 +1,7 @@
 import { IncomingMessage } from "node:http";
+import { safeTokenCompare } from "../util/token-compare.js";
 import { Duplex } from "node:stream";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { ProviderState } from "../../core/types.js";
@@ -37,11 +38,6 @@ import { makeProfilePluginFromAcquired } from "../profile/preloaded-profile-plug
 /** How long to wait for a held profile lock to release before returning 409. */
 const PROFILE_LOCK_WAIT_MS = 15_000;
 const PROFILE_LOCK_POLL_MS = 500;
-
-function safeTokenCompare(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
-}
 
 function extractBearerToken(header: string | undefined): string | undefined {
   if (!header) return undefined;
