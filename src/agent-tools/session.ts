@@ -69,6 +69,7 @@ export interface NavigateResult {
 const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 const DEFAULT_SETTLE_MS = 500;
+const MAX_SETTLE_MS = 10_000;
 
 /** One agent session bound to a browser-level CDP connection. Owns its tabs and
  *  their element reference tables; nothing is shared between sessions. */
@@ -360,13 +361,14 @@ export class AgentSession {
   }
 
   private async settle(tab: TabHandle, settleMs: number): Promise<void> {
-    if (settleMs <= 0) return;
+    const wait = Math.min(settleMs, MAX_SETTLE_MS);
+    if (!Number.isFinite(wait) || wait <= 0) return;
     let navigated = false;
     const handler = (params: Record<string, unknown>): void => {
       if (params.__sessionId === tab.cdpSessionId) navigated = true;
     };
     this.cdp.on("Page.loadEventFired", handler);
-    await new Promise((resolve) => setTimeout(resolve, settleMs));
+    await new Promise((resolve) => setTimeout(resolve, wait));
     this.cdp.off("Page.loadEventFired", handler);
     if (navigated) {
       tab.refs.clear();

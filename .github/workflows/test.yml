@@ -23,5 +23,10 @@ jobs:
       - name: Type check
         run: npm run lint
 
+      # browse-cli and mcp-real-browser spawn dist/server/index.js, so the
+      # suite needs compiled output, not just sources.
+      - name: Build
+        run: npm run build
+
       - name: Run tests
         run: npm run test:run

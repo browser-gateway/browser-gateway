@@ -1,6 +1,16 @@
 import { connect, type Socket } from "node:net";
 import { spawn } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +25,18 @@ const RETRY_DELAY_MS = 200;
 
 export function socketPathFor(name: string): string {
   return join(SESSION_DIR, `${name}.sock`);
+}
+
+/** Creates the session directory and refuses to use one another user could have
+ *  planted first. The path is under the shared temp directory and derivable from
+ *  the home directory, so on a multi-user host it is pre-creatable; `mkdirSync`
+ *  leaves an existing directory's owner and mode untouched. */
+function ensureSessionDir(): void {
+  mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
+  const st = lstatSync(SESSION_DIR);
+  if (!st.isDirectory() || st.uid !== process.getuid?.() || (st.mode & 0o077) !== 0) {
+    throw new Error(`${SESSION_DIR} is not a private directory owned by this user. Remove it and retry.`);
+  }
 }
 
 export function listSessions(): string[] {
@@ -49,12 +71,16 @@ export async function ensureDaemon(name: string, endpoint: string, idleMs?: numb
   const socketPath = socketPathFor(name);
   if (await isAlive(socketPath)) return socketPath;
 
-  mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
+  ensureSessionDir();
   rmSync(socketPath, { force: true });
 
   const entry = fileURLToPath(new URL("./daemon-entry.js", import.meta.url));
   const { NODE_OPTIONS: _ignored, ...cleanEnv } = process.env;
-  const errLog = openSync(`${socketPath}.log`, "a");
+  const errLog = openSync(
+    `${socketPath}.log`,
+    fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_APPEND | fsConstants.O_NOFOLLOW,
+    0o600,
+  );
   const child = spawn(process.execPath, [entry], {
     detached: true,
     stdio: ["ignore", errLog, errLog],

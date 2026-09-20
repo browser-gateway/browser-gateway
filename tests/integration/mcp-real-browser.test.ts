@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import * as chromeLauncher from "chrome-launcher";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
+import { CLI_ENTRY, requireBuiltCli, reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 let GATEWAY_PORT = 0;
@@ -51,6 +51,7 @@ describe.skipIf(!chromePath)("MCP over a real browser", () => {
   let client: Client;
 
   beforeAll(async () => {
+    requireBuiltCli();
     GATEWAY_PORT = await reservePort();
 
     httpServer = createServer((_req, res) => {
@@ -94,7 +95,7 @@ logging:
     );
 
     const gatewayLog: string[] = [];
-    gateway = spawn("node", ["dist/server/index.js", "serve", "--config", configPath], {
+    gateway = spawn("node", [CLI_ENTRY, "serve", "--config", configPath], {
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, BG_DATA_DIR: join(workDir, "data"), BG_TOKEN: "" },
     });
@@ -115,9 +116,9 @@ logging:
     await client?.close().catch(() => undefined);
     await sleep(100);
     gateway?.kill();
-    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    if (httpServer) await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     await launched?.kill();
-    await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+    if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
   });
 
   it("drives a real page end to end through MCP tools", async () => {

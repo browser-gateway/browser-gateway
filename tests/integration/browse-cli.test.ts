@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import * as chromeLauncher from "chrome-launcher";
+import { CLI_ENTRY, requireBuiltCli } from "../helpers/harness.js";
 import { startBrowseDaemon } from "../../src/server/browse/daemon.js";
 
 const run = promisify(execFile);
@@ -38,7 +39,7 @@ describe.skipIf(!chromePath)("browse CLI", () => {
     try {
       const { stdout, stderr } = await run(
         process.execPath,
-        ["dist/server/index.js", "browse", ...args, "--session", session, "--endpoint", endpoint],
+        [CLI_ENTRY, "browse", ...args, "--session", session, "--endpoint", endpoint],
         { env: { ...process.env, HOME: workDir, BG_TOKEN: "" } },
       );
       return { stdout, stderr, code: 0 };
@@ -49,6 +50,7 @@ describe.skipIf(!chromePath)("browse CLI", () => {
   };
 
   beforeAll(async () => {
+    requireBuiltCli();
     httpServer = createServer((_req, res) => {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(PAGE_HTML);
@@ -77,9 +79,9 @@ describe.skipIf(!chromePath)("browse CLI", () => {
 
   afterAll(async () => {
     await daemon?.stop().catch(() => undefined);
-    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    if (httpServer) await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     await launched?.kill();
-    await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+    if (workDir) await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
   });
 
   it("keeps one browser across separate CLI invocations", async () => {
@@ -115,7 +117,7 @@ describe.skipIf(!chromePath)("browse CLI", () => {
 
   it("lists open sessions and closes on request", async () => {
     await cli("open", baseUrl);
-    const listed = await run(process.execPath, ["dist/server/index.js", "browse", "sessions"], {
+    const listed = await run(process.execPath, [CLI_ENTRY, "browse", "sessions"], {
       env: { ...process.env, HOME: workDir },
     });
     expect(listed.stdout).toContain(session);
@@ -124,7 +126,7 @@ describe.skipIf(!chromePath)("browse CLI", () => {
     expect(closed.stdout).toContain("closed");
     daemon = null;
 
-    const after = await run(process.execPath, ["dist/server/index.js", "browse", "sessions"], {
+    const after = await run(process.execPath, [CLI_ENTRY, "browse", "sessions"], {
       env: { ...process.env, HOME: workDir },
     });
     expect(after.stdout).not.toContain(session);

@@ -359,10 +359,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `runLogoutCli() → number` (line 132)
 ### `src/server/browse/client.ts`
 
-- **fn** `socketPathFor(name: string) → string` (line 16)
-- **fn** `listSessions() → string[]` (line 20)
-- **fn** `sendToDaemon(socketPath: string, req: BrowseRequest) → Promise<BrowseResponse>` (line 27)
-- **fn** `ensureDaemon(name: string, endpoint: string, idleMs?: number) → Promise<string>` (line 48) — Starts a detached daemon for this session name and waits for its socket.
+- **fn** `socketPathFor(name: string) → string` (line 26)
+- **fn** `listSessions() → string[]` (line 42)
+- **fn** `sendToDaemon(socketPath: string, req: BrowseRequest) → Promise<BrowseResponse>` (line 49)
+- **fn** `ensureDaemon(name: string, endpoint: string, idleMs?: number) → Promise<string>` (line 70) — Starts a detached daemon for this session name and waits for its socket.
 ### `src/server/browse/commands.ts`
 
 - **fn** `runBrowseCommand(session: AgentSession, req: BrowseRequest) → Promise<BrowseResponse>` (line 17) — Runs one CLI verb against a live session. Text output stays terse so an agent

@@ -262,6 +262,15 @@ describe("AgentSession", () => {
     await expect(session.snapshot({}, b.tabId)).resolves.toBeTruthy();
   });
 
+  it("caps the post-action settle wait so a caller cannot park the session", async () => {
+    const { fake, session } = newSession();
+    fake.nodes = FORM_PAGE;
+    await session.navigate("https://example.test/page");
+    const started = Date.now();
+    await session.act([{ type: "click", ref: "e4" }], { settleMs: 60 * 60 * 1000 });
+    expect(Date.now() - started).toBeLessThan(15_000);
+  }, 20_000);
+
   it("clicks with real mouse events at the element centre", async () => {
     const { fake, session } = newSession();
     fake.nodes = FORM_PAGE;

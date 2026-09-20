@@ -2,7 +2,21 @@ import { createServer } from "node:http";
 import { type AddressInfo } from "node:net";
 import type { ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
+
+export const CLI_ENTRY = "dist/server/index.js";
+
+/** Throws a named precondition error when the compiled CLI a test spawns is absent.
+ *
+ *  Without this, an unbuilt checkout fails with a module-not-found stack that
+ *  reads like a dependency problem rather than a missing build step.
+ */
+export function requireBuiltCli(): void {
+  if (!existsSync(CLI_ENTRY)) {
+    throw new Error(`${CLI_ENTRY} is missing. Run "npm run build" before the integration suite.`);
+  }
+}
 
 /** Random token that makes one test run's ports, paths and provider ids unique. */
 export function runToken(): string {
