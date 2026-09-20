@@ -586,9 +586,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class NodeTcpPipeTransport` (line 32) — Node-native WebSocket relay: raw TCP/TLS + `Duplex.pipe`.
 ### `src/server/util/origin.ts`
 
-- **fn** `isOriginAllowed(req: IncomingMessage, allowedOrigins: Set<string>) → boolean` (line 14) — Browser-CSRF guard. Rejects a request carrying a foreign browser `Origin`.
-- **fn** `isHostAllowed(req: IncomingMessage, allowedHosts: Set<string>) → boolean` (line 38) — DNS-rebinding guard. A rebound name resolves to loopback but keeps the
-- **fn** `parseAllowedHosts(value: string | undefined) → Set<string>` (line 48) — Parse `BG_ALLOWED_HOSTS` (comma-separated hostnames).
+- **fn** `isOriginAllowed(req: IncomingMessage, allowedOrigins: Set<string>) → boolean` (line 22) — Browser-CSRF guard. Rejects a request carrying a foreign browser `Origin`.
+- **fn** `isHostAllowed(req: IncomingMessage, allowedHosts: Set<string>) → boolean` (line 45) — DNS-rebinding guard. A rebound name resolves to loopback but keeps the
+- **fn** `parseAllowedHosts(value: string | undefined) → Set<string>` (line 54) — Parse `BG_ALLOWED_HOSTS` (comma-separated hostnames).
 ### `src/server/util/request.ts`
 
 - **fn** `getEffectiveProtocol(c: { req: { header: (name: string) => string | undefined; url: string } }) → "http" | "https"` (line 8) — Return the effective protocol the client used to reach us, honoring
@@ -626,21 +626,5 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 
-### `tests/profile/lib/load-env.ts`
-
-- **fn** `loadCredsEnv() → void` (line 11)
-- **fn** `requireEnv(name: string) → string` (line 42)
-### `tests/profile/lib/remote-cdp.ts`
-
-- **interface** `interface RemoteChrome` (line 3)
-- **interface** `interface ConnectOptions` (line 15)
-- **fn** `connectBrowser(wsUrl: string, opts: ConnectOptions = {}) → Promise<Browser>` (line 29) — Low-level: connect puppeteer-core to a known WS URL and return just the Browser.
-- **fn** `connectCdp(wsUrl: string, opts: ConnectOptions = {}) → Promise<RemoteChrome>` (line 46) — Connect puppeteer-core to a known CDP WebSocket URL and return a ready-to-use
-- **fn** `connectRemoteChrome(baseUrl: string, opts: ConnectOptions = {}) → Promise<RemoteChrome>` (line 69) — Connect to a remote Chrome whose /json/version endpoint reveals the WebSocket
-- **fn** `clearProfile(cdp: CDPSession) → Promise<void>` (line 94) — Clear all profile state from a remote Chrome so the next test starts from a clean baseline.
-- **fn** `bypassLocalTunnelWarning(cdp: CDPSession) → Promise<void>` (line 108) — Inject the localtunnel bypass header so the first navigation doesn't get
-### `tests/profile/lib/test-server.ts`
-
-- **interface** `interface TestServer` (line 4)
-- **fn** `startTestServer(host = "0.0.0.0") → Promise<TestServer>` (line 9)
+_(no exports detected)_
 

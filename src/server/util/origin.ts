@@ -3,6 +3,14 @@ import { getEffectiveProtocolNode } from "./request.js";
 
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]", "::1", "0.0.0.0"]);
 
+/** Reads the request's own `Host`. `X-Forwarded-Host` is client-supplied unless
+ *  a proxy overwrites it, so it is consulted only when `BG_TRUST_PROXY` is set. */
+function requestHost(req: IncomingMessage): string | undefined {
+  const forwarded = process.env.BG_TRUST_PROXY === "1" ? req.headers["x-forwarded-host"] : undefined;
+  const raw = forwarded ?? req.headers.host;
+  return Array.isArray(raw) ? raw[0] : raw;
+}
+
 /**
  * Browser-CSRF guard. Rejects a request carrying a foreign browser `Origin`.
  *
@@ -18,8 +26,7 @@ export function isOriginAllowed(req: IncomingMessage, allowedOrigins: Set<string
   if (allowedOrigins.has(normalized)) return true;
   try {
     const u = new URL(origin);
-    const reqHost = req.headers["x-forwarded-host"] || req.headers.host;
-    const reqHostStr = Array.isArray(reqHost) ? reqHost[0] : reqHost;
+    const reqHostStr = requestHost(req);
     if (reqHostStr && u.host.toLowerCase() === reqHostStr.toLowerCase()) {
       const expected = getEffectiveProtocolNode(req) === "https" ? "https:" : "http:";
       return u.protocol === expected;
@@ -36,8 +43,7 @@ export function isOriginAllowed(req: IncomingMessage, allowedOrigins: Set<string
  * Accepts loopback hostnames plus anything in `BG_ALLOWED_HOSTS`.
  */
 export function isHostAllowed(req: IncomingMessage, allowedHosts: Set<string>): boolean {
-  const raw = req.headers["x-forwarded-host"] || req.headers.host;
-  const value = Array.isArray(raw) ? raw[0] : raw;
+  const value = requestHost(req);
   if (!value) return false;
   const hostname = value.toLowerCase().replace(/:\d+$/, "");
   if (LOOPBACK_HOSTNAMES.has(hostname)) return true;
