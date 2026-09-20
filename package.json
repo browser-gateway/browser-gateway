@@ -40,6 +40,10 @@
       "types": "./dist/server/index.d.ts",
       "default": "./dist/server/index.js"
     },
+    "./agent-tools": {
+      "types": "./dist/agent-tools/index.d.ts",
+      "default": "./dist/agent-tools/index.js"
+    },
     "./selection": {
       "types": "./dist/core/selection.d.ts",
       "default": "./dist/core/selection.js"

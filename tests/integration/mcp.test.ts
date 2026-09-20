@@ -116,15 +116,22 @@ logging:
     const tools = await client.listTools();
     const toolNames = tools.tools.map((t) => t.name);
 
-    expect(toolNames).toContain("browser_navigate");
-    expect(toolNames).toContain("browser_snapshot");
-    expect(toolNames).toContain("browser_screenshot");
-    expect(toolNames).toContain("browser_set_viewport");
-    expect(toolNames).toContain("browser_interact");
-    expect(toolNames).toContain("browser_evaluate");
-    expect(toolNames).toContain("browser_close");
-    expect(toolNames).toContain("browser_status");
-    expect(tools.tools.length).toBe(8);
+    expect(toolNames).toEqual(
+      expect.arrayContaining([
+        "browser_session",
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_act",
+        "browser_extract",
+        "browser_screenshot",
+        "browser_wait",
+        "browser_tabs",
+        "browser_evaluate",
+        "browser_observe",
+        "browser_status",
+      ]),
+    );
+    expect(tools.tools.length).toBeLessThanOrEqual(12);
 
     await client.close();
   });
@@ -228,4 +235,48 @@ logging:
 
     await client.close();
   }, 15000);
+
+    describe("setup document", () => {
+    function rawGet(path: string, headers: Record<string, string>): Promise<{ status: number; body: string }> {
+      return new Promise((resolve, reject) => {
+        const req = httpRequest(
+          { host: "127.0.0.1", port: GATEWAY_PORT, path, method: "GET", headers },
+          (res) => {
+            let body = "";
+            res.on("data", (c) => (body += c));
+            res.on("end", () => resolve({ status: res.statusCode ?? 0, body }));
+          },
+        );
+        req.on("error", reject);
+        req.end();
+      });
+    }
+
+    it("serves the instructions without a token", async () => {
+      const res = await rawGet("/mcp/setup.md", { Host: `localhost:${GATEWAY_PORT}` });
+      expect(res.status).toBe(200);
+      expect(res.body).toContain("browser-gateway setup instructions");
+    });
+
+    it("rejects a Host the gateway was not reached on", async () => {
+      const res = await rawGet("/mcp/setup.md", { Host: "attacker.example" });
+      expect(res.status).toBe(403);
+    });
+
+    it("rejects a spoofed forwarded host", async () => {
+      const res = await rawGet("/mcp/setup.md", {
+        Host: `localhost:${GATEWAY_PORT}`,
+        "X-Forwarded-Host": "attacker.example",
+      });
+      expect(res.status).toBe(403);
+    });
+
+    it("advertises the gateway's own url, not the request's Host", async () => {
+      const res = await rawGet("/mcp/setup.md", { Host: `127.0.0.1:${GATEWAY_PORT}` });
+      expect(res.status).toBe(200);
+      expect(res.body).toContain(`:${GATEWAY_PORT}/mcp`);
+      expect(res.body).not.toContain("attacker.example");
+    });
+  });
+
 });

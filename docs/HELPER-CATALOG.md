@@ -350,6 +350,51 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface ProfileAppDeps` (line 37)
 - **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 208)
+### `src/server/browse/cli.ts`
+
+- **fn** `runBrowseCli(argv: string[]) → Promise<number>` (line 13)
+- **fn** `runLoginCli(argv: string[]) → Promise<number>` (line 61)
+- **fn** `runSkillsCli(argv: string[]) → Promise<number>` (line 84)
+- **fn** `runWhoamiCli() → Promise<number>` (line 113)
+- **fn** `runLogoutCli() → number` (line 132)
+### `src/server/browse/client.ts`
+
+- **fn** `socketPathFor(name: string) → string` (line 16)
+- **fn** `listSessions() → string[]` (line 20)
+- **fn** `sendToDaemon(socketPath: string, req: BrowseRequest) → Promise<BrowseResponse>` (line 27)
+- **fn** `ensureDaemon(name: string, endpoint: string, idleMs?: number) → Promise<string>` (line 48) — Starts a detached daemon for this session name and waits for its socket.
+### `src/server/browse/commands.ts`
+
+- **fn** `runBrowseCommand(session: AgentSession, req: BrowseRequest) → Promise<BrowseResponse>` (line 17) — Runs one CLI verb against a live session. Text output stays terse so an agent
+### `src/server/browse/credentials.ts`
+
+- **interface** `interface Credentials` (line 5)
+- **fn** `credentialsPath() → string` (line 13)
+- **fn** `saveCredentials(creds: Credentials) → void` (line 17)
+- **fn** `readCredentials() → Credentials | null` (line 23)
+- **fn** `clearCredentials() → boolean` (line 33)
+- **fn** `resolveEndpoint(flags: { endpoint?: string; token?: string }) → Credentials` (line 40) — Flag beats environment beats the saved file, so scripts can override safely.
+- **fn** `maskToken(token?: string) → string` (line 50)
+- **fn** `connectUrl(creds: Credentials) → string` (line 56) — Builds the CDP url a browse session connects to.
+### `src/server/browse/daemon.ts`
+
+- **interface** `interface DaemonOptions` (line 10)
+- **fn** `startBrowseDaemon(opts: DaemonOptions) → Promise<{ server: Server; stop: () => Promise<void> }>` (line 19) — Holds one browser session for a named CLI session so state survives between
+### `src/server/browse/protocol.ts`
+
+- **interface** `interface BrowseRequest` (line 1)
+- **interface** `interface BrowseResponse` (line 8)
+- **interface** `interface BrowseFlags` (line 16)
+- **const** `const BROWSE_VERBS` (line 24)
+- **type** `type BrowseVerb` (line 46)
+- **fn** `isBrowseVerb(value: string) → value is BrowseVerb` (line 48)
+- **fn** `parseBrowseArgs(argv: string[]) → { verb: string; args: string[]; flags: BrowseFlags }` (line 53) — Splits `browse` argv into positionals and flags. Values may be `--flag=x` or `--flag x`.
+- **fn** `normaliseRef(value: string | undefined) → string | undefined` (line 93) — Accepts `@e4` or `e4` so agents can paste either form.
+- **fn** `flagNumber(flags: Record<string, string | boolean>, name: string) → number | undefined` (line 98)
+### `src/server/browse/skill.ts`
+
+- **fn** `renderSkillMarkdown() → string` (line 28) — SKILL.md content. Body renders {@link agentInstructions} so the CLI, the MCP
+- **const** `const skillFrontmatter` (line 73)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
@@ -361,15 +406,6 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface CreateLiveHandlerDeps` (line 37)
 - **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 44)
-### `src/server/mcp/ax-tree.ts`
-
-- **fn** `clearRefs() → void` (line 28)
-- **fn** `getSnapshot(cdp: CdpClient) → Promise<string>` (line 33)
-- **fn** `clickByRef(cdp: CdpClient, ref: number) → Promise<{ success: boolean; error?: string }>` (line 199)
-- **fn** `typeByRef(cdp: CdpClient, ref: number, text: string, clear: boolean = true) → Promise<{ success: boolean; error?: string }>` (line 208)
-### `src/server/mcp/cdp-client.ts`
-
-- **class** `class CdpClient` (line 12)
 ### `src/server/mcp/config-defaults.ts`
 
 - **fn** `buildMcpGatewayConfig(port: number, providers: Record<string, ProviderConfig>) → GatewayConfig` (line 11)
@@ -379,19 +415,24 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `killLocalChrome() → Promise<void>` (line 94)
 ### `src/server/mcp/server.ts`
 
-- **fn** `createSessionManager(gateway: Gateway, logger: Logger) → McpSessionManager` (line 21)
+- **fn** `createSessionManager(gateway: Gateway, logger: Logger) → McpSessionManager` (line 22)
 - **fn** `createMcpServer(gateway: Gateway, logger: Logger, sessionManager?: McpSessionManager) → {
   mcpServer: McpServer;
   sessionManager: McpSessionManager;
-}` (line 30)
+}` (line 29)
 ### `src/server/mcp/sessions.ts`
 
-- **interface** `interface McpBrowserSession` (line 6)
-- **interface** `interface LazyProviderSetup` (line 14)
-- **class** `class McpSessionManager` (line 18)
+- **interface** `interface McpBrowserSession` (line 8)
+- **interface** `interface LazyProviderSetup` (line 16)
+- **interface** `interface ConnectEndpoint` (line 20)
+- **interface** `interface CreateSessionOptions` (line 25)
+- **class** `class McpSessionManager` (line 33) — Owns one {@link AgentSession} per MCP browser session, routed through the
 ### `src/server/mcp/tools.ts`
 
-- **fn** `registerTools(server: McpServer, gateway: Gateway, sessionManager: McpSessionManager, _logger: Logger) → void` (line 27)
+- **fn** `registerTools(mcp: McpServer, gateway: Gateway, sessions: McpSessionManager, logger: Logger) → void` (line 55)
+### `src/server/mcp/ws-transport.ts`
+
+- **class** `class NodeCdpTransport` (line 5) — Node WebSocket transport for the isomorphic CDP client.
 ### `src/server/middleware/mutating-request-guard.ts`
 
 - **fn** `mutatingRequestGuard() → MiddlewareHandler` (line 19) — Blocks the two shapes a cross-origin page can use to reach a mutating route
@@ -529,6 +570,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **fn** `resolvePort(cliOverride: string | undefined) → number | undefined` (line 1)
 - **fn** `resolveHost() → string` (line 13) — Bind interface. `HOST` always wins. Without `BG_TOKEN` every `/v1/*` route is
+- **fn** `resolvePublicUrl(port: number) → string` (line 27) — Public base URL the gateway advertises to clients, with no trailing slash.
 ### `src/server/setup/profiles-setup.ts`
 
 - **interface** `interface ProfilesSetupInput` (line 5)
@@ -584,5 +626,21 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ## Tier-3 test toolkit (tests/profile/lib/) — NOT in repo, project-root tests/
 
-_(no exports detected)_
+### `tests/profile/lib/load-env.ts`
+
+- **fn** `loadCredsEnv() → void` (line 11)
+- **fn** `requireEnv(name: string) → string` (line 42)
+### `tests/profile/lib/remote-cdp.ts`
+
+- **interface** `interface RemoteChrome` (line 3)
+- **interface** `interface ConnectOptions` (line 15)
+- **fn** `connectBrowser(wsUrl: string, opts: ConnectOptions = {}) → Promise<Browser>` (line 29) — Low-level: connect puppeteer-core to a known WS URL and return just the Browser.
+- **fn** `connectCdp(wsUrl: string, opts: ConnectOptions = {}) → Promise<RemoteChrome>` (line 46) — Connect puppeteer-core to a known CDP WebSocket URL and return a ready-to-use
+- **fn** `connectRemoteChrome(baseUrl: string, opts: ConnectOptions = {}) → Promise<RemoteChrome>` (line 69) — Connect to a remote Chrome whose /json/version endpoint reveals the WebSocket
+- **fn** `clearProfile(cdp: CDPSession) → Promise<void>` (line 94) — Clear all profile state from a remote Chrome so the next test starts from a clean baseline.
+- **fn** `bypassLocalTunnelWarning(cdp: CDPSession) → Promise<void>` (line 108) — Inject the localtunnel bypass header so the first navigation doesn't get
+### `tests/profile/lib/test-server.ts`
+
+- **interface** `interface TestServer` (line 4)
+- **fn** `startTestServer(host = "0.0.0.0") → Promise<TestServer>` (line 9)
 

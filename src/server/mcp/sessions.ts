@@ -1,25 +1,40 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
-import { CdpClient } from "./cdp-client.js";
+import { CdpProtocolClient } from "../../core/cdp/protocol.js";
+import { AgentSession, type SessionPolicyOptions } from "../../agent-tools/index.js";
+import { NodeCdpTransport } from "./ws-transport.js";
 
 export interface McpBrowserSession {
   sessionId: string;
   providerId: string;
-  cdp: CdpClient;
+  agent: AgentSession;
+  cdp: CdpProtocolClient;
   createdAt: number;
-  lastActivity: number;
 }
 
 export interface LazyProviderSetup {
   (): Promise<void>;
 }
 
+export interface ConnectEndpoint {
+  url: string;
+  headers?: Record<string, string>;
+}
+
+export interface CreateSessionOptions {
+  timeout?: number;
+  idleMs?: number;
+  pageConsole?: boolean;
+}
+
+/** Owns one {@link AgentSession} per MCP browser session, routed through the
+ *  gateway so provider selection, failover and slot accounting still apply. */
 export class McpSessionManager {
   private sessions = new Map<string, McpBrowserSession>();
-  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   private providerSetupPromise: Promise<void> | undefined;
   private providerSetup: LazyProviderSetup | undefined;
+  private connectEndpoint: ConnectEndpoint | undefined;
 
   constructor(
     private gateway: Gateway,
@@ -30,154 +45,156 @@ export class McpSessionManager {
     this.providerSetup = setup;
   }
 
-  private async ensureProviders(): Promise<void> {
-    if (this.gateway.registry.size() > 0) return;
-    if (!this.providerSetup) return;
-
-    if (!this.providerSetupPromise) {
-      this.providerSetupPromise = this.providerSetup().catch((e) => {
-        this.providerSetupPromise = undefined;
-        throw e;
-      });
-    }
-
-    await this.providerSetupPromise;
+  /** Route sessions through the gateway's own `/v1/connect` so profiles,
+   *  recording and session tracking apply. Without it (stdio, no server
+   *  running) sessions use gateway routing in-process and dial the selected
+   *  provider directly. */
+  setConnectEndpoint(endpoint: ConnectEndpoint): void {
+    this.connectEndpoint = endpoint;
   }
 
-  async createSession(options?: {
-    timeout?: number;
-  }): Promise<McpBrowserSession | null> {
+  async createSession(options: CreateSessionOptions = {}): Promise<McpBrowserSession | null> {
     await this.ensureProviders();
 
     const sessionId = randomUUID();
-    const timeout = options?.timeout ?? this.gateway.config.gateway.queue?.timeoutMs ?? 30000;
+    const timeout = options.timeout ?? this.gateway.config.gateway.queue?.timeoutMs ?? 30_000;
 
-    const tryAcquire = async (): Promise<McpBrowserSession | null> => {
-      const candidates = this.gateway.selectProviderWithFallbacks();
+    if (this.connectEndpoint) return this.createViaGateway(sessionId, this.connectEndpoint, options);
 
-      for (const provider of candidates) {
-        if (!this.gateway.acquireSlot(provider.id, sessionId)) {
-          continue;
-        }
-
-        const cdp = new CdpClient();
+    const attempt = async (): Promise<McpBrowserSession | null> => {
+      for (const provider of this.gateway.selectProviderWithFallbacks()) {
+        if (!this.gateway.acquireSlot(provider.id, sessionId)) continue;
+        const startedAt = Date.now();
+        const transport = new NodeCdpTransport(provider.config.url, provider.config.headers);
         try {
-          await cdp.connect(provider.config.url, this.gateway.config.gateway.connectionTimeout);
-          await cdp.enableDomains();
-
+          await transport.ready(this.gateway.config.gateway.connectionTimeout);
+          const cdp = new CdpProtocolClient(transport);
+          const policy: SessionPolicyOptions = options.idleMs ? { idleMs: options.idleMs } : {};
+          const agent = new AgentSession(cdp, { policy, pageConsole: options.pageConsole === true });
           const session: McpBrowserSession = {
             sessionId,
             providerId: provider.id,
+            agent,
             cdp,
-            createdAt: Date.now(),
-            lastActivity: Date.now(),
+            createdAt: startedAt,
           };
-
           this.sessions.set(sessionId, session);
-          this.gateway.recordSuccess(provider.id, Date.now() - session.createdAt);
-
-          this.logger.info(
-            { sessionId, providerId: provider.id },
-            "mcp browser session created",
-          );
-
+          this.gateway.recordSuccess(provider.id, Date.now() - startedAt);
+          this.logger.info({ sessionId, providerId: provider.id }, "mcp browser session created");
           return session;
         } catch (err) {
-          cdp.close();
+          await transport.close();
           this.gateway.releaseSlot(sessionId, provider.id);
           this.gateway.recordFailure(provider.id);
           this.logger.warn(
             { sessionId, providerId: provider.id, error: (err as Error).message },
-            "failed to connect to provider, trying next",
+            "mcp session could not use provider, trying next",
           );
         }
       }
-
       return null;
     };
 
-    const result = await tryAcquire();
-    if (result) return result;
+    const first = await attempt();
+    if (first) return first;
+    if (await this.gateway.waitForSlot(timeout)) return attempt();
 
-    const slotAvailable = await this.gateway.waitForSlot(timeout);
-    if (slotAvailable) {
-      return tryAcquire();
-    }
-
-    this.logger.warn({ sessionId }, "mcp session creation failed - all providers unavailable");
+    this.logger.warn({ sessionId }, "mcp session creation failed - no provider available");
     return null;
   }
 
+  private async createViaGateway(
+    sessionId: string,
+    endpoint: ConnectEndpoint,
+    options: CreateSessionOptions,
+  ): Promise<McpBrowserSession | null> {
+    const startedAt = Date.now();
+    const transport = new NodeCdpTransport(endpoint.url, endpoint.headers);
+    try {
+      await transport.ready(this.gateway.config.gateway.connectionTimeout);
+      const cdp = new CdpProtocolClient(transport);
+      const agent = new AgentSession(cdp, {
+        policy: options.idleMs ? { idleMs: options.idleMs } : {},
+        pageConsole: options.pageConsole === true,
+      });
+      const session: McpBrowserSession = {
+        sessionId,
+        providerId: "gateway",
+        agent,
+        cdp,
+        createdAt: startedAt,
+      };
+      this.sessions.set(sessionId, session);
+      this.logger.info({ sessionId }, "mcp browser session created via gateway connect");
+      return session;
+    } catch (err) {
+      await transport.close();
+      this.logger.warn({ sessionId, error: (err as Error).message }, "mcp gateway connect failed");
+      return null;
+    }
+  }
+
+  /** Closes this session's tabs and its own CDP connection. Never closes the
+   *  upstream browser: other sessions and clients may be using it. */
   async releaseSession(sessionId: string): Promise<{ success: boolean; durationMs?: number }> {
     const session = this.sessions.get(sessionId);
-    if (!session) {
-      return { success: false };
-    }
+    if (!session) return { success: false };
 
     const durationMs = Date.now() - session.createdAt;
-
-    try {
-      await session.cdp.send("Browser.close").catch(() => {});
-    } catch {}
-
-    session.cdp.close();
     this.sessions.delete(sessionId);
-    this.gateway.releaseSlot(sessionId, session.providerId);
-
-    this.logger.info(
-      { sessionId, providerId: session.providerId, durationMs },
-      "mcp session released",
-    );
-
+    await session.agent.close().catch(() => undefined);
+    await session.cdp.close().catch(() => undefined);
+    if (session.providerId !== "gateway") this.gateway.releaseSlot(sessionId, session.providerId);
+    this.logger.info({ sessionId, providerId: session.providerId, durationMs }, "mcp session released");
     return { success: true, durationMs };
   }
 
-  getSession(sessionId: string): McpBrowserSession | undefined {
-    const session = this.sessions.get(sessionId);
-    if (session) {
-      session.lastActivity = Date.now();
-    }
-    return session;
+  get(sessionId: string): McpBrowserSession | undefined {
+    return this.sessions.get(sessionId);
   }
 
-  getFirstSession(): McpBrowserSession | undefined {
-    const first = this.sessions.values().next();
-    if (first.done) return undefined;
-    first.value.lastActivity = Date.now();
-    return first.value;
+  /** Resolves the session a tool call means. With several open sessions the
+   *  caller must name one: guessing would hand one client another's browser. */
+  resolve(sessionId?: string): McpBrowserSession {
+    if (sessionId) {
+      const session = this.sessions.get(sessionId);
+      if (!session) throw new Error(`unknown session ${sessionId}. Call browser_session open first.`);
+      return session;
+    }
+    const open = [...this.sessions.values()].filter((s) => s.agent.expired === null);
+    if (open.length === 1) return open[0]!;
+    if (open.length === 0) throw new Error("no open browser session. Call browser_session open first.");
+    throw new Error(`${open.length} sessions are open. Pass sessionId to say which one.`);
   }
 
   getAll(): McpBrowserSession[] {
-    return Array.from(this.sessions.values());
+    return [...this.sessions.values()];
   }
 
   count(): number {
     return this.sessions.size;
   }
 
-  startCleanupTimer(idleTimeoutMs: number = 300000): void {
-    if (this.cleanupTimer) return;
-    this.cleanupTimer = setInterval(async () => {
-      const now = Date.now();
-      for (const [id, session] of this.sessions) {
-        if (now - session.lastActivity > idleTimeoutMs) {
-          this.logger.info({ sessionId: id }, "mcp session idle - releasing");
-          await this.releaseSession(id);
-        }
-      }
-    }, 30000);
-  }
-
-  stopCleanupTimer(): void {
-    if (this.cleanupTimer) {
-      clearInterval(this.cleanupTimer);
-      this.cleanupTimer = null;
+  /** Drops sessions the policy already expired so their slots are not held. */
+  async reapExpired(): Promise<void> {
+    for (const [id, session] of this.sessions) {
+      if (session.agent.expired !== null) await this.releaseSession(id);
     }
   }
 
   async releaseAll(): Promise<void> {
-    for (const [id] of this.sessions) {
-      await this.releaseSession(id);
+    for (const [id] of this.sessions) await this.releaseSession(id);
+  }
+
+  private async ensureProviders(): Promise<void> {
+    if (this.gateway.registry.size() > 0) return;
+    if (!this.providerSetup) return;
+    if (!this.providerSetupPromise) {
+      this.providerSetupPromise = this.providerSetup().catch((err) => {
+        this.providerSetupPromise = undefined;
+        throw err;
+      });
     }
+    await this.providerSetupPromise;
   }
 }

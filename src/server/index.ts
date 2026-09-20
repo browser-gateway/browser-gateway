@@ -42,10 +42,11 @@ import { bootstrapProfiles, ProfileBootstrapError } from "./profile/bootstrap.js
 import { ReplayRetention, ReplayStore } from "./replay/index.js";
 import { resolveDataDir } from "./setup/data-dir.js";
 import { resolveEncryptionKey } from "./setup/encryption-key.js";
-import { resolvePort, resolveHost } from "./setup/port.js";
+import { resolvePort, resolveHost, resolvePublicUrl } from "./setup/port.js";
 import { parseAllowedOrigins } from "./util/request.js";
 import { isHostAllowed, isOriginAllowed, parseAllowedHosts } from "./util/origin.js";
 import { createMcpServer, createSessionManager } from "./mcp/server.js";
+import { mcpSetupDoc } from "../agent-tools/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { randomUUID } from "node:crypto";
 
@@ -107,6 +108,7 @@ Environment:
   BG_CONFIG_PATH        gateway.yml location (default: $BG_DATA_DIR/gateway.yml)
   BG_ALLOWED_ORIGINS    CORS allowlist (comma-separated; default: same-origin only)
   BG_ALLOWED_HOSTS      Extra Host values accepted on /mcp when BG_TOKEN is unset
+  BG_PUBLIC_URL         Public base URL this gateway advertises to agents
   PORT                  Server port (default: 9500). 12-factor convention.
   HOST                  Bind interface (default: 0.0.0.0 with BG_TOKEN, else 127.0.0.1).
   LOG_LEVEL             debug | info | warn | error (overrides gateway.yml)
@@ -121,11 +123,29 @@ Examples:
   browser-gateway mcp
   browser-gateway mcp --cdp-endpoint http://localhost:9222
   browser-gateway mcp --config gateway.yml
+  browser-gateway login --endpoint wss://cdp.browsergateway.io/v1/connect --token bg_xxx
+  browser-gateway browse open https://en.wikipedia.org/wiki/Web_browser
+  browser-gateway browse help
 `);
   process.exit(0);
 }
 
-if (command === "mcp") {
+if (command === "browse") {
+  const { runBrowseCli } = await import("./browse/cli.js");
+  process.exit(await runBrowseCli(args.slice(1)));
+} else if (command === "login") {
+  const { runLoginCli } = await import("./browse/cli.js");
+  process.exit(await runLoginCli(args.slice(1)));
+} else if (command === "logout") {
+  const { runLogoutCli } = await import("./browse/cli.js");
+  process.exit(runLogoutCli());
+} else if (command === "skills") {
+  const { runSkillsCli } = await import("./browse/cli.js");
+  process.exit(await runSkillsCli(args.slice(1)));
+} else if (command === "whoami") {
+  const { runWhoamiCli } = await import("./browse/cli.js");
+  process.exit(await runWhoamiCli());
+} else if (command === "mcp") {
   startMcpStdio();
 } else if (command === "serve" || !["check", "version", "help"].includes(command)) {
   startServer();
@@ -269,6 +289,9 @@ async function startServer() {
   }
 
   const sessionManager = createSessionManager(gateway, logger);
+  sessionManager.setConnectEndpoint({
+    url: `ws://127.0.0.1:${config.gateway.port}/v1/connect${token ? `?token=${encodeURIComponent(token)}` : ""}`,
+  });
   logger.info("mcp server initialized (Streamable HTTP at /mcp)");
 
   const { handleUpgrade } = createWebSocketHandler(
@@ -299,7 +322,7 @@ async function startServer() {
   const server = createServer(async (req, res) => {
     const reqUrl = new URL(req.url ?? "/", `http://localhost`);
 
-    if (reqUrl.pathname === "/mcp") {
+    if (reqUrl.pathname === "/mcp" || reqUrl.pathname === "/mcp/setup.md") {
       if (!isOriginAllowed(req, mcpAllowedOrigins)) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Forbidden origin" }));
@@ -312,6 +335,20 @@ async function startServer() {
           error: "Forbidden host",
           message: "Set BG_TOKEN to reach /mcp on a non-loopback host, or add the host to BG_ALLOWED_HOSTS.",
         }));
+        return;
+      }
+
+      if (reqUrl.pathname === "/mcp/setup.md") {
+        res.writeHead(200, { "Content-Type": "text/markdown; charset=utf-8" });
+        res.end(
+          mcpSetupDoc({
+            mcpUrl: `${resolvePublicUrl(config.gateway.port)}/mcp`,
+            keySource: token
+              ? "Ask the user for the gateway token. It is the `BG_TOKEN` value in the gateway's `.env` file."
+              : "This gateway runs without auth, so no key is needed. Leave the Authorization header out.",
+            keyEnvVar: "BG_TOKEN",
+          }),
+        );
         return;
       }
 
@@ -471,8 +508,7 @@ async function startServer() {
   const shutdown = async () => {
     logger.info("shutdown signal received");
 
-    sessionManager.stopCleanupTimer();
-    sessionManager.releaseAll();
+    await sessionManager.releaseAll().catch(() => undefined);
     for (const [, transport] of mcpTransports) {
       await transport.close();
     }
@@ -568,8 +604,7 @@ async function startMcpStdio() {
     if (isShuttingDown) return;
     isShuttingDown = true;
     setTimeout(() => process.exit(0), 15000);
-    sessionManager.stopCleanupTimer();
-    sessionManager.releaseAll();
+    await sessionManager.releaseAll().catch(() => undefined);
     const { killLocalChrome } = await import("./mcp/local-chrome.js");
     await killLocalChrome();
     await gateway.gracefulShutdown();

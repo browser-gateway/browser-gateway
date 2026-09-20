@@ -6,6 +6,7 @@ import type { Gateway } from "../../core/index.js";
 import type { Logger } from "pino";
 import { McpSessionManager } from "./sessions.js";
 import { registerTools } from "./tools.js";
+import { agentInstructions, IDLE_DEFAULT_MS } from "../../agent-tools/index.js";
 
 function getVersion(): string {
   try {
@@ -22,9 +23,7 @@ export function createSessionManager(
   gateway: Gateway,
   logger: Logger,
 ): McpSessionManager {
-  const sessionManager = new McpSessionManager(gateway, logger);
-  sessionManager.startCleanupTimer(300000);
-  return sessionManager;
+  return new McpSessionManager(gateway, logger);
 }
 
 export function createMcpServer(
@@ -35,10 +34,10 @@ export function createMcpServer(
   mcpServer: McpServer;
   sessionManager: McpSessionManager;
 } {
-  const mcpServer = new McpServer({
-    name: "browser-gateway",
-    version: getVersion(),
-  });
+  const mcpServer = new McpServer(
+    { name: "browser-gateway", version: getVersion() },
+    { instructions: agentInstructions({ idleTimeoutS: IDLE_DEFAULT_MS / 1000 }) },
+  );
 
   const mgr = sessionManager ?? createSessionManager(gateway, logger);
   registerTools(mcpServer, gateway, mgr, logger);

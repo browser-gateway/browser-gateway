@@ -81,7 +81,6 @@ describe("McpSessionManager", () => {
 
   afterEach(async () => {
     await manager.releaseAll();
-    manager.stopCleanupTimer();
   });
 
   describe("createSession", () => {
@@ -91,7 +90,7 @@ describe("McpSessionManager", () => {
       expect(session).not.toBeNull();
       expect(session!.sessionId).toBeTruthy();
       expect(session!.providerId).toBe("echo-1");
-      expect(session!.cdp.connected).toBe(true);
+      expect(session!.agent.state.idleTimeoutS).toBe(300);
     });
 
     it("should acquire concurrency slot", async () => {
@@ -125,7 +124,6 @@ describe("McpSessionManager", () => {
 
       expect(result.success).toBe(true);
       expect(result.durationMs).toBeGreaterThanOrEqual(0);
-      expect(session!.cdp.connected).toBe(false);
       expect(gateway.registry.get("echo-1")!.active).toBe(0);
     });
 
@@ -134,17 +132,37 @@ describe("McpSessionManager", () => {
     });
   });
 
-  describe("getFirstSession", () => {
-    it("should return first session for auto-session pattern", async () => {
-      const s1 = await manager.createSession();
-      await manager.createSession();
-
-      const first = manager.getFirstSession();
-      expect(first!.sessionId).toBe(s1!.sessionId);
+  describe("resolve", () => {
+    it("uses the only open session when the caller does not name one", async () => {
+      const only = await manager.createSession();
+      expect(manager.resolve().sessionId).toBe(only!.sessionId);
     });
 
-    it("should return undefined when no sessions", () => {
-      expect(manager.getFirstSession()).toBeUndefined();
+    it("refuses to guess between two open sessions", async () => {
+      await manager.createSession();
+      await manager.createSession();
+      expect(() => manager.resolve()).toThrow("2 sessions are open");
+    });
+
+    it("explains when nothing is open or the id is unknown", async () => {
+      expect(() => manager.resolve()).toThrow("no open browser session");
+      const created = await manager.createSession();
+      expect(manager.resolve(created!.sessionId).sessionId).toBe(created!.sessionId);
+      expect(() => manager.resolve("nope")).toThrow("unknown session nope");
+    });
+
+    it("applies an agent-chosen idle window", async () => {
+      const session = await manager.createSession({ idleMs: 120_000 });
+      expect(session!.agent.state.idleTimeoutS).toBe(120);
+    });
+  });
+
+  describe("gateway routing", () => {
+    it("routes through /v1/connect when an endpoint is configured", async () => {
+      manager.setConnectEndpoint({ url: `ws://localhost:${ECHO_PORT}/v1/connect` });
+      const session = await manager.createSession();
+      expect(session!.providerId).toBe("gateway");
+      expect(gateway.registry.get("echo-1")!.active).toBe(0);
     });
   });
 
@@ -155,8 +173,7 @@ describe("McpSessionManager", () => {
       await manager.releaseAll();
 
       expect(manager.count()).toBe(0);
-      expect(s1!.cdp.connected).toBe(false);
-      expect(s2!.cdp.connected).toBe(false);
+      expect(s1!.sessionId).not.toBe(s2!.sessionId);
       expect(gateway.registry.get("echo-1")!.active).toBe(0);
     });
   });
