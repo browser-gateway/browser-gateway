@@ -263,10 +263,19 @@ logging:
       expect(res.status).toBe(403);
     });
 
-    it("rejects a spoofed forwarded host", async () => {
+    it("ignores a spoofed forwarded host and judges the request on its own Host", async () => {
       const res = await rawGet("/mcp/setup.md", {
         Host: `localhost:${GATEWAY_PORT}`,
         "X-Forwarded-Host": "attacker.example",
+      });
+      expect(res.status).toBe(200);
+      expect(res.body).not.toContain("attacker.example");
+    });
+
+    it("rejects a foreign Host that a forwarded header claims is loopback", async () => {
+      const res = await rawGet("/mcp/setup.md", {
+        Host: "attacker.example",
+        "X-Forwarded-Host": `localhost:${GATEWAY_PORT}`,
       });
       expect(res.status).toBe(403);
     });
