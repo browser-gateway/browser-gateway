@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { NodeTcpPipeTransport } from "../../src/server/transport/node.js";
 import { resolveProviderOutbound } from "../../src/core/transport.js";
 import { setTimeout as sleep } from "node:timers/promises";
+import { reservePort } from "../helpers/harness.js";
 
 interface CapturedUpgrade {
   headers: Record<string, string | string[] | undefined>;
@@ -36,12 +37,13 @@ async function startEchoServer(port: number): Promise<{
   };
 }
 
-const UPSTREAM_PORT = 15040;
+let UPSTREAM_PORT = 0;
 
 describe("NodeTcpPipeTransport header forwarding (Gaps 1 + 2)", () => {
   let echo: Awaited<ReturnType<typeof startEchoServer>>;
 
   beforeAll(async () => {
+    UPSTREAM_PORT = await reservePort();
     echo = await startEchoServer(UPSTREAM_PORT);
   });
 
@@ -88,14 +90,14 @@ describe("NodeTcpPipeTransport header forwarding (Gaps 1 + 2)", () => {
   }
 
   it("forwards Authorization header from upstreamHeaders (Gap 1)", async () => {
-    const cap = await driveUpgrade(`ws://localhost:${UPSTREAM_PORT}/`, {
+    const cap = await driveUpgrade(`ws://127.0.0.1:${UPSTREAM_PORT}/`, {
       Authorization: "Bearer provider-token",
     });
     expect(cap.headers["authorization"]).toBe("Bearer provider-token");
   });
 
   it("forwards X-API-Key from upstreamHeaders", async () => {
-    const cap = await driveUpgrade(`ws://localhost:${UPSTREAM_PORT}/`, {
+    const cap = await driveUpgrade(`ws://127.0.0.1:${UPSTREAM_PORT}/`, {
       "X-API-Key": "provider-secret",
     });
     expect(cap.headers["x-api-key"]).toBe("provider-secret");
@@ -103,7 +105,7 @@ describe("NodeTcpPipeTransport header forwarding (Gaps 1 + 2)", () => {
 
   it("upstreamHeaders override client-forwarded headers of same name", async () => {
     const cap = await driveUpgrade(
-      `ws://localhost:${UPSTREAM_PORT}/`,
+      `ws://127.0.0.1:${UPSTREAM_PORT}/`,
       { Authorization: "Bearer wins" },
       { Authorization: "Bearer loses" },
     );
@@ -112,7 +114,7 @@ describe("NodeTcpPipeTransport header forwarding (Gaps 1 + 2)", () => {
 
   it("forwards client Authorization when no override present (removed strip in Gap 1)", async () => {
     const cap = await driveUpgrade(
-      `ws://localhost:${UPSTREAM_PORT}/`,
+      `ws://127.0.0.1:${UPSTREAM_PORT}/`,
       {},
       { Authorization: "Bearer client-only" },
     );
@@ -121,22 +123,22 @@ describe("NodeTcpPipeTransport header forwarding (Gaps 1 + 2)", () => {
 
   it("resolveProviderOutbound + transport together produce Basic from URL userinfo (Gap 2)", async () => {
     const outbound = resolveProviderOutbound(
-      `ws://alice:secret@localhost:${UPSTREAM_PORT}/path`,
+      `ws://alice:secret@127.0.0.1:${UPSTREAM_PORT}/path`,
     );
-    expect(outbound.upstreamUrl).toBe(`ws://localhost:${UPSTREAM_PORT}/path`);
+    expect(outbound.upstreamUrl).toBe(`ws://127.0.0.1:${UPSTREAM_PORT}/path`);
     const cap = await driveUpgrade(outbound.upstreamUrl, outbound.upstreamHeaders);
     expect(cap.headers["authorization"]).toBe(`Basic ${globalThis.btoa("alice:secret")}`);
     expect(cap.url).toBe("/path");
   });
 
   it("no headers + no userinfo: no Authorization sent (regression check for I6)", async () => {
-    const cap = await driveUpgrade(`ws://localhost:${UPSTREAM_PORT}/`, {});
+    const cap = await driveUpgrade(`ws://127.0.0.1:${UPSTREAM_PORT}/`, {});
     expect(cap.headers["authorization"]).toBeUndefined();
   });
 
   it("preserves other client headers unchanged", async () => {
     const cap = await driveUpgrade(
-      `ws://localhost:${UPSTREAM_PORT}/`,
+      `ws://127.0.0.1:${UPSTREAM_PORT}/`,
       {},
       { "X-Client-Custom": "hello" },
     );

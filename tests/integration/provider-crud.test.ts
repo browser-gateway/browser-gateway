@@ -2,18 +2,26 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocketServer } from "ws";
 import { ChildProcess, spawn } from "node:child_process";
-import { writeFileSync, readFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 16000;
-const ECHO_PORT = 16001;
-const CONFIG_PATH = "/tmp/bg-crud-test.yml";
-const BASE = `http://localhost:${GATEWAY_PORT}`;
+let GATEWAY_PORT = 0;
+let ECHO_PORT = 0;
+const TMP_DIR = mkdtempSync(join(tmpdir(), "bg-crud-test-"));
+const CONFIG_PATH = join(TMP_DIR, "gateway.yml");
+let BASE = "";
 
 let echoServer: Server;
 let gatewayProcess: ChildProcess;
 
 beforeAll(async () => {
+  GATEWAY_PORT = await reservePort();
+  ECHO_PORT = await reservePort();
+  BASE = `http://127.0.0.1:${GATEWAY_PORT}`;
+
   const server = createServer();
   const wss = new WebSocketServer({ server });
   wss.on("connection", (ws) => { ws.on("message", (d) => ws.send(d)); });
@@ -26,7 +34,7 @@ gateway:
   port: ${GATEWAY_PORT}
 providers:
   existing:
-    url: ws://localhost:${ECHO_PORT}
+    url: ws://127.0.0.1:${ECHO_PORT}
     limits:
       maxConcurrent: 5
     priority: 1
@@ -40,14 +48,13 @@ logging:
     env: { ...process.env, BG_TOKEN: "" },
   });
 
-  await sleep(3000);
+  await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
 }, 15000);
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
   echoServer?.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
-  try { unlinkSync(`${CONFIG_PATH}.backup`); } catch {}
+  try { rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
   await sleep(500);
 });
 

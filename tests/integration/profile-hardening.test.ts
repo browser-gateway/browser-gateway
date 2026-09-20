@@ -13,20 +13,22 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer } from "ws";
 import { enableBrowserserveDropOff, type BrowserserveDropOffState } from "./profile-fixtures/browserserve-mock.js";
+import { reservePort, runToken, waitForOwnGateway, waitUntil } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 20300;
-const PROVIDER_PORT = 20301;
-const CONFIG_PATH = "/tmp/bg-profile-hardening-test.yml";
+const RUN = runToken();
 const PROFILE_DIR = mkdtempSync(join(tmpdir(), "bg-profile-hardening-test-"));
+const CONFIG_PATH = join(PROFILE_DIR, "gateway.yml");
+let gatewayPort = 0;
+let providerPort = 0;
 const ENCRYPTION_KEY = Buffer.alloc(32, "h").toString("base64");
 
-function createMockProvider(port: number): { server: Server; wss: WebSocketServer; state: { cookies: Array<Record<string, unknown>>; getCookiesDelayMs: number; getCookiesCalls: number; setCookiesCalls: number; dropOff: BrowserserveDropOffState } } {
+function createMockProvider(): { server: Server; wss: WebSocketServer; state: { cookies: Array<Record<string, unknown>>; getCookiesDelayMs: number; getCookiesCalls: number; setCookiesCalls: number; dropOff: BrowserserveDropOffState } } {
   const state = { cookies: [] as Array<Record<string, unknown>>, getCookiesDelayMs: 0, getCookiesCalls: 0, setCookiesCalls: 0, dropOff: null as unknown as BrowserserveDropOffState };
   const server = createServer();
   const wss = new WebSocketServer({ server, path: "/devtools/browser/test" });
@@ -55,7 +57,7 @@ function createMockProvider(port: number): { server: Server; wss: WebSocketServe
         Browser: "MockCDP/1.0",
         "Protocol-Version": "1.3",
         "Browserserve-Version": "test-1.0",
-        webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/test`,
+        webSocketDebuggerUrl: `ws://127.0.0.1:${providerPort}/devtools/browser/test`,
       }));
       return;
     }
@@ -66,7 +68,6 @@ function createMockProvider(port: number): { server: Server; wss: WebSocketServe
     localStorage: [],
     indexeddb: [],
   }));
-  server.listen(port);
   return { server, wss, state };
 }
 
@@ -74,13 +75,13 @@ function buildConfig(commitTimeoutMs: number): string {
   return `
 version: 1
 gateway:
-  port: ${GATEWAY_PORT}
+  port: ${gatewayPort}
   defaultStrategy: priority-chain
   connectionTimeout: 5000
   shutdownDrainMs: 8000
 providers:
-  mock-cdp:
-    url: http://localhost:${PROVIDER_PORT}
+  mock-cdp-${RUN}:
+    url: http://127.0.0.1:${providerPort}
     limits:
       maxConcurrent: 4
     priority: 1
@@ -105,17 +106,6 @@ profiles:
 let provider: ReturnType<typeof createMockProvider>;
 let gatewayProcess: ChildProcess;
 
-async function waitForGateway() {
-  for (let i = 0; i < 40; i++) {
-    try {
-      const r = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
-      if (r.ok) return;
-    } catch {}
-    await sleep(250);
-  }
-  throw new Error("gateway didn't start");
-}
-
 async function startGateway(commitTimeoutMs = 1_500): Promise<void> {
   writeFileSync(CONFIG_PATH, buildConfig(commitTimeoutMs));
   gatewayProcess = spawn(
@@ -127,7 +117,7 @@ async function startGateway(commitTimeoutMs = 1_500): Promise<void> {
       env: { ...process.env, BG_TOKEN: "", BG_ENCRYPTION_KEY: ENCRYPTION_KEY },
     },
   );
-  await waitForGateway();
+  await waitForOwnGateway(gatewayPort, gatewayProcess, RUN);
 }
 
 async function stopGateway(): Promise<void> {
@@ -139,19 +129,24 @@ async function stopGateway(): Promise<void> {
   });
 }
 
-beforeAll(() => {
-  provider = createMockProvider(PROVIDER_PORT);
+beforeAll(async () => {
+  providerPort = await reservePort();
+  gatewayPort = await reservePort();
+  provider = createMockProvider();
+  await new Promise<void>((resolve, reject) => {
+    provider.server.once("error", reject);
+    provider.server.listen(providerPort, "127.0.0.1", resolve);
+  });
 });
 
 afterAll(async () => {
   await stopGateway();
   provider?.server.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
   try { rmSync(PROFILE_DIR, { recursive: true, force: true }); } catch {}
 });
 
 async function brieflyConnect(profileId: string): Promise<void> {
-  const ws = new WebSocket(`ws://localhost:${GATEWAY_PORT}/v1/connect?profile=${profileId}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${gatewayPort}/v1/connect?profile=${profileId}`);
   await new Promise<void>((resolve, reject) => {
     ws.once("open", () => resolve());
     ws.once("error", reject);
@@ -173,10 +168,12 @@ describe("Hardening: SIGTERM drain preserves last-session state (H1)", () => {
     provider.state.getCookiesDelayMs = 0;
     await startGateway();
 
+    const capturesBefore = provider.state.dropOff.pickUpCalls;
     await brieflyConnect("h1-profile");
-    // Give cleanup() time to fire on the next-tick after ws.close. CI's slower
-    // event loop can take a few hundred ms to schedule. 2s is generous.
-    await sleep(2000);
+    await waitUntil(
+      () => provider.state.dropOff.pickUpCalls > capturesBefore,
+      "disconnect capture to read upstream state",
+    );
 
     await stopGateway();
 

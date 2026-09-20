@@ -21,14 +21,15 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer, type WebSocket as WSWebSocket } from "ws";
 import { enableBrowserserveDropOff } from "./profile-fixtures/browserserve-mock.js";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 import { bootstrapProfiles, ProfileBootstrapError } from "../../src/server/profile/bootstrap.js";
 import pino from "pino";
 
-const GATEWAY_PORT = 20500;
-const PROVIDER_PORT_A = 20501;
-const PROVIDER_PORT_B = 20502;
-const CONFIG_PATH = "/tmp/bg-profile-failure-test.yml";
 const PROFILE_DIR = mkdtempSync(join(tmpdir(), "bg-profile-failure-test-"));
+const CONFIG_PATH = join(PROFILE_DIR, "gateway.yml");
+let GATEWAY_PORT = 0;
+let PROVIDER_PORT_A = 0;
+let PROVIDER_PORT_B = 0;
 const ENCRYPTION_KEY = Buffer.alloc(32, "f").toString("base64");
 
 interface MockProvider {
@@ -51,7 +52,7 @@ interface MockProvider {
   close: () => Promise<void>;
 }
 
-function createMockProvider(port: number, label: string): MockProvider {
+async function createMockProvider(port: number, label: string): Promise<MockProvider> {
   const state = {
     storedCookies: [] as Array<Record<string, unknown>>,
     setCookiesCalls: 0,
@@ -114,7 +115,7 @@ function createMockProvider(port: number, label: string): MockProvider {
         Browser: `MockCDP-${label}`,
         "Protocol-Version": "1.3",
         "Browserserve-Version": "test-1.0",
-        webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/pipe`,
+        webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/pipe`,
       }));
       return;
     }
@@ -125,7 +126,10 @@ function createMockProvider(port: number, label: string): MockProvider {
     localStorage: [],
     indexeddb: [],
   }));
-  server.listen(port);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
 
   return {
     port,
@@ -153,13 +157,13 @@ gateway:
     minRequestVolume: 1000
 providers:
   prov-a:
-    url: http://localhost:${PROVIDER_PORT_A}
+    url: http://127.0.0.1:${PROVIDER_PORT_A}
     limits:
       maxConcurrent: 10
     priority: 1
     multiProfile: true
   prov-b:
-    url: http://localhost:${PROVIDER_PORT_B}
+    url: http://127.0.0.1:${PROVIDER_PORT_B}
     limits:
       maxConcurrent: 10
     priority: 2
@@ -185,17 +189,6 @@ let provA: MockProvider;
 let provB: MockProvider;
 let gatewayProcess: ChildProcess;
 
-async function waitForGateway() {
-  for (let i = 0; i < 40; i++) {
-    try {
-      const r = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
-      if (r.ok) return;
-    } catch {}
-    await sleep(250);
-  }
-  throw new Error("gateway didn't start");
-}
-
 async function startGateway(): Promise<void> {
   writeFileSync(CONFIG_PATH, buildConfig());
   gatewayProcess = spawn(
@@ -207,7 +200,7 @@ async function startGateway(): Promise<void> {
       env: { ...process.env, BG_TOKEN: "", BG_ENCRYPTION_KEY: ENCRYPTION_KEY },
     },
   );
-  await waitForGateway();
+  await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
 }
 
 async function stopGateway(): Promise<void> {
@@ -220,8 +213,11 @@ async function stopGateway(): Promise<void> {
 }
 
 beforeAll(async () => {
-  provA = createMockProvider(PROVIDER_PORT_A, "A");
-  provB = createMockProvider(PROVIDER_PORT_B, "B");
+  PROVIDER_PORT_A = await reservePort();
+  PROVIDER_PORT_B = await reservePort();
+  GATEWAY_PORT = await reservePort();
+  provA = await createMockProvider(PROVIDER_PORT_A, "A");
+  provB = await createMockProvider(PROVIDER_PORT_B, "B");
   await startGateway();
 });
 
@@ -229,12 +225,11 @@ afterAll(async () => {
   await stopGateway();
   await provA?.close();
   await provB?.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
   try { rmSync(PROFILE_DIR, { recursive: true, force: true }); } catch {}
 });
 
 async function openProfile(id: string): Promise<WebSocket> {
-  const ws = new WebSocket(`ws://localhost:${GATEWAY_PORT}/v1/connect?profile=${id}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${GATEWAY_PORT}/v1/connect?profile=${id}`);
   await new Promise<void>((resolve, reject) => {
     ws.once("open", () => resolve());
     ws.once("unexpected-response", (_req, res) => {
@@ -379,7 +374,7 @@ describe("D6: DELETE while session active — 409, profile preserved", () => {
     const liveWs = await openProfile("d6-profile");
 
     // Attempt delete via REST — should 409 (in-use)
-    const del = await fetch(`http://localhost:${GATEWAY_PORT}/v1/profiles/d6-profile`, { method: "DELETE" });
+    const del = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/d6-profile`, { method: "DELETE" });
     expect(del.status).toBe(409);
 
     // Profile is still on disk
@@ -389,7 +384,7 @@ describe("D6: DELETE while session active — 409, profile preserved", () => {
     await sleep(1_800);
 
     // Now delete should succeed
-    const del2 = await fetch(`http://localhost:${GATEWAY_PORT}/v1/profiles/d6-profile`, { method: "DELETE" });
+    const del2 = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/d6-profile`, { method: "DELETE" });
     expect(del2.status).toBe(200);
     expect(existsSync(blobPath)).toBe(false);
   }, 30_000);

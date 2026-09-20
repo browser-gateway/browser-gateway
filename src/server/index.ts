@@ -253,9 +253,9 @@ async function startServer() {
   });
   replayRetention.start();
 
-  const reconnectRegistry = new ReconnectRegistry();
   const reconnectTtl = config.gateway.sessions?.reconnectTimeoutMs ?? 300000;
-  reconnectRegistry.startCleanup(reconnectTtl);
+  const reconnectRegistry = new ReconnectRegistry(reconnectTtl);
+  reconnectRegistry.startCleanup();
 
   const webDir = findWebDir();
   const app = createApp(

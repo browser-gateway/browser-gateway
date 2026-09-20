@@ -2,25 +2,32 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { ChildProcess, spawn } from "node:child_process";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 15000;
-const PROVIDER_PORT = 15001;
+let GATEWAY_PORT = 0;
+let PROVIDER_PORT = 0;
 const AUTH_TOKEN = "test-secret-token-12345";
-const CONFIG_PATH = "/tmp/bg-auth-test.yml";
+const TMP_DIR = mkdtempSync(join(tmpdir(), "bg-auth-test-"));
+const CONFIG_PATH = join(TMP_DIR, "gateway.yml");
 
 let echoServer: Server;
 let gatewayProcess: ChildProcess;
 
 beforeAll(async () => {
+  GATEWAY_PORT = await reservePort();
+  PROVIDER_PORT = await reservePort();
+
   const server = createServer();
   const wss = new WebSocketServer({ server });
   wss.on("connection", (ws) => {
     ws.on("message", (data) => ws.send(data));
   });
   echoServer = server;
-  server.listen(PROVIDER_PORT);
+  server.listen(PROVIDER_PORT, "127.0.0.1");
 
   writeFileSync(
     CONFIG_PATH,
@@ -31,7 +38,7 @@ gateway:
   connectionTimeout: 5000
 providers:
   echo:
-    url: ws://localhost:${PROVIDER_PORT}
+    url: ws://127.0.0.1:${PROVIDER_PORT}
     priority: 1
 logging:
   level: error
@@ -48,13 +55,13 @@ logging:
     }
   );
 
-  await sleep(3000);
+  await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
 }, 15000);
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
   echoServer?.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
+  try { rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
   await sleep(500);
 });
 
@@ -62,7 +69,7 @@ describe("Auth - BG_TOKEN enforcement", () => {
   it("should reject WebSocket without token", async () => {
     try {
       const ws = await new Promise<WebSocket>((resolve, reject) => {
-        const w = new WebSocket(`ws://localhost:${GATEWAY_PORT}/v1/connect`);
+        const w = new WebSocket(`ws://127.0.0.1:${GATEWAY_PORT}/v1/connect`);
         w.on("open", () => resolve(w));
         w.on("error", reject);
         setTimeout(() => reject(new Error("timeout")), 5000);
@@ -78,7 +85,7 @@ describe("Auth - BG_TOKEN enforcement", () => {
     try {
       const ws = await new Promise<WebSocket>((resolve, reject) => {
         const w = new WebSocket(
-          `ws://localhost:${GATEWAY_PORT}/v1/connect?token=wrong-token`
+          `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect?token=wrong-token`
         );
         w.on("open", () => resolve(w));
         w.on("error", reject);
@@ -94,7 +101,7 @@ describe("Auth - BG_TOKEN enforcement", () => {
   it("should accept WebSocket with correct token via query param", async () => {
     const ws = await new Promise<WebSocket>((resolve, reject) => {
       const w = new WebSocket(
-        `ws://localhost:${GATEWAY_PORT}/v1/connect?token=${AUTH_TOKEN}`
+        `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect?token=${AUTH_TOKEN}`
       );
       w.on("open", () => resolve(w));
       w.on("error", reject);
@@ -115,7 +122,7 @@ describe("Auth - BG_TOKEN enforcement", () => {
   it("should accept WebSocket with correct token via Authorization header", async () => {
     const ws = await new Promise<WebSocket>((resolve, reject) => {
       const w = new WebSocket(
-        `ws://localhost:${GATEWAY_PORT}/v1/connect`,
+        `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect`,
         { headers: { Authorization: `Bearer ${AUTH_TOKEN}` } }
       );
       w.on("open", () => resolve(w));
@@ -128,31 +135,31 @@ describe("Auth - BG_TOKEN enforcement", () => {
   });
 
   it("should reject HTTP /v1/status without token", async () => {
-    const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`);
+    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/status`);
     expect(res.status).toBe(401);
   });
 
   it("should reject HTTP /v1/sessions without token", async () => {
-    const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/sessions`);
+    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/sessions`);
     expect(res.status).toBe(401);
   });
 
   it("should reject HTTP /v1/status with the token in the query string", async () => {
     const res = await fetch(
-      `http://localhost:${GATEWAY_PORT}/v1/status?token=${AUTH_TOKEN}`
+      `http://127.0.0.1:${GATEWAY_PORT}/v1/status?token=${AUTH_TOKEN}`
     );
     expect(res.status).toBe(401);
   });
 
   it("should accept HTTP /v1/status with Authorization header", async () => {
-    const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`, {
+    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/status`, {
       headers: { Authorization: `Bearer ${AUTH_TOKEN}` },
     });
     expect(res.status).toBe(200);
   });
 
   it("should return health check without auth (always public)", async () => {
-    const res = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
+    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/health`);
     expect(res.status).toBe(200);
   });
 });

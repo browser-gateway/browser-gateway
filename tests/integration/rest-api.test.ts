@@ -2,19 +2,27 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocketServer } from "ws";
 import { ChildProcess, spawn } from "node:child_process";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 17500;
-const ECHO_PORT = 17501;
+let GATEWAY_PORT = 0;
+let ECHO_PORT = 0;
 const AUTH_TOKEN = "rest-test-token";
-const CONFIG_PATH = "/tmp/bg-rest-test.yml";
-const BASE = `http://localhost:${GATEWAY_PORT}`;
+const TMP_DIR = mkdtempSync(join(tmpdir(), "bg-rest-test-"));
+const CONFIG_PATH = join(TMP_DIR, "gateway.yml");
+let BASE = "";
 
 let echoServer: Server;
 let gatewayProcess: ChildProcess;
 
 beforeAll(async () => {
+  GATEWAY_PORT = await reservePort();
+  ECHO_PORT = await reservePort();
+  BASE = `http://127.0.0.1:${GATEWAY_PORT}`;
+
   const server = createServer();
   const wss = new WebSocketServer({ server });
   wss.on("connection", (ws) => {
@@ -32,7 +40,7 @@ gateway:
   connectionTimeout: 5000
 providers:
   echo:
-    url: ws://localhost:${ECHO_PORT}
+    url: ws://127.0.0.1:${ECHO_PORT}
     limits:
       maxConcurrent: 2
     priority: 1
@@ -51,13 +59,13 @@ logging:
     },
   );
 
-  await sleep(3000);
+  await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
 }, 15000);
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
   echoServer?.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
+  try { rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
   await sleep(500);
 });
 

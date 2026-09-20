@@ -3,18 +3,25 @@ import { createServer, type Server } from "node:http";
 import { WebSocketServer } from "ws";
 import puppeteer from "puppeteer-core";
 import { ChildProcess, spawn } from "node:child_process";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 14000;
-const PROVIDER_PORT = 14001;
-const CONFIG_PATH = "/tmp/bg-puppeteer-test.yml";
+let GATEWAY_PORT = 0;
+let PROVIDER_PORT = 0;
+const TMP_DIR = mkdtempSync(join(tmpdir(), "bg-puppeteer-test-"));
+const CONFIG_PATH = join(TMP_DIR, "gateway.yml");
 
 let echoServer: Server;
 let _providerWss: WebSocketServer;
 let gatewayProcess: ChildProcess;
 
 beforeAll(async () => {
+  GATEWAY_PORT = await reservePort();
+  PROVIDER_PORT = await reservePort();
+
   const server = createServer();
   const wss = new WebSocketServer({ server });
 
@@ -65,7 +72,7 @@ gateway:
   connectionTimeout: 5000
 providers:
   cdp-mock:
-    url: ws://localhost:${PROVIDER_PORT}
+    url: ws://127.0.0.1:${PROVIDER_PORT}
     limits:
       maxConcurrent: 5
     priority: 1
@@ -80,20 +87,20 @@ logging:
     { cwd: process.cwd(), stdio: "pipe", env: { ...process.env, BG_TOKEN: "" } }
   );
 
-  await sleep(3000);
+  await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
 }, 15000);
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
   echoServer?.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
+  try { rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
   await sleep(500);
 });
 
 describe("Puppeteer through Gateway", () => {
   it("should connect Puppeteer via browserWSEndpoint", async () => {
     const browser = await puppeteer.connect({
-      browserWSEndpoint: `ws://localhost:${GATEWAY_PORT}/v1/connect`,
+      browserWSEndpoint: `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect`,
     });
 
     expect(browser).toBeDefined();
@@ -104,7 +111,7 @@ describe("Puppeteer through Gateway", () => {
 
   it("should get browser version through the proxy", async () => {
     const browser = await puppeteer.connect({
-      browserWSEndpoint: `ws://localhost:${GATEWAY_PORT}/v1/connect`,
+      browserWSEndpoint: `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect`,
     });
 
     const version = await browser.version();
@@ -115,12 +122,12 @@ describe("Puppeteer through Gateway", () => {
 
   it("should track Puppeteer session in gateway", async () => {
     const browser = await puppeteer.connect({
-      browserWSEndpoint: `ws://localhost:${GATEWAY_PORT}/v1/connect`,
+      browserWSEndpoint: `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect`,
     });
 
     await sleep(300);
 
-    const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/sessions`);
+    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/sessions`);
     const data = (await res.json()) as any;
     expect(data.count).toBeGreaterThanOrEqual(1);
     expect(data.sessions[0].providerId).toBe("cdp-mock");
@@ -131,23 +138,23 @@ describe("Puppeteer through Gateway", () => {
 
   it("should clean up after Puppeteer disconnects", async () => {
     const browser = await puppeteer.connect({
-      browserWSEndpoint: `ws://localhost:${GATEWAY_PORT}/v1/connect`,
+      browserWSEndpoint: `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect`,
     });
 
     await sleep(300);
     await browser.disconnect();
     await sleep(1000);
 
-    const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/sessions`);
+    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/sessions`);
     const data = (await res.json()) as any;
     expect(data.count).toBe(0);
   }, 15000);
 
   it("should handle multiple Puppeteer connections simultaneously", async () => {
     const browsers = await Promise.all([
-      puppeteer.connect({ browserWSEndpoint: `ws://localhost:${GATEWAY_PORT}/v1/connect` }),
-      puppeteer.connect({ browserWSEndpoint: `ws://localhost:${GATEWAY_PORT}/v1/connect` }),
-      puppeteer.connect({ browserWSEndpoint: `ws://localhost:${GATEWAY_PORT}/v1/connect` }),
+      puppeteer.connect({ browserWSEndpoint: `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect` }),
+      puppeteer.connect({ browserWSEndpoint: `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect` }),
+      puppeteer.connect({ browserWSEndpoint: `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect` }),
     ]);
 
     expect(browsers).toHaveLength(3);
@@ -155,14 +162,14 @@ describe("Puppeteer through Gateway", () => {
 
     await sleep(300);
 
-    const res = await fetch(`http://localhost:${GATEWAY_PORT}/v1/sessions`);
+    const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/sessions`);
     const data = (await res.json()) as any;
     expect(data.count).toBe(3);
 
     await Promise.all(browsers.map((b) => b.disconnect()));
     await sleep(1000);
 
-    const final = await fetch(`http://localhost:${GATEWAY_PORT}/v1/sessions`);
+    const final = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/sessions`);
     const finalData = (await final.json()) as any;
     expect(finalData.count).toBe(0);
   }, 15000);

@@ -4,20 +4,23 @@ import { WebSocketServer } from "ws";
 import pino from "pino";
 import { Gateway } from "../../src/core/gateway.js";
 import { McpSessionManager } from "../../src/server/mcp/sessions.js";
+import { reservePort } from "../helpers/harness.js";
 
 const silentLogger = pino({ level: "silent" });
-const ECHO_PORT = 19001;
+let ECHO_PORT = 0;
 
 let echoServer: Server;
 
 beforeAll(async () => {
+  ECHO_PORT = await reservePort();
+
   echoServer = createServer((req, res) => {
     const url = new URL(req.url ?? "/", `http://localhost`);
     if (url.pathname === "/json") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify([{
         type: "page",
-        webSocketDebuggerUrl: `ws://localhost:${ECHO_PORT}/devtools/page/test`,
+        webSocketDebuggerUrl: `ws://127.0.0.1:${ECHO_PORT}/devtools/page/test`,
       }]));
       return;
     }
@@ -37,7 +40,7 @@ beforeAll(async () => {
       }
     });
   });
-  await new Promise<void>((resolve) => echoServer.listen(ECHO_PORT, resolve));
+  await new Promise<void>((resolve) => echoServer.listen(ECHO_PORT, "127.0.0.1", resolve));
 });
 
 afterAll(() => {
@@ -59,7 +62,7 @@ function createTestConfig() {
     },
     providers: {
       "echo-1": {
-        url: `ws://localhost:${ECHO_PORT}`,
+        url: `ws://127.0.0.1:${ECHO_PORT}`,
         priority: 1,
         limits: { maxConcurrent: 2 },
       },
@@ -159,7 +162,7 @@ describe("McpSessionManager", () => {
 
   describe("gateway routing", () => {
     it("routes through /v1/connect when an endpoint is configured", async () => {
-      manager.setConnectEndpoint({ url: `ws://localhost:${ECHO_PORT}/v1/connect` });
+      manager.setConnectEndpoint({ url: `ws://127.0.0.1:${ECHO_PORT}/v1/connect` });
       const session = await manager.createSession();
       expect(session!.providerId).toBe("gateway");
       expect(gateway.registry.get("echo-1")!.active).toBe(0);

@@ -8,9 +8,10 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import * as chromeLauncher from "chrome-launcher";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-const GATEWAY_PORT = 18100;
+let GATEWAY_PORT = 0;
 
 const PAGE_HTML = `<!doctype html><html><head><title>MCP fixture</title></head><body>
 <h1>Agent checkout</h1>
@@ -50,6 +51,8 @@ describe.skipIf(!chromePath)("MCP over a real browser", () => {
   let client: Client;
 
   beforeAll(async () => {
+    GATEWAY_PORT = await reservePort();
+
     httpServer = createServer((_req, res) => {
       res.writeHead(200, { "content-type": "text/html" });
       res.end(PAGE_HTML);
@@ -98,16 +101,11 @@ logging:
     gateway.stdout?.on("data", (d: Buffer) => gatewayLog.push(String(d)));
     gateway.stderr?.on("data", (d: Buffer) => gatewayLog.push(String(d)));
 
-    let healthy = false;
-    for (let i = 0; i < 60 && !healthy; i++) {
-      try {
-        healthy = (await fetch(`http://127.0.0.1:${GATEWAY_PORT}/health`)).ok;
-      } catch {
-        /* not up yet */
-      }
-      if (!healthy) await sleep(500);
+    try {
+      await waitForGatewayHealth(GATEWAY_PORT, gateway);
+    } catch (err) {
+      throw new Error(`gateway did not start: ${gatewayLog.join("").slice(-2000)}`, { cause: err });
     }
-    if (!healthy) throw new Error(`gateway did not start: ${gatewayLog.join("").slice(-2000)}`);
 
     client = new Client({ name: "test", version: "1" }, { capabilities: {} });
     await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${GATEWAY_PORT}/mcp`)));

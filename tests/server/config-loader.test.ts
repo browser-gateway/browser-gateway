@@ -1,8 +1,10 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { writeFileSync, unlinkSync, existsSync } from "node:fs";
+import { writeFileSync, unlinkSync, existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadConfig } from "../../src/server/config/loader.js";
 
-const TEST_CONFIG_PATH = "/tmp/bg-test-config.yml";
+const TEST_CONFIG_PATH = join(mkdtempSync(join(tmpdir(), "bg-config-loader-test-")), "gateway.yml");
 
 afterEach(() => {
   if (existsSync(TEST_CONFIG_PATH)) {
@@ -136,7 +138,7 @@ providers:
 
 describe("Config Loader - No config fallback", () => {
   it("should return empty providers when no config file exists", () => {
-    const config = loadConfig("/tmp/nonexistent-config.yml");
+    const config = loadConfig(join(tmpdir(), "bg-nonexistent-config.yml"));
     expect(Object.keys(config.providers)).toHaveLength(0);
     expect(config.gateway.port).toBe(9500);
   });
@@ -144,7 +146,7 @@ describe("Config Loader - No config fallback", () => {
   it("should use PORT from env when no config file (12-factor convention)", () => {
     vi.stubEnv("PORT", "8080");
 
-    const config = loadConfig("/tmp/nonexistent-config.yml");
+    const config = loadConfig(join(tmpdir(), "bg-nonexistent-config.yml"));
     expect(config.gateway.port).toBe(8080);
   });
 });

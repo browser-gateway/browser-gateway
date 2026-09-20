@@ -12,20 +12,21 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer } from "ws";
 import { enableBrowserserveDropOff } from "./profile-fixtures/browserserve-mock.js";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 20400;
-const PROVIDER_PORT = 20401;
-const CONFIG_PATH = "/tmp/bg-profile-stress-test.yml";
 const PROFILE_DIR = mkdtempSync(join(tmpdir(), "bg-profile-stress-test-"));
+const CONFIG_PATH = join(PROFILE_DIR, "gateway.yml");
+let GATEWAY_PORT = 0;
+let PROVIDER_PORT = 0;
 const ENCRYPTION_KEY = Buffer.alloc(32, "x").toString("base64");
 
-function createMockProvider(port: number): { server: Server; wss: WebSocketServer } {
+async function createMockProvider(port: number): { server: Server; wss: WebSocketServer } {
   const server = createServer();
   // The user pipe path
   const wssPipe = new WebSocketServer({ noServer: true });
@@ -68,7 +69,7 @@ function createMockProvider(port: number): { server: Server; wss: WebSocketServe
         Browser: "MockCDP/1.0",
         "Protocol-Version": "1.3",
         "Browserserve-Version": "test-1.0",
-        webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/pipe`,
+        webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/pipe`,
       }));
       return;
     }
@@ -79,7 +80,10 @@ function createMockProvider(port: number): { server: Server; wss: WebSocketServe
     localStorage: [],
     indexeddb: [],
   }));
-  server.listen(port);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
   return { server, wss: wssPipe };
 }
 
@@ -93,7 +97,7 @@ gateway:
   shutdownDrainMs: 8000
 providers:
   mock-cdp:
-    url: http://localhost:${PROVIDER_PORT}
+    url: http://127.0.0.1:${PROVIDER_PORT}
     limits:
       maxConcurrent: 100
     priority: 1
@@ -115,19 +119,8 @@ profiles:
 `;
 }
 
-let provider: ReturnType<typeof createMockProvider>;
+let provider: Awaited<ReturnType<typeof createMockProvider>>;
 let gatewayProcess: ChildProcess;
-
-async function waitForGateway() {
-  for (let i = 0; i < 40; i++) {
-    try {
-      const r = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
-      if (r.ok) return;
-    } catch {}
-    await sleep(250);
-  }
-  throw new Error("gateway didn't start");
-}
 
 async function startGateway(): Promise<void> {
   writeFileSync(CONFIG_PATH, buildConfig());
@@ -140,7 +133,7 @@ async function startGateway(): Promise<void> {
       env: { ...process.env, BG_TOKEN: "", BG_ENCRYPTION_KEY: ENCRYPTION_KEY },
     },
   );
-  await waitForGateway();
+  await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
 }
 
 async function stopGateway(): Promise<void> {
@@ -153,20 +146,21 @@ async function stopGateway(): Promise<void> {
 }
 
 beforeAll(async () => {
-  provider = createMockProvider(PROVIDER_PORT);
+  PROVIDER_PORT = await reservePort();
+  GATEWAY_PORT = await reservePort();
+  provider = await createMockProvider(PROVIDER_PORT);
   await startGateway();
 });
 
 afterAll(async () => {
   await stopGateway();
   provider?.server.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
   try { rmSync(PROFILE_DIR, { recursive: true, force: true }); } catch {}
 });
 
 /** Open a WS, close it cleanly. Throws with the HTTP status if upgrade rejected. */
 async function openAndClose(profileId: string): Promise<void> {
-  const ws = new WebSocket(`ws://localhost:${GATEWAY_PORT}/v1/connect?profile=${profileId}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${GATEWAY_PORT}/v1/connect?profile=${profileId}`);
   await new Promise<void>((resolve, reject) => {
     ws.once("open", () => resolve());
     ws.once("unexpected-response", (_req, res) => {
@@ -215,7 +209,7 @@ describe("C-INT-2: distinct profiles run in parallel", () => {
 });
 
 describe("C-INT-3: sustained churn — RSS growth stays bounded", () => {
-  it("200 sequential session cycles do not grow gateway RSS beyond 30%", async () => {
+  it("sustained session cycles do not grow gateway RSS beyond 30% after warm-up", async () => {
     const PID = gatewayProcess.pid;
     if (!PID) throw new Error("no pid");
 
@@ -225,9 +219,16 @@ describe("C-INT-3: sustained churn — RSS growth stays bounded", () => {
       return parseInt(out, 10);
     }
 
+    // Warm-up cycles first: the baseline must exclude one-time V8 heap and JIT
+    // growth, otherwise cold-start allocation is scored as a leak.
+    const WARMUP = 40;
+    for (let i = 0; i < WARMUP; i++) {
+      await openAndClose(`churn-${i % 20}`);
+    }
+    await sleep(2_000);
     const before = await rssKb();
 
-    for (let i = 0; i < 200; i++) {
+    for (let i = WARMUP; i < 200; i++) {
       await openAndClose(`churn-${i % 20}`); // 20 distinct ids cycling
     }
 
@@ -237,11 +238,10 @@ describe("C-INT-3: sustained churn — RSS growth stays bounded", () => {
     const after = await rssKb();
     const growthPct = ((after - before) / before) * 100;
     console.log(
-      `RSS before=${before}KB after=${after}KB growth=${growthPct.toFixed(1)}% across 200 sessions`,
+      `RSS before=${before}KB after=${after}KB growth=${growthPct.toFixed(1)}% across ${200 - WARMUP} sessions after ${WARMUP} warm-up sessions`,
     );
-    // RSS can grow some due to V8 heap warm-up, but >30% over 200 sessions
-    // would indicate a leak. The hardening drain pattern means RSS often goes
-    // DOWN after the burst (we expect a small negative or single-digit positive).
+    // Post-warm-up growth above 30% would indicate a leak; the drain pattern
+    // usually leaves RSS flat or slightly down after the burst.
     expect(growthPct).toBeLessThan(30);
   }, 90_000);
 });

@@ -340,6 +340,7 @@ export interface ProviderState {
 
 // @public (undocumented)
 export class ReconnectRegistry {
+    constructor(ttlMs?: number);
     // Warning: (ae-forgotten-export) The symbol "ParkedSession" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
@@ -355,7 +356,7 @@ export class ReconnectRegistry {
     // (undocumented)
     park(sessionId: string, providerId: string, providerUrl: string, connectedAt: number, messageCount: number): void;
     // (undocumented)
-    startCleanup(ttlMs: number): void;
+    startCleanup(): void;
     // (undocumented)
     stopCleanup(): void;
 }

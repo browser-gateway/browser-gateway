@@ -2,12 +2,16 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { ChildProcess, spawn } from "node:child_process";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 17000;
-const PROVIDER_PORT = 17001;
-const CONFIG_PATH = "/tmp/bg-queue-test.yml";
+let GATEWAY_PORT = 0;
+let PROVIDER_PORT = 0;
+const TMP_DIR = mkdtempSync(join(tmpdir(), "bg-queue-test-"));
+const CONFIG_PATH = join(TMP_DIR, "gateway.yml");
 
 let echoServer: Server;
 let gatewayProcess: ChildProcess;
@@ -16,11 +20,14 @@ function createEchoProvider(port: number): { server: Server; wss: WebSocketServe
   const server = createServer();
   const wss = new WebSocketServer({ server });
   wss.on("connection", (ws) => { ws.on("message", (d) => ws.send(d)); });
-  server.listen(port);
+  server.listen(port, "127.0.0.1");
   return { server, wss };
 }
 
 beforeAll(async () => {
+  GATEWAY_PORT = await reservePort();
+  PROVIDER_PORT = await reservePort();
+
   const b = createEchoProvider(PROVIDER_PORT);
   echoServer = b.server;
 
@@ -34,7 +41,7 @@ gateway:
     timeoutMs: 5000
 providers:
   echo:
-    url: ws://localhost:${PROVIDER_PORT}
+    url: ws://127.0.0.1:${PROVIDER_PORT}
     limits:
       maxConcurrent: 1
     priority: 1
@@ -50,27 +57,23 @@ logging:
   const bootErrors: string[] = [];
   gatewayProcess.stderr?.on("data", (b) => bootErrors.push(String(b)));
 
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const r = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
-      if (r.ok) return;
-    } catch { /* not ready */ }
-    await sleep(200);
+  try {
+    await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
+  } catch (err) {
+    throw new Error(`gateway did not boot. stderr: ${bootErrors.join("").slice(-2000)}`, { cause: err });
   }
-  throw new Error(`gateway did not boot within 15s. stderr: ${bootErrors.join("").slice(-2000)}`);
 }, 20000);
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
   echoServer?.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
+  try { rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
   await sleep(500);
 });
 
 function connectWs(): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://localhost:${GATEWAY_PORT}/v1/connect`);
+    const ws = new WebSocket(`ws://127.0.0.1:${GATEWAY_PORT}/v1/connect`);
     ws.on("open", () => resolve(ws));
     ws.on("error", reject);
     setTimeout(() => reject(new Error("timeout")), 10000);
@@ -90,7 +93,7 @@ describe("Request Queuing", () => {
     await sleep(500);
 
     // Check queue size
-    const status = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`).then(r => r.json()) as any;
+    const status = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/status`).then(r => r.json()) as any;
     expect(status.queueSize).toBeGreaterThanOrEqual(0);
 
     // Free the slot
@@ -135,7 +138,7 @@ describe("Request Queuing", () => {
   }, 20000);
 
   it("should show queueSize in status API", async () => {
-    const status = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`).then(r => r.json()) as any;
+    const status = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/status`).then(r => r.json()) as any;
     expect(status).toHaveProperty("queueSize");
     expect(typeof status.queueSize).toBe("number");
   });

@@ -11,6 +11,20 @@ export class ReconnectRegistry {
   private parked = new Map<string, ParkedSession>();
   private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
+  constructor(private readonly ttlMs = Number.POSITIVE_INFINITY) {}
+
+  private expired(entry: ParkedSession): boolean {
+    return Date.now() - entry.parkedAt > this.ttlMs;
+  }
+
+  private live(sessionId: string): ParkedSession | undefined {
+    const entry = this.parked.get(sessionId);
+    if (!entry) return undefined;
+    if (!this.expired(entry)) return entry;
+    this.parked.delete(sessionId);
+    return undefined;
+  }
+
   park(
     sessionId: string,
     providerId: string,
@@ -29,7 +43,7 @@ export class ReconnectRegistry {
   }
 
   claim(sessionId: string): ParkedSession | undefined {
-    const entry = this.parked.get(sessionId);
+    const entry = this.live(sessionId);
     if (entry) {
       this.parked.delete(sessionId);
     }
@@ -37,31 +51,31 @@ export class ReconnectRegistry {
   }
 
   get(sessionId: string): ParkedSession | undefined {
-    return this.parked.get(sessionId);
+    return this.live(sessionId);
   }
 
   has(sessionId: string): boolean {
-    return this.parked.has(sessionId);
+    return this.live(sessionId) !== undefined;
   }
 
   count(): number {
-    return this.parked.size;
+    return this.getAll().length;
   }
 
   getAll(): ParkedSession[] {
+    this.sweep();
     return Array.from(this.parked.values());
   }
 
-  startCleanup(ttlMs: number): void {
+  private sweep(): void {
+    for (const [id, entry] of this.parked) {
+      if (this.expired(entry)) this.parked.delete(id);
+    }
+  }
+
+  startCleanup(): void {
     if (this.cleanupTimer) return;
-    this.cleanupTimer = setInterval(() => {
-      const now = Date.now();
-      for (const [id, entry] of this.parked) {
-        if (now - entry.parkedAt > ttlMs) {
-          this.parked.delete(id);
-        }
-      }
-    }, 15000);
+    this.cleanupTimer = setInterval(() => this.sweep(), 15000);
   }
 
   stopCleanup(): void {

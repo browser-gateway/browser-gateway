@@ -15,18 +15,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer } from "ws";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 20700;
-const PROVIDER_PORT_A = 20701;
-const PROVIDER_PORT_B = 20702;
+let GATEWAY_PORT = 0;
+let PROVIDER_PORT_A = 0;
+let PROVIDER_PORT_B = 0;
 const PROFILE_ID = "pinned-alpha";
-const CONFIG_PATH = "/tmp/bg-profile-inject-failure-test.yml";
 const PROFILE_DIR = mkdtempSync(join(tmpdir(), "bg-profile-inject-failure-"));
+const CONFIG_PATH = join(PROFILE_DIR, "gateway.yml");
 const ENCRYPTION_KEY = Buffer.alloc(32, "p").toString("base64");
 
 interface MockProvider {
@@ -42,7 +43,7 @@ interface MockProvider {
   close: () => Promise<void>;
 }
 
-function createPinnedMock(port: number, label: string): MockProvider {
+async function createPinnedMock(port: number, label: string): Promise<MockProvider> {
   const state = {
     storedCookies: [] as Array<Record<string, unknown>>,
     setCookiesCalls: 0,
@@ -100,13 +101,16 @@ function createPinnedMock(port: number, label: string): MockProvider {
       res.end(JSON.stringify({
         Browser: `MockCDP-${label}`,
         "Protocol-Version": "1.3",
-        webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/pipe`,
+        webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/pipe`,
       }));
       return;
     }
     res.writeHead(404).end();
   });
-  server.listen(port);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
 
   return {
     port,
@@ -133,13 +137,13 @@ gateway:
     minRequestVolume: 1000
 providers:
   prov-a:
-    url: http://localhost:${PROVIDER_PORT_A}
+    url: http://127.0.0.1:${PROVIDER_PORT_A}
     limits:
       maxConcurrent: 10
     priority: 1
     profile: ${PROFILE_ID}
   prov-b:
-    url: http://localhost:${PROVIDER_PORT_B}
+    url: http://127.0.0.1:${PROVIDER_PORT_B}
     limits:
       maxConcurrent: 10
     priority: 2
@@ -165,17 +169,6 @@ let provA: MockProvider;
 let provB: MockProvider;
 let gatewayProcess: ChildProcess;
 
-async function waitForGateway() {
-  for (let i = 0; i < 40; i++) {
-    try {
-      const r = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
-      if (r.ok) return;
-    } catch {}
-    await sleep(250);
-  }
-  throw new Error("gateway didn't start");
-}
-
 async function startGateway(): Promise<void> {
   writeFileSync(CONFIG_PATH, buildConfig());
   gatewayProcess = spawn(
@@ -187,7 +180,7 @@ async function startGateway(): Promise<void> {
       env: { ...process.env, BG_TOKEN: "", BG_ENCRYPTION_KEY: ENCRYPTION_KEY },
     },
   );
-  await waitForGateway();
+  await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
 }
 
 async function stopGateway(): Promise<void> {
@@ -200,7 +193,7 @@ async function stopGateway(): Promise<void> {
 }
 
 async function openProfile(): Promise<WebSocket> {
-  const ws = new WebSocket(`ws://localhost:${GATEWAY_PORT}/v1/connect?profile=${PROFILE_ID}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${GATEWAY_PORT}/v1/connect?profile=${PROFILE_ID}`);
   await new Promise<void>((resolve, reject) => {
     ws.once("open", () => resolve());
     ws.once("unexpected-response", (_req, res) => {
@@ -226,8 +219,11 @@ async function checkConnect(): Promise<{ ok: boolean; status?: number }> {
 }
 
 beforeAll(async () => {
-  provA = createPinnedMock(PROVIDER_PORT_A, "A");
-  provB = createPinnedMock(PROVIDER_PORT_B, "B");
+  PROVIDER_PORT_A = await reservePort();
+  PROVIDER_PORT_B = await reservePort();
+  GATEWAY_PORT = await reservePort();
+  provA = await createPinnedMock(PROVIDER_PORT_A, "A");
+  provB = await createPinnedMock(PROVIDER_PORT_B, "B");
   await startGateway();
 });
 
@@ -235,7 +231,6 @@ afterAll(async () => {
   await stopGateway();
   await provA?.close();
   await provB?.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
   try { rmSync(PROFILE_DIR, { recursive: true, force: true }); } catch {}
 });
 

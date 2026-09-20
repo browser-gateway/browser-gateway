@@ -2,15 +2,19 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, request as httpRequest, type Server } from "node:http";
 import { WebSocketServer } from "ws";
 import { type ChildProcess, spawn } from "node:child_process";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
-const GATEWAY_PORT = 18000;
-const PROVIDER_PORT_1 = 18001;
-const PROVIDER_PORT_2 = 18002;
-const CONFIG_PATH = "/tmp/bg-mcp-test.yml";
+let GATEWAY_PORT = 0;
+let PROVIDER_PORT_1 = 0;
+let PROVIDER_PORT_2 = 0;
+const TMP_DIR = mkdtempSync(join(tmpdir(), "bg-mcp-test-"));
+const CONFIG_PATH = join(TMP_DIR, "gateway.yml");
 
 function createEchoProvider(port: number): { server: Server; wss: WebSocketServer } {
   const server = createServer();
@@ -22,7 +26,7 @@ function createEchoProvider(port: number): { server: Server; wss: WebSocketServe
     });
   });
 
-  server.listen(port);
+  server.listen(port, "127.0.0.1");
   return { server, wss };
 }
 
@@ -40,6 +44,10 @@ describe("MCP Server Integration", () => {
   let gatewayProcess: ChildProcess;
 
   beforeAll(async () => {
+    GATEWAY_PORT = await reservePort();
+    PROVIDER_PORT_1 = await reservePort();
+    PROVIDER_PORT_2 = await reservePort();
+
     provider1 = createEchoProvider(PROVIDER_PORT_1);
     provider2 = createEchoProvider(PROVIDER_PORT_2);
 
@@ -60,12 +68,12 @@ gateway:
     timeoutMs: 5000
 providers:
   echo-1:
-    url: ws://localhost:${PROVIDER_PORT_1}
+    url: ws://127.0.0.1:${PROVIDER_PORT_1}
     limits:
       maxConcurrent: 2
     priority: 1
   echo-2:
-    url: ws://localhost:${PROVIDER_PORT_2}
+    url: ws://127.0.0.1:${PROVIDER_PORT_2}
     limits:
       maxConcurrent: 2
     priority: 2
@@ -90,21 +98,21 @@ logging:
       }
     });
 
-    await sleep(4000);
+    await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
   }, 10000);
 
   afterAll(async () => {
     gatewayProcess?.kill("SIGTERM");
     provider1?.server.close();
     provider2?.server.close();
-    try { unlinkSync(CONFIG_PATH); } catch {}
+    try { rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
     await sleep(500);
   });
 
   async function createMcpClient(): Promise<Client> {
     const client = new Client({ name: "test-client", version: "1.0.0" });
     const transport = new StreamableHTTPClientTransport(
-      new URL(`http://localhost:${GATEWAY_PORT}/mcp`),
+      new URL(`http://127.0.0.1:${GATEWAY_PORT}/mcp`),
     );
     await client.connect(transport);
     return client;

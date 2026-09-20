@@ -17,17 +17,19 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer } from "ws";
 import { MARKER_DOMAIN, MARKER_NAME, decodeMarker } from "../../src/core/profile/marker.js";
+import { reservePort, runToken, waitForOwnGateway, waitUntil } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 20800;
-const PROVIDER_PORT = 20801;
-const CONFIG_PATH = "/tmp/bg-profile-residue-test.yml";
+const RUN = runToken();
 const PROFILE_DIR = mkdtempSync(join(tmpdir(), "bg-profile-residue-"));
+const CONFIG_PATH = join(PROFILE_DIR, "gateway.yml");
+let gatewayPort = 0;
+let providerPort = 0;
 const ENCRYPTION_KEY = Buffer.alloc(32, "y").toString("base64");
 
 type MockCookie = { name: string; value: string; domain: string; path?: string; secure?: boolean; httpOnly?: boolean };
@@ -50,7 +52,7 @@ interface MockState {
   simulateNewContext(): void;
 }
 
-function createPinnedMock(port: number, state: MockState): { server: Server; close: () => Promise<void> } {
+function createPinnedMock(state: MockState): { server: Server; close: () => Promise<void> } {
   const server = createServer();
   const wss = new WebSocketServer({ noServer: true });
 
@@ -136,14 +138,12 @@ function createPinnedMock(port: number, state: MockState): { server: Server; clo
       res.end(JSON.stringify({
         Browser: "MockCDP/residue",
         "Protocol-Version": "1.3",
-        webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/pipe`,
+        webSocketDebuggerUrl: `ws://127.0.0.1:${providerPort}/devtools/browser/pipe`,
       }));
       return;
     }
     res.writeHead(404).end();
   });
-  server.listen(port);
-
   return {
     server,
     async close() {
@@ -160,30 +160,30 @@ function buildConfig(): string {
   return `
 version: 1
 gateway:
-  port: ${GATEWAY_PORT}
+  port: ${gatewayPort}
   defaultStrategy: priority-chain
   connectionTimeout: 5000
 providers:
-  pin-alpha:
-    url: http://localhost:${PROVIDER_PORT}
+  pin-alpha-${RUN}:
+    url: http://127.0.0.1:${providerPort}
     limits:
       maxConcurrent: 4
     priority: 1
     profile: alpha-profile
-  pin-bravo:
-    url: http://localhost:${PROVIDER_PORT}
+  pin-bravo-${RUN}:
+    url: http://127.0.0.1:${providerPort}
     limits:
       maxConcurrent: 4
     priority: 2
     profile: bravo-profile
-  pin-charlie:
-    url: http://localhost:${PROVIDER_PORT}
+  pin-charlie-${RUN}:
+    url: http://127.0.0.1:${providerPort}
     limits:
       maxConcurrent: 4
     priority: 3
     profile: charlie-profile
-  pin-delta:
-    url: http://localhost:${PROVIDER_PORT}
+  pin-delta-${RUN}:
+    url: http://127.0.0.1:${providerPort}
     limits:
       maxConcurrent: 4
     priority: 4
@@ -234,17 +234,6 @@ const state: MockState = {
 let mockClose: () => Promise<void>;
 let gatewayProcess: ChildProcess;
 
-async function waitForGateway() {
-  for (let i = 0; i < 40; i++) {
-    try {
-      const r = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
-      if (r.ok) return;
-    } catch {}
-    await sleep(250);
-  }
-  throw new Error("gateway didn't start");
-}
-
 async function startGateway(): Promise<void> {
   writeFileSync(CONFIG_PATH, buildConfig());
   gatewayProcess = spawn(
@@ -256,7 +245,7 @@ async function startGateway(): Promise<void> {
       env: { ...process.env, BG_TOKEN: "", BG_ENCRYPTION_KEY: ENCRYPTION_KEY },
     },
   );
-  await waitForGateway();
+  await waitForOwnGateway(gatewayPort, gatewayProcess, RUN);
 }
 
 async function stopGateway(): Promise<void> {
@@ -270,7 +259,7 @@ async function stopGateway(): Promise<void> {
 
 async function openProfile(profileId: string, readOnly = false): Promise<WebSocket> {
   const roParam = readOnly ? "&readOnly=1" : "";
-  const ws = new WebSocket(`ws://localhost:${GATEWAY_PORT}/v1/connect?profile=${profileId}${roParam}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${gatewayPort}/v1/connect?profile=${profileId}${roParam}`);
   let handled = false;
   await new Promise<void>((resolve, reject) => {
     const finish = (err: Error | null) => {
@@ -303,8 +292,32 @@ async function checkConnect(profileId: string, readOnly = false): Promise<{ ok: 
   }
 }
 
+function commitStamp(profileId: string): string | null {
+  try {
+    return readFileSync(join(PROFILE_DIR, profileId, "data.enc")).toString("base64");
+  } catch {
+    return null;
+  }
+}
+
+async function waitForCommitAfter(profileId: string, before: string | null): Promise<void> {
+  await waitUntil(
+    () => {
+      const now = commitStamp(profileId);
+      return now !== null && now !== before;
+    },
+    `${profileId} commit to reach disk`,
+  );
+}
+
 beforeAll(async () => {
-  const mock = createPinnedMock(PROVIDER_PORT, state);
+  providerPort = await reservePort();
+  gatewayPort = await reservePort();
+  const mock = createPinnedMock(state);
+  await new Promise<void>((resolve, reject) => {
+    mock.server.once("error", reject);
+    mock.server.listen(providerPort, "127.0.0.1", resolve);
+  });
   mockClose = mock.close;
   await startGateway();
 });
@@ -312,7 +325,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await stopGateway();
   await mockClose?.();
-  try { unlinkSync(CONFIG_PATH); } catch {}
   try { rmSync(PROFILE_DIR, { recursive: true, force: true }); } catch {}
 });
 
@@ -320,9 +332,10 @@ describe("residue detection", () => {
   it("R1: profile A → disconnect → connect A again on same provider → success", async () => {
     state.reset();
 
+    const stamp = commitStamp("alpha-profile");
     const ws1 = await openProfile("alpha-profile");
     ws1.close();
-    await sleep(1_500);
+    await waitForCommitAfter("alpha-profile", stamp);
 
     // Marker cookie must have been planted on the mock's storage
     const planted = state.storedCookies.find((c) => c.name === MARKER_NAME && c.domain === MARKER_DOMAIN);
@@ -339,9 +352,10 @@ describe("residue detection", () => {
     state.reset();
 
     // Seed alpha's marker via a real connect
+    const stamp = commitStamp("alpha-profile");
     const ws1 = await openProfile("alpha-profile");
     ws1.close();
-    await sleep(1_500);
+    await waitForCommitAfter("alpha-profile", stamp);
 
     const alphaMarker = state.storedCookies.find((c) => c.name === MARKER_NAME);
     expect(alphaMarker).toBeTruthy();
@@ -360,9 +374,10 @@ describe("residue detection", () => {
     state.reset();
 
     // Seed alpha marker via write-back session on pin-alpha
+    const stamp = commitStamp("alpha-profile");
     const ws1 = await openProfile("alpha-profile");
     ws1.close();
-    await sleep(2_000);
+    await waitForCommitAfter("alpha-profile", stamp);
     expect(state.storedCookies.some((c) => c.name === MARKER_NAME)).toBe(true);
 
     // Read-only bravo — must ALSO 409, per Isaac's answer.
@@ -383,9 +398,10 @@ describe("residue detection", () => {
 
     // First session: captures user cookie + planted marker. On save, marker is
     // filtered so only user cookie persists in the encrypted blob.
+    const stamp = commitStamp("alpha-profile");
     const ws1 = await openProfile("alpha-profile");
     ws1.close();
-    await sleep(1_500);
+    await waitForCommitAfter("alpha-profile", stamp);
 
     // Marker was planted on the mock
     expect(state.storedCookies.some((c) => c.name === MARKER_NAME)).toBe(true);
@@ -396,9 +412,10 @@ describe("residue detection", () => {
     state.storedCookies = [];
     state.setCookieCallHistory = [];
 
+    const stampAfterFirst = commitStamp("alpha-profile");
     const ws2 = await openProfile("alpha-profile");
     ws2.close();
-    await sleep(1_500);
+    await waitForCommitAfter("alpha-profile", stampAfterFirst);
 
     // Flatten every cookie name ever passed to setCookies during the second
     // session's inject + plant sequence.
@@ -434,9 +451,10 @@ describe("residue detection", () => {
     // R6/R7 use dedicated profile IDs (charlie/delta) that R1-R5 never touch,
     // so profile-lock cascade from earlier tests can't stall these openProfile
     // calls with the 15s LOCK_HELD wait.
+    const stamp = commitStamp("charlie-profile");
     const ws1 = await openProfile("charlie-profile");
     ws1.close();
-    await sleep(1_500);
+    await waitForCommitAfter("charlie-profile", stamp);
     expect(state.storedCookies.some((c) => c.name === "_bg_marker")).toBe(true);
     expect(state.domStorage.get("https://__bg-marker.internal")?.get("_bg_marker")).toBeTruthy();
 
@@ -461,9 +479,10 @@ describe("residue detection", () => {
 
     // Use isolated profile IDs so R7 doesn't wait on R6's charlie/delta locks.
     // (The mock server is shared, but the profileLifecycle keeps per-profile locks.)
+    const stamp = commitStamp("charlie-profile");
     const ws1 = await openProfile("charlie-profile");
     ws1.close();
-    await sleep(1_500);
+    await waitForCommitAfter("charlie-profile", stamp);
 
     // Simulate context fresh — cookie gone, localStorage marker for charlie remains
     state.simulateNewContext();

@@ -2,13 +2,17 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocketServer, WebSocket } from "ws";
 import { type ChildProcess, spawn } from "node:child_process";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { reservePort, waitForGatewayHealth, waitUntil } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 20000;
-const PROVIDER_PORT_1 = 20001;
-const PROVIDER_PORT_2 = 20002;
-const CONFIG_PATH = "/tmp/bg-reconnect-test.yml";
+let GATEWAY_PORT = 0;
+let PROVIDER_PORT_1 = 0;
+let PROVIDER_PORT_2 = 0;
+const TMP_DIR = mkdtempSync(join(tmpdir(), "bg-reconnect-test-"));
+const CONFIG_PATH = join(TMP_DIR, "gateway.yml");
 
 function createEchoProvider(port: number): { server: Server; wss: WebSocketServer } {
   const server = createServer();
@@ -26,6 +30,10 @@ describe("Session Reconnection", () => {
   let gatewayProcess: ChildProcess;
 
   beforeAll(async () => {
+    GATEWAY_PORT = await reservePort();
+    PROVIDER_PORT_1 = await reservePort();
+    PROVIDER_PORT_2 = await reservePort();
+
     provider1 = createEchoProvider(PROVIDER_PORT_1);
     provider2 = createEchoProvider(PROVIDER_PORT_2);
 
@@ -47,12 +55,12 @@ gateway:
     timeoutMs: 5000
 providers:
   echo-1:
-    url: ws://localhost:${PROVIDER_PORT_1}
+    url: ws://127.0.0.1:${PROVIDER_PORT_1}
     limits:
       maxConcurrent: 2
     priority: 1
   echo-2:
-    url: ws://localhost:${PROVIDER_PORT_2}
+    url: ws://127.0.0.1:${PROVIDER_PORT_2}
     limits:
       maxConcurrent: 2
     priority: 2
@@ -70,20 +78,20 @@ logging:
       env,
     });
 
-    await sleep(4000);
+    await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
   }, 10000);
 
   afterAll(async () => {
     gatewayProcess?.kill("SIGTERM");
     provider1?.server.close();
     provider2?.server.close();
-    try { unlinkSync(CONFIG_PATH); } catch {}
+    try { rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
     await sleep(500);
   });
 
   function connectToGateway(params?: string): Promise<{ ws: WebSocket; sessionId: string }> {
     return new Promise((resolve, reject) => {
-      const url = `ws://localhost:${GATEWAY_PORT}/v1/connect${params ? `?${params}` : ""}`;
+      const url = `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect${params ? `?${params}` : ""}`;
       const ws = new WebSocket(url);
       let sessionId = "";
 
@@ -122,7 +130,7 @@ logging:
     expect(echo1).toBe("hello-session-1");
 
     // Check which provider via status
-    const statusRes = await fetch(`http://localhost:${GATEWAY_PORT}/v1/status`);
+    const statusRes = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/status`);
     const status = await statusRes.json() as any;
     const _activeProvider = status.providers.find((p: any) => p.active > 0);
 
@@ -164,8 +172,13 @@ logging:
     const { ws: ws1, sessionId } = await connectToGateway();
     ws1.close();
 
-    // Wait longer than reconnectTimeoutMs (10s in test config)
-    await sleep(12000);
+    const isParked = async (): Promise<boolean> => {
+      const res = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/sessions/parked`);
+      const body = (await res.json()) as { parked: Array<{ sessionId: string }> };
+      return body.parked.some((p) => p.sessionId === sessionId);
+    };
+    await waitUntil(isParked, "session to be parked after disconnect", 10_000, 100);
+    await waitUntil(async () => !(await isParked()), "parked session to pass its reconnect TTL", 30_000, 250);
 
     // Try to reconnect - should get a new session (parked session expired)
     const { ws: ws2, sessionId: newSessionId } = await connectToGateway(`sessionId=${sessionId}`);
@@ -175,7 +188,7 @@ logging:
 
     ws2.close();
     await sleep(200);
-  }, 20000);
+  }, 60000);
 
   it("should handle multiple simultaneous parked sessions", async () => {
     // Create two connections

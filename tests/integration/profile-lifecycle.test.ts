@@ -13,17 +13,18 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer } from "ws";
 import { enableBrowserserveDropOff, type BrowserserveDropOffState } from "./profile-fixtures/browserserve-mock.js";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 20100;
-const PROVIDER_PORT = 20101;
-const CONFIG_PATH = "/tmp/bg-profile-lifecycle-test.yml";
 const PROFILE_DIR = mkdtempSync(join(tmpdir(), "bg-profile-lifecycle-test-"));
+const CONFIG_PATH = join(PROFILE_DIR, "gateway.yml");
+let GATEWAY_PORT = 0;
+let PROVIDER_PORT = 0;
 const ENCRYPTION_KEY = Buffer.alloc(32, "a").toString("base64");
 
 interface MockCookie {
@@ -45,7 +46,7 @@ interface MockCdpProvider {
   resetCallLog: () => void;
 }
 
-function createMockCdpProvider(port: number): MockCdpProvider {
+async function createMockCdpProvider(port: number): Promise<MockCdpProvider> {
   const server = createServer();
   const wss = new WebSocketServer({ server, path: "/devtools/browser/test" });
 
@@ -102,7 +103,7 @@ function createMockCdpProvider(port: number): MockCdpProvider {
           Browser: "MockCDP/1.0",
           "Protocol-Version": "1.3",
           "Browserserve-Version": "test-1.0",
-          webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/test`,
+          webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/test`,
         }),
       );
       return;
@@ -116,7 +117,10 @@ function createMockCdpProvider(port: number): MockCdpProvider {
     indexeddb: [],
   }));
 
-  server.listen(port);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
   return state;
 }
 
@@ -129,7 +133,7 @@ gateway:
   connectionTimeout: 5000
 providers:
   mock-cdp:
-    url: http://localhost:${PROVIDER_PORT}
+    url: http://127.0.0.1:${PROVIDER_PORT}
     limits:
       maxConcurrent: 4
     priority: 1
@@ -152,7 +156,7 @@ profiles:
 
 async function connectGateway(profile?: string): Promise<WebSocket> {
   const query = profile ? `?profile=${encodeURIComponent(profile)}` : "";
-  const ws = new WebSocket(`ws://localhost:${GATEWAY_PORT}/v1/connect${query}`);
+  const ws = new WebSocket(`ws://127.0.0.1:${GATEWAY_PORT}/v1/connect${query}`);
   await new Promise<void>((resolve, reject) => {
     ws.once("open", () => resolve());
     ws.once("error", reject);
@@ -163,7 +167,7 @@ async function connectGateway(profile?: string): Promise<WebSocket> {
 async function expectConnectFails(profile: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(
-      `ws://localhost:${GATEWAY_PORT}/v1/connect?profile=${encodeURIComponent(profile)}`,
+      `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect?profile=${encodeURIComponent(profile)}`,
     );
     ws.once("open", () => {
       ws.close();
@@ -186,7 +190,9 @@ let provider: MockCdpProvider;
 let gatewayProcess: ChildProcess;
 
 beforeAll(async () => {
-  provider = createMockCdpProvider(PROVIDER_PORT);
+  PROVIDER_PORT = await reservePort();
+  GATEWAY_PORT = await reservePort();
+  provider = await createMockCdpProvider(PROVIDER_PORT);
   writeFileSync(CONFIG_PATH, buildConfig());
 
   gatewayProcess = spawn(
@@ -199,21 +205,13 @@ beforeAll(async () => {
     },
   );
 
-  // Wait for gateway to start
-  for (let i = 0; i < 40; i++) {
-    try {
-      const r = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
-      if (r.ok) break;
-    } catch {}
-    await sleep(250);
-  }
+  await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
 }, 20_000);
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
   await sleep(500);
   provider?.server.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
   try { rmSync(PROFILE_DIR, { recursive: true, force: true }); } catch {}
 });
 

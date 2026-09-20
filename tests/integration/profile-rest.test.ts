@@ -8,17 +8,18 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer } from "ws";
+import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
 
-const GATEWAY_PORT = 20200;
-const PROVIDER_PORT = 20201;
 const TOKEN = "phase4-secret-token";
-const CONFIG_PATH = "/tmp/bg-profile-rest-test.yml";
 const PROFILE_DIR = mkdtempSync(join(tmpdir(), "bg-profile-rest-test-"));
+const CONFIG_PATH = join(PROFILE_DIR, "gateway.yml");
+let GATEWAY_PORT = 0;
+let PROVIDER_PORT = 0;
 const ENCRYPTION_KEY = Buffer.alloc(32, "r").toString("base64");
 
 interface MockProvider {
@@ -28,7 +29,7 @@ interface MockProvider {
   setCookies: (cookies: Array<Record<string, unknown>>) => void;
 }
 
-function createMockProvider(port: number): MockProvider {
+async function createMockProvider(port: number): Promise<MockProvider> {
   const server = createServer();
   const wss = new WebSocketServer({ server, path: "/devtools/browser/test" });
   const state: MockProvider = {
@@ -61,14 +62,17 @@ function createMockProvider(port: number): MockProvider {
       res.end(JSON.stringify({
         Browser: "MockCDP/1.0",
         "Protocol-Version": "1.3",
-        webSocketDebuggerUrl: `ws://localhost:${port}/devtools/browser/test`,
+        webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/browser/test`,
       }));
       return;
     }
     res.writeHead(404).end();
   });
 
-  server.listen(port);
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
   return state;
 }
 
@@ -81,7 +85,7 @@ gateway:
   connectionTimeout: 5000
 providers:
   mock-cdp:
-    url: http://localhost:${PROVIDER_PORT}
+    url: http://127.0.0.1:${PROVIDER_PORT}
     limits:
       maxConcurrent: 4
     priority: 1
@@ -105,13 +109,13 @@ profiles:
 const authHeaders = { authorization: `Bearer ${TOKEN}` };
 
 async function getJson(path: string, init: RequestInit = {}): Promise<{ status: number; body: unknown }> {
-  const r = await fetch(`http://localhost:${GATEWAY_PORT}${path}`, init);
+  const r = await fetch(`http://127.0.0.1:${GATEWAY_PORT}${path}`, init);
   const body = (await r.json()) as unknown;
   return { status: r.status, body };
 }
 
 async function getBinary(path: string, init: RequestInit = {}): Promise<{ status: number; bytes: Buffer; contentType: string | null; disposition: string | null }> {
-  const r = await fetch(`http://localhost:${GATEWAY_PORT}${path}`, init);
+  const r = await fetch(`http://127.0.0.1:${GATEWAY_PORT}${path}`, init);
   const bytes = Buffer.from(await r.arrayBuffer());
   return {
     status: r.status,
@@ -123,7 +127,7 @@ async function getBinary(path: string, init: RequestInit = {}): Promise<{ status
 
 async function writeProfileViaWs(profileId: string): Promise<void> {
   const ws = new WebSocket(
-    `ws://localhost:${GATEWAY_PORT}/v1/connect?profile=${encodeURIComponent(profileId)}&token=${TOKEN}`,
+    `ws://127.0.0.1:${GATEWAY_PORT}/v1/connect?profile=${encodeURIComponent(profileId)}&token=${TOKEN}`,
   );
   await new Promise<void>((resolve, reject) => {
     ws.once("open", () => resolve());
@@ -138,7 +142,9 @@ let provider: MockProvider;
 let gatewayProcess: ChildProcess;
 
 beforeAll(async () => {
-  provider = createMockProvider(PROVIDER_PORT);
+  PROVIDER_PORT = await reservePort();
+  GATEWAY_PORT = await reservePort();
+  provider = await createMockProvider(PROVIDER_PORT);
   writeFileSync(CONFIG_PATH, buildConfig());
 
   gatewayProcess = spawn(
@@ -151,20 +157,13 @@ beforeAll(async () => {
     },
   );
 
-  for (let i = 0; i < 40; i++) {
-    try {
-      const r = await fetch(`http://localhost:${GATEWAY_PORT}/health`);
-      if (r.ok) break;
-    } catch {}
-    await sleep(250);
-  }
+  await waitForGatewayHealth(GATEWAY_PORT, gatewayProcess);
 }, 20_000);
 
 afterAll(async () => {
   gatewayProcess?.kill("SIGTERM");
   await sleep(500);
   provider?.server.close();
-  try { unlinkSync(CONFIG_PATH); } catch {}
   try { rmSync(PROFILE_DIR, { recursive: true, force: true }); } catch {}
 });
 
@@ -286,7 +285,7 @@ describe("Phase 4: profile REST API", () => {
     const blob = exported.bytes;
 
     // 2. Delete
-    const del = await fetch(`http://localhost:${GATEWAY_PORT}/v1/profiles/rest-alpha`, {
+    const del = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/rest-alpha`, {
       method: "DELETE",
       headers: authHeaders,
     });
@@ -297,7 +296,7 @@ describe("Phase 4: profile REST API", () => {
     expect((after.body as { count: number }).count).toBe(0);
 
     // 3. Import the saved blob back
-    const imp = await fetch(`http://localhost:${GATEWAY_PORT}/v1/profiles/import`, {
+    const imp = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/import`, {
       method: "POST",
       headers: { ...authHeaders, "content-type": "application/octet-stream" },
       body: new Uint8Array(blob),
@@ -314,7 +313,7 @@ describe("Phase 4: profile REST API", () => {
   });
 
   it("import: rejects empty body", async () => {
-    const r = await fetch(`http://localhost:${GATEWAY_PORT}/v1/profiles/import`, {
+    const r = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/import`, {
       method: "POST",
       headers: { ...authHeaders, "content-type": "application/octet-stream" },
       body: new Uint8Array(0),
@@ -323,7 +322,7 @@ describe("Phase 4: profile REST API", () => {
   });
 
   it("import: rejects bytes with wrong magic", async () => {
-    const r = await fetch(`http://localhost:${GATEWAY_PORT}/v1/profiles/import`, {
+    const r = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/import`, {
       method: "POST",
       headers: { ...authHeaders, "content-type": "application/octet-stream" },
       body: new Uint8Array(Buffer.alloc(64, 0xff)),
@@ -334,7 +333,7 @@ describe("Phase 4: profile REST API", () => {
   });
 
   it("delete: 400 for invalid id", async () => {
-    const r = await fetch(`http://localhost:${GATEWAY_PORT}/v1/profiles/..weird`, {
+    const r = await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/..weird`, {
       method: "DELETE",
       headers: authHeaders,
     });
@@ -343,7 +342,7 @@ describe("Phase 4: profile REST API", () => {
 
   it("export playwright: returns storageState JSON with cookies + origins", async () => {
     const r = await fetch(
-      `http://localhost:${GATEWAY_PORT}/v1/profiles/rest-alpha/export?format=playwright`,
+      `http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/rest-alpha/export?format=playwright`,
       { headers: authHeaders },
     );
     expect(r.status).toBe(200);
@@ -376,7 +375,7 @@ describe("Phase 4: profile REST API", () => {
       ],
     };
     const r = await fetch(
-      `http://localhost:${GATEWAY_PORT}/v1/profiles/import?format=playwright&id=pw-imported`,
+      `http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/import?format=playwright&id=pw-imported`,
       {
         method: "POST",
         headers: { ...authHeaders, "content-type": "application/json" },
@@ -390,7 +389,7 @@ describe("Phase 4: profile REST API", () => {
     const listed = await getJson("/v1/profiles", { headers: authHeaders });
     const items = (listed.body as { profiles: { id: string }[] }).profiles;
     expect(items.find((p) => p.id === "pw-imported")).toBeTruthy();
-    await fetch(`http://localhost:${GATEWAY_PORT}/v1/profiles/pw-imported`, {
+    await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/pw-imported`, {
       method: "DELETE",
       headers: authHeaders,
     });
@@ -399,7 +398,7 @@ describe("Phase 4: profile REST API", () => {
   it("import playwright: rejects when id query param is missing or malformed", async () => {
     const state = { cookies: [], origins: [] };
     const r1 = await fetch(
-      `http://localhost:${GATEWAY_PORT}/v1/profiles/import?format=playwright`,
+      `http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/import?format=playwright`,
       {
         method: "POST",
         headers: { ...authHeaders, "content-type": "application/json" },
@@ -409,7 +408,7 @@ describe("Phase 4: profile REST API", () => {
     expect(r1.status).toBe(400);
 
     const r2 = await fetch(
-      `http://localhost:${GATEWAY_PORT}/v1/profiles/import?format=playwright&id=-invalid`,
+      `http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/import?format=playwright&id=-invalid`,
       {
         method: "POST",
         headers: { ...authHeaders, "content-type": "application/json" },
@@ -421,7 +420,7 @@ describe("Phase 4: profile REST API", () => {
 
   it("import playwright: rejects a cookie missing required fields", async () => {
     const r = await fetch(
-      `http://localhost:${GATEWAY_PORT}/v1/profiles/import?format=playwright&id=bad-json`,
+      `http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/import?format=playwright&id=bad-json`,
       {
         method: "POST",
         headers: { ...authHeaders, "content-type": "application/json" },
@@ -433,7 +432,7 @@ describe("Phase 4: profile REST API", () => {
 
   it("export: rejects unknown format", async () => {
     const r = await fetch(
-      `http://localhost:${GATEWAY_PORT}/v1/profiles/rest-alpha/export?format=bogus`,
+      `http://127.0.0.1:${GATEWAY_PORT}/v1/profiles/rest-alpha/export?format=bogus`,
       { headers: authHeaders },
     );
     expect(r.status).toBe(400);
