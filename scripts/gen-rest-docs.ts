@@ -15,10 +15,12 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertDocsRepo } from "./lib/docs-target.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "..");
-const DOCS_OUT = resolve(REPO_ROOT, "../docs/content/docs/rest-api");
+const DOCS_REPO_ROOT = resolve(REPO_ROOT, "../docs");
+const DOCS_OUT = resolve(DOCS_REPO_ROOT, "content/docs/rest-api");
 
 interface RouteEntry {
   method: string;
@@ -322,6 +324,7 @@ function check({ files }: { files: Map<string, string>; count: number; resources
 
 function main(): void {
   const mode = process.argv[2] === "--check" ? "check" : "write";
+  assertDocsRepo(DOCS_REPO_ROOT);
   const result = generate();
   if (mode === "check") check(result);
   else writeAll(result);
