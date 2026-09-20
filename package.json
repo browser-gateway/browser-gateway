@@ -153,7 +153,9 @@
     "docker:build": "docker build -t ghcr.io/browser-gateway/server:$(node -p \"require('./package.json').version\") -t ghcr.io/browser-gateway/server:latest .",
     "docker:push": "docker push ghcr.io/browser-gateway/server:$(node -p \"require('./package.json').version\") && docker push ghcr.io/browser-gateway/server:latest",
     "docker:release": "npm run docker:build && npm run docker:push",
-    "prepare": "husky"
+    "prepare": "husky",
+    "stryker:clean": "rm -f reports/stryker-incremental.json && stryker run",
+    "prerelease:gates": "npm run precommit:gates && npm run stryker:clean"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
@@ -189,7 +191,7 @@
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.61.1",
-    "vitest": "^5.0.1"
+    "vitest": "4.1.11"
   },
   "engines": {
     "node": ">=20.0.0"
