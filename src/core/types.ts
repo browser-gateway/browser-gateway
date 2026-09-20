@@ -123,6 +123,16 @@ export const ReplayConfigSchema = z.object({
 
 export type ReplayConfig = z.infer<typeof ReplayConfigSchema>;
 
+export const RestConfigSchema = z.object({
+  /**
+   * Hostnames the one-shot REST endpoints may reach even though they resolve to
+   * a loopback, link-local, or private address. Empty by default.
+   */
+  allowedPrivateHosts: z.array(z.string()).default([]),
+});
+
+export type RestConfig = z.infer<typeof RestConfigSchema>;
+
 export const GatewayConfigSchema = z.object({
   version: z.number().default(1),
   gateway: GatewaySettingsSchema.default(() => GatewaySettingsSchema.parse({})),
@@ -133,6 +143,7 @@ export const GatewayConfigSchema = z.object({
   logging: LoggingSchema.default(() => LoggingSchema.parse({})),
   profiles: ProfilesConfigSchema.default(() => ProfilesConfigSchema.parse({})),
   replay: ReplayConfigSchema.default(() => ReplayConfigSchema.parse({})),
+  rest: RestConfigSchema.default(() => RestConfigSchema.parse({})),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;

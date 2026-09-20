@@ -239,6 +239,11 @@ BG_TOKEN=my-secret-token browser-gateway serve
 - **Dashboard** shows a login form, sets a secure HttpOnly cookie
 - **Health endpoint** (`/health`) is always public
 
+Without `BG_TOKEN` every `/v1/*` route is unauthenticated, so the gateway binds to
+`127.0.0.1` instead of all interfaces. Set a token (or set `HOST` explicitly) to
+serve other machines. `BG_ALLOWED_HOSTS` allows extra `Host` values on `/mcp`
+when no token is set.
+
 ---
 
 ## CLI

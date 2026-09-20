@@ -189,6 +189,9 @@ export const GatewayConfigSchema: z.ZodObject<{
             everyNthFrame: z.ZodDefault<z.ZodNumber>;
         }, z.core.$strip>>;
     }, z.core.$loose>>;
+    rest: z.ZodDefault<z.ZodObject<{
+        allowedPrivateHosts: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    }, z.core.$strip>>;
 }, z.core.$strip>;
 
 // @public (undocumented)

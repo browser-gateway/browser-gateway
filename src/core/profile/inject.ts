@@ -23,8 +23,9 @@ export interface InjectResult {
  * Inject captured state into a fresh browser via CDP.
  *
  * Cookies are set first via Network.setCookies (no navigation required).
- * For each origin with localStorage/sessionStorage, the page is navigated to
- * the origin and the state is written via Runtime.evaluate.
+ * For each origin with localStorage, the page is navigated to the origin and
+ * the state is written via Runtime.evaluate. sessionStorage is never restored;
+ * it is tab-scoped and replaying it breaks OAuth and CSRF flows.
  *
  * Skipped origins (navigation error, evaluate error) are reported in the
  * result but do not fail the whole inject — best-effort per origin.
@@ -93,22 +94,10 @@ export async function injectState(
 
 function buildStorageWriteExpression(data: OriginStorage): string {
   const local = JSON.stringify(data.localStorage ?? {});
-  const session = JSON.stringify(data.sessionStorage ?? {});
   return `
     (() => {
       const result = { localStorageWrote: 0, sessionStorageWrote: 0, errors: [] };
-      const writeAll = (store, entries) => {
-        try { store.clear(); } catch (e) { result.errors.push("clear: " + String(e && e.message || e)); }
-        for (const [k, v] of Object.entries(entries)) {
-          try {
-            store.setItem(k, v);
-            return true;
-          } catch (e) {
-            result.errors.push(k + ": " + String(e && e.message || e));
-          }
-        }
-        return false;
-      };
+      try { sessionStorage.clear(); } catch (e) { result.errors.push("sessionStorage.clear failed: " + String(e && e.message || e)); }
       try {
         const entries = ${local};
         for (const [k, v] of Object.entries(entries)) {
@@ -116,23 +105,13 @@ function buildStorageWriteExpression(data: OriginStorage): string {
           catch (e) { result.errors.push("local " + k + ": " + String(e && e.message || e)); }
         }
       } catch (e) { result.errors.push("localStorage failed: " + String(e && e.message || e)); }
-      try {
-        const entries = ${session};
-        for (const [k, v] of Object.entries(entries)) {
-          try { sessionStorage.setItem(k, v); result.sessionStorageWrote++; }
-          catch (e) { result.errors.push("session " + k + ": " + String(e && e.message || e)); }
-        }
-      } catch (e) { result.errors.push("sessionStorage failed: " + String(e && e.message || e)); }
       return result;
     })()
   `;
 }
 
 function hasAnyEntries(data: OriginStorage): boolean {
-  return (
-    Object.keys(data.localStorage ?? {}).length > 0
-    || Object.keys(data.sessionStorage ?? {}).length > 0
-  );
+  return Object.keys(data.localStorage ?? {}).length > 0;
 }
 
 function errorMessage(err: unknown): string {

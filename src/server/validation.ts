@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { redactConnectionUrl, redactHeaders } from "../core/redact.js";
 import {
   GatewayConfigSchema,
   ProviderConfigSchema,
@@ -17,6 +18,28 @@ export function formatZodErrors(error: z.ZodError): string[] {
 }
 
 /**
+ * Restore the stored secret when the caller echoed back a masked value.
+ * `GET /v1/providers` redacts URLs and header values, so an edit form that
+ * round-trips its own view would otherwise persist the mask.
+ */
+function unmaskAgainstExisting(
+  url: string | undefined,
+  headers: Record<string, string> | null | undefined,
+  existing: ProviderConfig | undefined,
+): { url: string | undefined; headers: Record<string, string> | null | undefined } {
+  if (!existing) return { url, headers };
+  const nextUrl = url !== undefined && url === redactConnectionUrl(existing.url) ? existing.url : url;
+  if (!headers) return { url: nextUrl, headers };
+  const masked = redactHeaders(existing.headers);
+  const nextHeaders: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const stored = existing.headers?.[key];
+    nextHeaders[key] = stored !== undefined && value === masked[key] ? stored : value;
+  }
+  return { url: nextUrl, headers: nextHeaders };
+}
+
+/**
  * Parse a provider config body (from POST or PUT /v1/providers/...).
  *
  * @param body         raw JSON body from the request
@@ -27,13 +50,18 @@ export function parseProviderConfigBody(
   body: Record<string, unknown>,
   existing?: ProviderConfig,
 ): { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] } {
-  const url = body.url as string | undefined;
+  const raw = unmaskAgainstExisting(
+    body.url as string | undefined,
+    body.headers as Record<string, string> | null | undefined,
+    existing,
+  );
+  const url = raw.url;
   const maxConcurrent = body.maxConcurrent as number | undefined;
   const priority = body.priority as number | undefined;
   const weight = body.weight as number | undefined;
   const profile = body.profile as string | null | undefined;
   const multiProfile = body.multiProfile as boolean | undefined;
-  const headers = body.headers as Record<string, string> | null | undefined;
+  const headers = raw.headers;
 
   const candidate = {
     url: url ?? existing?.url,

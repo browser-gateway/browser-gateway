@@ -6,7 +6,7 @@
  * `providers` field differs. Extracting that here keeps the defaults in one
  * place so they can't drift.
  */
-import { ProfilesConfigSchema, ReplayConfigSchema, type GatewayConfig, type ProviderConfig } from "../../core/types.js";
+import { ProfilesConfigSchema, ReplayConfigSchema, RestConfigSchema, type GatewayConfig, type ProviderConfig } from "../../core/types.js";
 
 export function buildMcpGatewayConfig(
   port: number,
@@ -38,6 +38,7 @@ export function buildMcpGatewayConfig(
     dashboard: { enabled: false },
     logging: { level: "info" },
     profiles: ProfilesConfigSchema.parse({}),
+    rest: RestConfigSchema.parse({}),
     replay: ReplayConfigSchema.parse({}),
   };
 }

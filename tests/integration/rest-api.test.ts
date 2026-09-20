@@ -105,6 +105,28 @@ describe("REST API - Validation", () => {
     expect(data.error).toBe("Validation error");
   });
 
+  it("should reject a file: URL target", async () => {
+    const res = await fetch(`${BASE}/v1/content`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ url: "file:///etc/passwd" }),
+    });
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as any;
+    expect(data.details.join(" ")).toContain("http");
+  });
+
+  it("should reject a link-local metadata target", async () => {
+    const res = await fetch(`${BASE}/v1/scrape`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader },
+      body: JSON.stringify({ url: "http://169.254.169.254/latest/meta-data/", formats: ["text"] }),
+    });
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as any;
+    expect(data.details.join(" ")).toContain("private address");
+  });
+
   it("should reject screenshot with invalid format", async () => {
     const res = await fetch(`${BASE}/v1/screenshot`, {
       method: "POST",

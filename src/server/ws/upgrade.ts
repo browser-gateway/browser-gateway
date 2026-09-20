@@ -23,8 +23,8 @@ import {
   withProfileToken,
 } from "../profile/browserserve-channel.js";
 import { createLiveUpgradeHandler } from "../live/upgrade.js";
-import { getEffectiveProtocolNode } from "../util/request.js";
 import { parseAllowedOrigins } from "../util/request.js";
+import { isOriginAllowed } from "../util/origin.js";
 import type { ReplayConfig } from "../../core/types.js";
 import { handlePipelineRelay } from "./pipeline-relay.js";
 import { ScreencastCapturePlugin } from "../../pipeline/plugins/screencast-capture.js";
@@ -41,40 +41,6 @@ const PROFILE_LOCK_POLL_MS = 500;
 function safeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   return timingSafeEqual(Buffer.from(a), Buffer.from(b));
-}
-
-/**
- * Browser-CSRF guard. Reject WS upgrades from a foreign browser origin.
- *
- * CDP / Playwright clients do NOT send `Origin` (they're non-browser
- * Node sockets), so an absent header is always allowed — that path
- * stays auth-only. When `Origin` IS present (= browser), it must match
- * the request's own host or be on the configurable `BG_ALLOWED_ORIGINS`
- * allowlist.
- *
- * Without this check a malicious site loaded in a victim's browser could
- * call `new WebSocket('wss://gateway/v1/connect')` and have the browser
- * auto-attach the session cookie. We don't accept cookie auth on `/v1/connect`,
- * but defense-in-depth is cheap here.
- */
-function isOriginAllowed(req: IncomingMessage, allowedOrigins: Set<string>): boolean {
-  const origin = req.headers.origin;
-  if (!origin) return true;
-  const normalized = origin.replace(/\/$/, "").toLowerCase();
-  if (allowedOrigins.has(normalized)) return true;
-  // Same-origin: scheme + host of Origin must match the request host.
-  try {
-    const u = new URL(origin);
-    const reqHost = req.headers["x-forwarded-host"] || req.headers.host;
-    const reqHostStr = Array.isArray(reqHost) ? reqHost[0] : reqHost;
-    if (reqHostStr && u.host.toLowerCase() === reqHostStr.toLowerCase()) {
-      const expected = getEffectiveProtocolNode(req) === "https" ? "https:" : "http:";
-      return u.protocol === expected;
-    }
-  } catch {
-    // fall through
-  }
-  return false;
 }
 
 function extractBearerToken(header: string | undefined): string | undefined {

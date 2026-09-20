@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-09-19
+Generated: 2026-09-20
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -174,7 +174,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface InjectOptions` (line 6)
 - **interface** `interface InjectResult` (line 15)
-- **fn** `injectState(cdp: CDPClient, profile: CapturedProfile, opts: InjectOptions = {}) → Promise<InjectResult>` (line 32) — Inject captured state into a fresh browser via CDP.
+- **fn** `injectState(cdp: CDPClient, profile: CapturedProfile, opts: InjectOptions = {}) → Promise<InjectResult>` (line 33) — Inject captured state into a fresh browser via CDP.
 ### `src/core/profile/kcv.ts`
 
 - **fn** `computeKcv(kek: Buffer) → Buffer` (line 5)
@@ -305,6 +305,13 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type Strategy` (line 8)
 - **interface** `interface SelectOptions` (line 15)
 - **class** `class ProviderSelector` (line 42)
+### `src/core/target-url.ts`
+
+- **fn** `isPrivateAddress(host: string) → boolean` (line 14) — True when the literal address is loopback, link-local, or in a private range.
+- **interface** `interface TargetUrlPolicy` (line 44)
+- **interface** `interface TargetUrlVerdict` (line 49)
+- **fn** `checkTargetUrl(url: string, policy: TargetUrlPolicy = {}) → TargetUrlVerdict` (line 60) — Validates a user-supplied navigation target. Allows `http:` and `https:` only,
+- **fn** `isHostExempt(hostname: string, policy: TargetUrlPolicy) → boolean` (line 80) — True when the policy explicitly permits this hostname to be private.
 ### `src/core/tracking/concurrency.ts`
 
 - **class** `class ConcurrencyTracker` (line 4)
@@ -329,18 +336,20 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type ProfilesConfig` (line 104)
 - **const** `const ReplayConfigSchema` (line 116)
 - **type** `type ReplayConfig` (line 124)
-- **const** `const GatewayConfigSchema` (line 126)
-- **type** `type ProviderConfig` (line 138)
-- **type** `type GatewayConfig` (line 139)
-- **interface** `interface ProviderState` (line 141)
-- **interface** `interface Session` (line 158)
+- **const** `const RestConfigSchema` (line 126)
+- **type** `type RestConfig` (line 134)
+- **const** `const GatewayConfigSchema` (line 136)
+- **type** `type ProviderConfig` (line 149)
+- **type** `type GatewayConfig` (line 150)
+- **interface** `interface ProviderState` (line 152)
+- **interface** `interface Session` (line 169)
 
 ## Server layer (src/server/)
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 42) — Mask query-string credentials inside provider URLs. Targets the param names
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 137)
+- **interface** `interface ProfileAppDeps` (line 36)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 212)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
@@ -383,6 +392,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/mcp/tools.ts`
 
 - **fn** `registerTools(server: McpServer, gateway: Gateway, sessionManager: McpSessionManager, _logger: Logger) → void` (line 27)
+### `src/server/middleware/mutating-request-guard.ts`
+
+- **fn** `mutatingRequestGuard() → MiddlewareHandler` (line 19) — Blocks the two shapes a cross-origin page can use to reach a mutating route
 ### `src/server/middleware/security-headers.ts`
 
 - **fn** `securityHeaders() → MiddlewareHandler` (line 14) — Production security headers — HSTS, nosniff, frame-ancestors, Referrer-Policy.
@@ -499,6 +511,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/rest/screenshot.ts`
 
 - **fn** `handleScreenshot(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 12)
+### `src/server/rest/target-guard.ts`
+
+- **fn** `rejectUnsafeTargetUrl(url: string, policy: TargetUrlPolicy) → Promise<string | null>` (line 9) — Scheme + address check on a REST target URL, with DNS resolution so a public
 ### `src/server/rest/toggle-handler.ts`
 
 - **type** `type ToggleFlow` (line 6)
@@ -513,7 +528,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/setup/port.ts`
 
 - **fn** `resolvePort(cliOverride: string | undefined) → number | undefined` (line 1)
-- **fn** `resolveHost() → string` (line 8)
+- **fn** `resolveHost() → string` (line 13) — Bind interface. `HOST` always wins. Without `BG_TOKEN` every `/v1/*` route is
 ### `src/server/setup/profiles-setup.ts`
 
 - **interface** `interface ProfilesSetupInput` (line 5)
@@ -527,6 +542,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/transport/node.ts`
 
 - **class** `class NodeTcpPipeTransport` (line 32) — Node-native WebSocket relay: raw TCP/TLS + `Duplex.pipe`.
+### `src/server/util/origin.ts`
+
+- **fn** `isOriginAllowed(req: IncomingMessage, allowedOrigins: Set<string>) → boolean` (line 14) — Browser-CSRF guard. Rejects a request carrying a foreign browser `Origin`.
+- **fn** `isHostAllowed(req: IncomingMessage, allowedHosts: Set<string>) → boolean` (line 38) — DNS-rebinding guard. A rebound name resolves to loopback but keeps the
+- **fn** `parseAllowedHosts(value: string | undefined) → Set<string>` (line 48) — Parse `BG_ALLOWED_HOSTS` (comma-separated hostnames).
 ### `src/server/util/request.ts`
 
 - **fn** `getEffectiveProtocol(c: { req: { header: (name: string) => string | undefined; url: string } }) → "http" | "https"` (line 8) — Return the effective protocol the client used to reach us, honoring
@@ -535,14 +555,14 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `parseAllowedOrigins(value: string | undefined) → Set<string>` (line 44) — Parse `BG_ALLOWED_ORIGINS` (comma-separated). Empty / unset returns
 ### `src/server/validation.ts`
 
-- **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 15) — Format a Zod error into a human-readable list of "path: message" strings.
-- **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 26) — Parse a provider config body (from POST or PUT /v1/providers/...).
-- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 58) — Validate a webhook request body against {@link WebhookSchema}.
+- **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 16) — Format a Zod error into a human-readable list of "path: message" strings.
+- **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 49) — Parse a provider config body (from POST or PUT /v1/providers/...).
+- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 86) — Validate a webhook request body against {@link WebhookSchema}.
 - **fn** `parseYamlGatewayConfig(yaml: string) → Promise<
   | { kind: "parse-error"; message: string }
   | { kind: "validation-error"; errors: string[] }
   | { kind: "ok"; data: GatewayConfig }
->` (line 76) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
+>` (line 104) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/pipeline-relay.ts`
 
 - **interface** `interface PipelineRelayOpts` (line 15)
@@ -553,8 +573,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000, headers?: Record<string, string>) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **interface** `interface PipelineReplayContext` (line 155)
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 160)
+- **interface** `interface PipelineReplayContext` (line 121)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 126)
 ### `src/server/ws/upstream-open.ts`
 
 - **fn** `openUpstream(url: string, timeoutMs: number, headers?: Record<string, string>) → Promise<{ ok: true; ws: WebSocket } | { ok: false; err: string }>` (line 7) — Open a Node `ws` upstream and race it against a timeout. Resolves once

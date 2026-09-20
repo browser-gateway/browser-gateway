@@ -64,6 +64,9 @@ ENV BG_DATA_DIR=/data
 # Pin NODE_ENV so production-only middleware (strict CORS, etc.) activates
 # regardless of how the platform launches the container.
 ENV NODE_ENV=production
+# A container has its own network namespace; publishing the port is the
+# operator's explicit act, so bind all interfaces regardless of BG_TOKEN.
+ENV HOST=0.0.0.0
 RUN mkdir -p /data && chown bguser:bguser /data
 
 # Postgres-style entrypoint: chowns the (potentially platform-owned)

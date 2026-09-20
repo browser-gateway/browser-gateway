@@ -5,6 +5,7 @@ import type { Gateway } from "../../core/index.js";
 import type { SessionPool } from "../../core/pool/index.js";
 import type { ProfileLifecycle } from "../profile/lifecycle.js";
 import { RestApiError } from "../../rest-schemas/index.js";
+import { rejectUnsafeTargetUrl } from "./target-guard.js";
 import { handleScreenshot } from "./screenshot.js";
 import { handleContent } from "./content.js";
 import { handleScrape } from "./scrape.js";
@@ -66,15 +67,31 @@ export function createRestRoutes(
     return next();
   };
 
-  rest.post("/screenshot", providerGate, async (c) => {
+  /**
+   * Refuses `file:`, other non-HTTP schemes, and hosts on the loopback,
+   * link-local, and private ranges before a browser is handed the URL.
+   */
+  const targetUrlGate = async (
+    c: import("hono").Context,
+    next: () => Promise<void>,
+  ): Promise<Response | void> => {
+    const body = await c.req.json().catch(() => null) as { url?: unknown } | null;
+    if (typeof body?.url === "string") {
+      const reason = await rejectUnsafeTargetUrl(body.url, gateway.config.rest);
+      if (reason) return c.json({ success: false, error: "Validation error", details: [`url: ${reason}`] }, 400);
+    }
+    return next();
+  };
+
+  rest.post("/screenshot", targetUrlGate, providerGate, async (c) => {
     return handleScreenshot(c, pool, gateway, logger, profileLifecycle);
   });
 
-  rest.post("/content", providerGate, async (c) => {
+  rest.post("/content", targetUrlGate, providerGate, async (c) => {
     return handleContent(c, pool, gateway, logger, profileLifecycle);
   });
 
-  rest.post("/scrape", providerGate, async (c) => {
+  rest.post("/scrape", targetUrlGate, providerGate, async (c) => {
     return handleScrape(c, pool, gateway, logger, profileLifecycle);
   });
 

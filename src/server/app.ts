@@ -1,4 +1,4 @@
-import { redactConnectionUrlsInText } from "../core/redact.js";
+import { redactConnectionUrl, redactConnectionUrlsInText, redactHeaders } from "../core/redact.js";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
@@ -10,7 +10,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Logger } from "pino";
 import type { Gateway } from "../core/index.js";
-import type { GatewayConfig } from "../core/types.js";
+import type { GatewayConfig, ProviderConfig } from "../core/types.js";
 import { isHttpUrl, fetchCdpVersion } from "../core/providers/cdp.js";
 import { probeProviderCapabilities } from "../core/providers/capabilities.js";
 import { writeConfig } from "./config/writer.js";
@@ -27,16 +27,10 @@ import type { FilesystemProfileStore } from "./profile/filesystem-store.js";
 import type { ProfileLifecycle } from "./profile/lifecycle.js";
 import { getEffectiveHost, getEffectiveProtocol, parseAllowedOrigins } from "./util/request.js";
 import { securityHeaders } from "./middleware/security-headers.js";
+import { mutatingRequestGuard } from "./middleware/mutating-request-guard.js";
 
 /** YAML config size cap — prevents oversize POST/PUT to /v1/config from DoS-ing the YAML parser. */
 const MAX_CONFIG_YAML_BYTES = 1024 * 1024;
-
-/**
- * Mask query-string credentials inside provider URLs. Targets the param names
- * that show up in real-world CDP / Playwright provider URLs (`token`, `apiKey`,
- * `access_token`, `key`, `password`). Used by `GET /v1/config` so the YAML
- * returned to non-cookie callers can't be used to harvest provider tokens.
- */
 
 
 export interface ProfileAppDeps {
@@ -82,18 +76,40 @@ function getSessionSecret(token?: string): string {
   return randomBytes(32).toString("hex");
 }
 
-function signSession(secret: string): string {
+/**
+ * Per-process session epoch. Mixed into the signing secret so `POST /web/logout`
+ * can invalidate issued cookies server-side by rotating it.
+ */
+function createSessionEpoch(): { value: () => string; rotate: () => void } {
+  let epoch = randomBytes(16).toString("hex");
+  return {
+    value: () => epoch,
+    rotate: () => {
+      epoch = randomBytes(16).toString("hex");
+    },
+  };
+}
+
+function signSession(secret: string, epoch: string): string {
   const payload = Buffer.from(JSON.stringify({ a: true, t: Date.now() })).toString("base64url");
-  const sig = createHmac("sha256", secret).update(payload).digest("base64url");
+  const sig = createHmac("sha256", `${secret}:${epoch}`).update(payload).digest("base64url");
   return `${payload}.${sig}`;
 }
 
-function verifySession(cookie: string, secret: string): boolean {
+function verifySession(cookie: string, secret: string, epoch: string): boolean {
   const [payload, sig] = cookie.split(".");
   if (!payload || !sig) return false;
-  const expected = createHmac("sha256", secret).update(payload).digest("base64url");
+  const expected = createHmac("sha256", `${secret}:${epoch}`).update(payload).digest("base64url");
   if (sig.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+  if (!timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return false;
+  let issuedAt: unknown;
+  try {
+    issuedAt = (JSON.parse(Buffer.from(payload, "base64url").toString("utf-8")) as { t?: unknown }).t;
+  } catch {
+    return false;
+  }
+  if (typeof issuedAt !== "number" || !Number.isFinite(issuedAt)) return false;
+  return Date.now() - issuedAt <= SESSION_MAX_AGE * 1000;
 }
 
 function getCookie(header: string | undefined, name: string): string | undefined {
@@ -102,16 +118,23 @@ function getCookie(header: string | undefined, name: string): string | undefined
   return match?.[1];
 }
 
-function isAuthenticated(c: { req: { header: (name: string) => string | undefined; query: (name: string) => string | undefined } }, token: string, sessionSecret: string): boolean {
+/**
+ * Dashboard cookie or `Authorization: Bearer <BG_TOKEN>`. The token is NOT
+ * accepted as a query parameter here — that lands it in every fronting proxy's
+ * access log. `/v1/connect` still accepts `?token=` because CDP clients cannot
+ * set headers on the WebSocket handshake.
+ */
+function isAuthenticated(
+  c: { req: { header: (name: string) => string | undefined } },
+  token: string,
+  sessionSecret: string,
+  epoch: string,
+): boolean {
   const cookie = getCookie(c.req.header("cookie"), COOKIE_NAME);
-  if (cookie && verifySession(cookie, sessionSecret)) return true;
+  if (cookie && verifySession(cookie, sessionSecret, epoch)) return true;
 
-  const reqToken =
-    c.req.query("token") ??
-    (c.req.header("authorization")?.startsWith("Bearer ")
-      ? c.req.header("authorization")!.slice(7)
-      : undefined);
-
+  const header = c.req.header("authorization");
+  const reqToken = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
   if (reqToken && safeTokenCompare(reqToken, token)) return true;
 
   return false;
@@ -134,6 +157,58 @@ function persistConfigOrRollback(
   }
 }
 
+/**
+ * Probes the upstream and returns an error body when `multiProfile: true` is
+ * set on a provider that is not browserserve. External providers must pin a
+ * single profile; sharing one upstream across profiles leaks browser state.
+ */
+async function rejectInvalidMultiProfile(
+  config: ProviderConfig,
+): Promise<ProviderConfigError | null> {
+  if (config.multiProfile !== true) return null;
+  let providerKind: string | null;
+  try {
+    const caps = await probeProviderCapabilities(config.url, {
+      perStepTimeoutMs: 5_000,
+      totalTimeoutMs: 15_000,
+    });
+    providerKind = caps.providerKind;
+  } catch (err) {
+    return {
+      error: "Cannot verify multiProfile:true — the upstream did not answer the probe",
+      details: [err instanceof Error ? err.message : String(err)],
+    };
+  }
+  if (providerKind === "browserserve") return null;
+  return {
+    error: "multiProfile:true is only valid on browserserve providers",
+    details: [
+      "The probe reached this upstream but it did not identify as browserserve.",
+      "Remove `multiProfile: true` from this provider, or point at a browserserve instance.",
+      "External providers can only serve profile sessions with a `profile: \"<name>\"` pin (one slot per profile).",
+    ],
+  };
+}
+
+interface ProviderConfigError {
+  error: string;
+  details: string[];
+}
+
+/** Parses a provider create/update body and applies the multiProfile guard. */
+async function validateProviderBody(
+  body: Record<string, unknown>,
+  existing?: ProviderConfig,
+): Promise<{ data: ProviderConfig; error?: undefined } | { data?: undefined; error: ProviderConfigError }> {
+  const parsed = parseProviderConfigBody(body, existing);
+  if (parsed.errors) {
+    return { error: { error: "Invalid provider config", details: parsed.errors } };
+  }
+  const multiProfileError = await rejectInvalidMultiProfile(parsed.data);
+  if (multiProfileError) return { error: multiProfileError };
+  return { data: parsed.data };
+}
+
 export function createApp(
   gateway: Gateway,
   token?: string,
@@ -148,9 +223,12 @@ export function createApp(
 ) {
   const app = new Hono();
   const sessionSecret = getSessionSecret(token);
+  const sessionEpoch = createSessionEpoch();
 
   // Security headers on every response (HSTS, nosniff, X-Frame-Options, etc.).
   app.use("*", securityHeaders());
+
+  app.use("*", mutatingRequestGuard());
 
   // CORS allowlist. Default: same-origin only (no Access-Control-Allow-Origin
   // header). Set `BG_ALLOWED_ORIGINS=https://a.example,https://b.example` to
@@ -186,7 +264,7 @@ export function createApp(
 
   app.use("/v1/*", async (c, next) => {
     if (!token) return next();
-    if (isAuthenticated(c, token, sessionSecret)) return next();
+    if (isAuthenticated(c, token, sessionSecret, sessionEpoch.value())) return next();
     return c.json({ error: "Unauthorized" }, 401);
   });
 
@@ -199,7 +277,7 @@ export function createApp(
   app.get("/v1/auth/info", (c) => {
     if (!token) return c.json({ token: null, authEnabled: false });
     const cookie = getCookie(c.req.header("cookie"), COOKIE_NAME);
-    const cookieAuth = !!(cookie && verifySession(cookie, sessionSecret));
+    const cookieAuth = !!(cookie && verifySession(cookie, sessionSecret, sessionEpoch.value()));
     return c.json({ token: cookieAuth ? token : null, authEnabled: true });
   });
 
@@ -399,7 +477,7 @@ export function createApp(
       const state = gateway.registry.get(id);
       return {
         id,
-        url: p.url.replace(/([?&])(token|apiKey|key|secret|password)=[^&]*/gi, "$1$2=***"),
+        url: redactConnectionUrl(p.url),
         maxConcurrent: p.limits?.maxConcurrent ?? state?.discoveredMaxConcurrent ?? null,
         maxConcurrentSource: p.limits?.maxConcurrent
           ? "config"
@@ -411,7 +489,7 @@ export function createApp(
         weight: p.weight ?? 1,
         profile: p.profile ?? null,
         multiProfile: p.multiProfile || state?.detectedKind === "browserserve" || false,
-        headers: p.headers ?? null,
+        headers: p.headers ? redactHeaders(p.headers) : null,
       };
     });
     return c.json({ providers });
@@ -452,33 +530,11 @@ export function createApp(
       return c.json({ error: `Provider '${id}' already exists` }, 409);
     }
 
-    const parsed = parseProviderConfigBody(body);
-    if (parsed.errors) {
-      return c.json({ error: "Invalid provider config", details: parsed.errors }, 400);
-    }
+    const validated = await validateProviderBody(body);
+    if (validated.error) return c.json(validated.error, 400);
 
-    if (parsed.data.multiProfile === true) {
-      const caps = await probeProviderCapabilities(parsed.data.url, {
-        perStepTimeoutMs: 5_000,
-        totalTimeoutMs: 15_000,
-      });
-      if (caps.providerKind !== "browserserve") {
-        return c.json(
-          {
-            error: "multiProfile:true is only valid on browserserve providers",
-            details: [
-              "The probe reached this upstream but it did not identify as browserserve.",
-              "Remove `multiProfile: true` from this provider, or point at a browserserve instance.",
-              "External providers can only serve profile sessions with a `profile: \"<name>\"` pin (one slot per profile).",
-            ],
-          },
-          400,
-        );
-      }
-    }
-
-    gateway.config.providers[id] = parsed.data;
-    gateway.registry.register(id, parsed.data);
+    gateway.config.providers[id] = validated.data;
+    gateway.registry.register(id, validated.data);
 
     try {
       writeConfig(gateway.config);
@@ -506,16 +562,14 @@ export function createApp(
     }
 
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
-    const parsed = parseProviderConfigBody(body, existing);
-    if (parsed.errors) {
-      return c.json({ error: "Invalid provider config", details: parsed.errors }, 400);
-    }
+    const validated = await validateProviderBody(body, existing);
+    if (validated.error) return c.json(validated.error, 400);
 
-    gateway.config.providers[id] = parsed.data;
+    gateway.config.providers[id] = validated.data;
 
     const state = gateway.registry.get(id);
     if (state) {
-      state.config = parsed.data;
+      state.config = validated.data;
     }
 
     try {
@@ -627,7 +681,7 @@ export function createApp(
     }
     const yaml = readFileSync(path, "utf-8");
     const cookie = getCookie(c.req.header("cookie"), COOKIE_NAME);
-    const cookieAuth = !!(token && cookie && verifySession(cookie, sessionSecret));
+    const cookieAuth = !!(token && cookie && verifySession(cookie, sessionSecret, sessionEpoch.value()));
     return c.json({
       yaml: cookieAuth ? yaml : redactConnectionUrlsInText(yaml),
       path,
@@ -686,7 +740,7 @@ export function createApp(
         return c.json({ error: "Invalid token" }, 401);
       }
 
-      const sessionValue = signSession(sessionSecret);
+      const sessionValue = signSession(sessionSecret, sessionEpoch.value());
       const isSecure = getEffectiveProtocol(c) === "https";
       const cookieParts = [
         `${COOKIE_NAME}=${sessionValue}`,
@@ -702,6 +756,7 @@ export function createApp(
     });
 
     app.post("/web/logout", (c) => {
+      sessionEpoch.rotate();
       c.header("Set-Cookie", `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`);
       return c.json({ ok: true });
     });
@@ -710,7 +765,7 @@ export function createApp(
       if (!token) return c.json({ authenticated: true, authRequired: false });
 
       const cookie = getCookie(c.req.header("cookie"), COOKIE_NAME);
-      const authenticated = cookie ? verifySession(cookie, sessionSecret) : false;
+      const authenticated = cookie ? verifySession(cookie, sessionSecret, sessionEpoch.value()) : false;
       return c.json({ authenticated, authRequired: true });
     });
 

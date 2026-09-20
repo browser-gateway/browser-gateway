@@ -22,8 +22,16 @@ const ProfileIdSchema = z
     message: "profile id must start with a letter or number and only contain letters, numbers, dots, dashes, underscores (max 128 chars)",
   });
 
+const UrlSchema = z
+  .string()
+  .url()
+  .refine((v) => {
+    const scheme = v.slice(0, v.indexOf(":")).toLowerCase();
+    return scheme === "http" || scheme === "https";
+  }, { message: "url must use http or https" });
+
 const BaseFields = {
-  url: z.string().url(),
+  url: UrlSchema,
   viewport: ViewportSchema.optional(),
   waitForSelector: z.string().optional(),
   waitForTimeout: z.number().int().min(0).max(30000).optional(),

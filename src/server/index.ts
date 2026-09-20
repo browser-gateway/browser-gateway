@@ -42,6 +42,8 @@ import { ReplayRetention, ReplayStore } from "./replay/index.js";
 import { resolveDataDir } from "./setup/data-dir.js";
 import { resolveEncryptionKey } from "./setup/encryption-key.js";
 import { resolvePort, resolveHost } from "./setup/port.js";
+import { parseAllowedOrigins } from "./util/request.js";
+import { isHostAllowed, isOriginAllowed, parseAllowedHosts } from "./util/origin.js";
 import { createMcpServer, createSessionManager } from "./mcp/server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -103,8 +105,9 @@ Environment:
   BG_DATA_DIR           Data directory (default: /data in Docker, ~/.browser-gateway otherwise)
   BG_CONFIG_PATH        gateway.yml location (default: $BG_DATA_DIR/gateway.yml)
   BG_ALLOWED_ORIGINS    CORS allowlist (comma-separated; default: same-origin only)
+  BG_ALLOWED_HOSTS      Extra Host values accepted on /mcp when BG_TOKEN is unset
   PORT                  Server port (default: 9500). 12-factor convention.
-  HOST                  Bind interface (default: 0.0.0.0).
+  HOST                  Bind interface (default: 0.0.0.0 with BG_TOKEN, else 127.0.0.1).
   LOG_LEVEL             debug | info | warn | error (overrides gateway.yml)
   HTTP_PROXY,
   HTTPS_PROXY,
@@ -289,11 +292,28 @@ async function startServer() {
   });
 
   const mcpTransports = new Map<string, StreamableHTTPServerTransport>();
+  const mcpAllowedOrigins = parseAllowedOrigins(process.env.BG_ALLOWED_ORIGINS);
+  const mcpAllowedHosts = parseAllowedHosts(process.env.BG_ALLOWED_HOSTS);
 
   const server = createServer(async (req, res) => {
     const reqUrl = new URL(req.url ?? "/", `http://localhost`);
 
     if (reqUrl.pathname === "/mcp") {
+      if (!isOriginAllowed(req, mcpAllowedOrigins)) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Forbidden origin" }));
+        return;
+      }
+
+      if (!token && !isHostAllowed(req, mcpAllowedHosts)) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          error: "Forbidden host",
+          message: "Set BG_TOKEN to reach /mcp on a non-loopback host, or add the host to BG_ALLOWED_HOSTS.",
+        }));
+        return;
+      }
+
       if (token) {
         const reqToken =
           reqUrl.searchParams.get("token") ??
@@ -369,8 +389,11 @@ async function startServer() {
     const headers = req.headers as Record<string, string>;
     const method = req.method ?? "GET";
 
+    const declaredLength = Number(req.headers["content-length"] ?? "0");
+    const carriesBody = declaredLength > 0 || !!req.headers["transfer-encoding"];
+
     let body: ReadableStream | null = null;
-    if (method !== "GET" && method !== "HEAD") {
+    if (method !== "GET" && method !== "HEAD" && carriesBody) {
       body = new ReadableStream({
         start(controller) {
           req.on("data", (chunk: Buffer) => controller.enqueue(chunk));
@@ -402,13 +425,16 @@ async function startServer() {
     for (const provider of gateway.registry.getAll()) {
       if (provider.config.multiProfile !== true) continue;
       if (provider.detectedKind === "browserserve") continue;
+      provider.config.multiProfile = false;
+      const configured = config.providers[provider.id];
+      if (configured) configured.multiProfile = false;
       logger.error(
         {
           providerId: provider.id,
           detectedKind: provider.detectedKind,
           hint: "multiProfile:true is only valid on browserserve providers. Remove the flag or replace the upstream. External providers must use `profile: \"<name>\"` pinning (one slot per profile).",
         },
-        "invalid config: multiProfile:true on non-browserserve provider (flag will be ignored at runtime)",
+        "invalid config: multiProfile:true rejected on non-browserserve provider",
       );
     }
   });
@@ -420,6 +446,13 @@ async function startServer() {
       { port: config.gateway.port, host: bindHost, providers: gateway.registry.size() },
       `browser-gateway running on http://localhost:${config.gateway.port}`,
     );
+
+    if (!token) {
+      logger.warn(
+        { host: bindHost },
+        "BG_TOKEN is not set: /v1/* is unauthenticated. Set BG_TOKEN before exposing this gateway beyond loopback.",
+      );
+    }
 
     // Human-readable boxed banner for the TTY
     printStartupBanner({

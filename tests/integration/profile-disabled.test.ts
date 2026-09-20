@@ -60,6 +60,7 @@ describe("Profile REST when feature is disabled", () => {
   it("POST /v1/profiles/import returns 400", async () => {
     const res = await app.request("/v1/profiles/import", {
       method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
       body: new Uint8Array([1, 2, 3]),
     });
     expect(res.status).toBe(400);

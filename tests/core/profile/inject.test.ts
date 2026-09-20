@@ -80,6 +80,37 @@ describe("injectState — happy path", () => {
     expect(navCalls[0]!.params.url).toBe("https://example.com");
   });
 
+  it("never writes sessionStorage back into the page", async () => {
+    let expression = "";
+    cdp.setHandler("Runtime.evaluate", (params) => {
+      expression = (params as { expression: string }).expression;
+      return { result: { type: "object", value: { localStorageWrote: 1, sessionStorageWrote: 0, errors: [] } } };
+    });
+    const profile = emptyProfile({
+      storage: {
+        "https://example.com": {
+          localStorage: { a: "1" },
+          sessionStorage: { csrf: "STALE_TOKEN" },
+        },
+      },
+    });
+    await injectState(cdp, profile);
+    expect(expression).not.toContain("sessionStorage.setItem");
+    expect(expression).not.toContain("STALE_TOKEN");
+    expect(expression).toContain("sessionStorage.clear()");
+  });
+
+  it("skips an origin that only carries sessionStorage", async () => {
+    const profile = emptyProfile({
+      storage: {
+        "https://session-only.com": { localStorage: {}, sessionStorage: { a: "1" } },
+      },
+    });
+    const result = await injectState(cdp, profile);
+    expect(result.originsInjected).toEqual([]);
+    expect(cdp.callsForMethod("Page.navigate")).toHaveLength(0);
+  });
+
   it("skips origins whose storage is empty (no navigation)", async () => {
     const profile = emptyProfile({
       storage: {

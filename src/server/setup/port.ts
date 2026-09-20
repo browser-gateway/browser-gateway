@@ -5,6 +5,12 @@ export function resolvePort(cliOverride: string | undefined): number | undefined
   return Number.isFinite(n) ? n : undefined;
 }
 
+/**
+ * Bind interface. `HOST` always wins. Without `BG_TOKEN` every `/v1/*` route is
+ * unauthenticated, so the default is loopback — reaching the gateway from another
+ * machine requires either a token or an explicit `HOST=0.0.0.0`.
+ */
 export function resolveHost(): string {
-  return process.env.HOST ?? "0.0.0.0";
+  if (process.env.HOST) return process.env.HOST;
+  return process.env.BG_TOKEN ? "0.0.0.0" : "127.0.0.1";
 }

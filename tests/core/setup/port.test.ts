@@ -3,18 +3,23 @@ import { resolvePort, resolveHost } from "../../../src/server/setup/port.js";
 
 let prevPort: string | undefined;
 let prevHost: string | undefined;
+let prevToken: string | undefined;
 
 beforeEach(() => {
   prevPort = process.env.PORT;
   prevHost = process.env.HOST;
+  prevToken = process.env.BG_TOKEN;
   delete process.env.PORT;
   delete process.env.HOST;
+  delete process.env.BG_TOKEN;
 });
 afterEach(() => {
   if (prevPort === undefined) delete process.env.PORT;
   else process.env.PORT = prevPort;
   if (prevHost === undefined) delete process.env.HOST;
   else process.env.HOST = prevHost;
+  if (prevToken === undefined) delete process.env.BG_TOKEN;
+  else process.env.BG_TOKEN = prevToken;
 });
 
 describe("resolvePort", () => {
@@ -38,8 +43,14 @@ describe("resolvePort", () => {
 });
 
 describe("resolveHost", () => {
-  it("defaults to 0.0.0.0 (bind all interfaces)", () => {
+  it("defaults to 0.0.0.0 when BG_TOKEN is set", () => {
+    process.env.BG_TOKEN = "a-token";
     expect(resolveHost()).toBe("0.0.0.0");
+  });
+
+  it("defaults to loopback when BG_TOKEN is unset", () => {
+    delete process.env.BG_TOKEN;
+    expect(resolveHost()).toBe("127.0.0.1");
   });
 
   it("honors HOST env var (loopback-only setup)", () => {

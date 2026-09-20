@@ -137,13 +137,11 @@ describe("Auth - BG_TOKEN enforcement", () => {
     expect(res.status).toBe(401);
   });
 
-  it("should accept HTTP /v1/status with correct token", async () => {
+  it("should reject HTTP /v1/status with the token in the query string", async () => {
     const res = await fetch(
       `http://localhost:${GATEWAY_PORT}/v1/status?token=${AUTH_TOKEN}`
     );
-    expect(res.status).toBe(200);
-    const data = (await res.json()) as any;
-    expect(data.status).toBe("ok");
+    expect(res.status).toBe(401);
   });
 
   it("should accept HTTP /v1/status with Authorization header", async () => {

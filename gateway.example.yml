@@ -75,3 +75,9 @@ replay:
     format: jpeg                    # jpeg (small, default) | png (lossless, ~5x larger)
     quality: 70                     # 1-100, only used when format=jpeg
     everyNthFrame: 1                # 1 = every visual change; bump to skip frames
+
+# One-shot REST endpoints (/v1/screenshot, /v1/content, /v1/scrape). Targets are
+# restricted to http/https, and loopback, link-local and private-range hosts are
+# refused. List internal hostnames here to allow them.
+rest:
+  allowedPrivateHosts: []           # e.g. ["staging.internal", "127.0.0.1"]

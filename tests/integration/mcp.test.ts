@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { createServer, type Server } from "node:http";
+import { createServer, request as httpRequest, type Server } from "node:http";
 import { WebSocketServer } from "ws";
 import { type ChildProcess, spawn } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
@@ -182,6 +182,38 @@ logging:
 
     await client1.close();
     await client2.close();
+  });
+
+  function postMcp(headers: Record<string, string>): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: "127.0.0.1",
+          port: GATEWAY_PORT,
+          path: "/mcp",
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers },
+        },
+        (res) => {
+          res.resume();
+          res.on("end", () => resolve(res.statusCode ?? 0));
+        },
+      );
+      req.on("error", reject);
+      req.end(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }));
+    });
+  }
+
+  it("rejects /mcp from a foreign browser Origin", async () => {
+    expect(await postMcp({ Origin: "https://evil.example" })).toBe(403);
+  });
+
+  it("rejects /mcp when the Host is a rebound attacker name and no token is set", async () => {
+    expect(await postMcp({ Host: "evil.attacker.com" })).toBe(403);
+  });
+
+  it("lets /mcp through on a loopback Host with no Origin", async () => {
+    expect(await postMcp({ Host: `localhost:${GATEWAY_PORT}` })).not.toBe(403);
   });
 
   it("should return error when navigate fails with echo providers", async () => {
