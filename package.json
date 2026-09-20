@@ -175,7 +175,6 @@
     "@types/proper-lockfile": "^4.1.4",
     "@types/write-file-atomic": "^4.0.3",
     "@types/ws": "^8.18.1",
-    "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.5.0",
     "eslint-plugin-sonarjs": "^4.1.0",
     "husky": "^9.1.7",
