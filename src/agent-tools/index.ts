@@ -16,7 +16,7 @@ export type {
   ObservedDownload,
   ObservedRequestFailure,
 } from "./observe.js";
-export { waitForCondition } from "./wait.js";
+export { clampWaitTimeout, waitForCondition } from "./wait.js";
 export type { WaitCondition, WaitResult } from "./wait.js";
 export type { CdpSend, SnapshotDiff, SnapshotOptions, SnapshotResult } from "./snapshot.js";
 export { boxOfQuad, centerOfBox } from "./geometry.js";

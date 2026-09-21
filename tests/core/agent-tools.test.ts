@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CdpProtocolClient } from "../../src/core/cdp/protocol.js";
 import type { CdpTransport } from "../../src/core/cdp/protocol.js";
-import { AgentSession, NotActionableError, RefTable, StaleRefError, agentToolDefinitions } from "../../src/agent-tools/index.js";
+import { AgentSession, NotActionableError, RefTable, StaleRefError, agentToolDefinitions, clampWaitTimeout, waitForCondition } from "../../src/agent-tools/index.js";
 import { performAction } from "../../src/agent-tools/actions.js";
 
 interface AxNodeSpec {
@@ -535,6 +535,28 @@ describe("AgentSession", () => {
     await expect(session.navigate("https://slow.test", tab.tabId)).rejects.toThrow("Page.navigate timed out after 20ms");
   });
 
+  it("does not leave a dangling load rejection when the navigate command fails", async () => {
+    const fake = new FakeBrowser();
+    const session = new AgentSession(new CdpProtocolClient(fake), { commandTimeoutMs: 20, navigationTimeoutMs: 200 });
+    const tab = await session.openTab();
+    const original = fake.send.bind(fake);
+    fake.send = (frame: string): void => {
+      const msg = JSON.parse(frame) as { method: string };
+      if (msg.method === "Page.navigate") return;
+      original(frame);
+    };
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => void unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      await expect(session.navigate("https://slow.test", tab.tabId)).rejects.toThrow("timed out after 20ms");
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+    expect(unhandled).toEqual([]);
+  });
+
   it("fails a navigation that loads nothing before the navigation timeout", async () => {
     const fake = new FakeBrowser();
     const session = new AgentSession(new CdpProtocolClient(fake), { navigationTimeoutMs: 20 });
@@ -592,5 +614,40 @@ describe("tool definitions", () => {
     const [session] = agentToolDefinitions();
     const idle = session.inputSchema.properties["idleMinutes"] as Record<string, unknown>;
     expect(idle["maximum"]).toBe(30);
+  });
+});
+
+describe("waitForCondition", () => {
+  it("bounds a caller-supplied wait to one minute", () => {
+    expect(clampWaitTimeout(24 * 60 * 60 * 1000)).toBe(60_000);
+    expect(clampWaitTimeout(60_001)).toBe(60_000);
+    expect(clampWaitTimeout(Infinity)).toBe(10_000);
+    expect(clampWaitTimeout(Number.NaN)).toBe(10_000);
+    expect(clampWaitTimeout(undefined)).toBe(10_000);
+    expect(clampWaitTimeout(-5)).toBe(0);
+    expect(clampWaitTimeout(2_500)).toBe(2_500);
+  });
+
+  it("polls for the clamped window, not the one the caller asked for", async () => {
+    let polls = 0;
+    const send = async (): Promise<unknown> => {
+      polls++;
+      return { result: { value: false } };
+    };
+    const started = Date.now();
+    await expect(waitForCondition(send as never, "s1", { text: "never", timeoutMs: 300 })).rejects.toThrow(
+      "waited 300ms",
+    );
+    expect(Date.now() - started).toBeLessThan(3_000);
+    expect(polls).toBeLessThan(10);
+  });
+
+  it("resolves as soon as the condition holds", async () => {
+    let polls = 0;
+    const send = async (): Promise<unknown> => {
+      polls++;
+      return { result: { value: polls >= 3 } };
+    };
+    await expect(waitForCondition(send as never, "s1", { text: "soon" })).resolves.toMatchObject({ met: true });
   });
 });

@@ -15,7 +15,19 @@ export interface WaitResult {
 }
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10_000;
+const MAX_WAIT_TIMEOUT_MS = 60_000;
 const POLL_MS = 100;
+
+/** Bounds a caller-supplied wait to `MAX_WAIT_TIMEOUT_MS`.
+ *
+ *  The poll runs a CDP evaluate every 100ms for the whole window, so an
+ *  unbounded value would hold a browser and its provider slot indefinitely.
+ *  Non-numeric input falls back to the default rather than throwing.
+ */
+export function clampWaitTimeout(requested: number | undefined): number {
+  if (requested === undefined || !Number.isFinite(requested)) return DEFAULT_WAIT_TIMEOUT_MS;
+  return Math.min(Math.max(requested, 0), MAX_WAIT_TIMEOUT_MS);
+}
 
 /** Polls one page condition until it holds or the timeout expires. Throws with the
  *  condition and elapsed time so the agent can decide what to do next. */
@@ -25,7 +37,7 @@ export async function waitForCondition(
   condition: WaitCondition,
 ): Promise<WaitResult> {
   const expression = conditionExpression(condition);
-  const timeoutMs = condition.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
+  const timeoutMs = clampWaitTimeout(condition.timeoutMs);
   const started = Date.now();
 
   while (Date.now() - started < timeoutMs) {

@@ -158,6 +158,9 @@ export class AgentSession {
     tab.lastSnapshot = undefined;
 
     const loaded = this.waitForLoad(tab.cdpSessionId);
+    // Claim the rejection now: if the navigate command below throws, nothing
+    // awaits this promise and its later timeout would end the process.
+    loaded.catch(() => undefined);
     await this.send("Page.navigate", { url }, tab.cdpSessionId);
     await loaded;
 
