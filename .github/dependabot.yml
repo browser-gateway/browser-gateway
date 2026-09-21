@@ -19,6 +19,10 @@ updates:
       # public API surface lockfile, so they do not belong in a grouped PR.
       - dependency-name: typescript
         update-types: [version-update:semver-major]
+      # write-file-atomic 8 requires Node ^22.22.2, above our declared floor,
+      # so taking it would silently drop support for Node 20 and early 22.
+      - dependency-name: write-file-atomic
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: npm
     directory: /web
@@ -42,10 +46,18 @@ updates:
       - dependency-name: eslint-config-next
         update-types: [version-update:semver-major, version-update:semver-minor]
 
+  # One grouped PR, not one per action. Ungrouped, the default cap of five open
+  # PRs meant a backlog of ten outdated actions arrived five at a time: merging
+  # a batch immediately opened the next, which reads as dependabot looping.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: docker
     directory: /

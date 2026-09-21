@@ -160,7 +160,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
     "chrome-launcher": "^1.2.1",
-    "defuddle": "0.19.3",
+    "defuddle": "^0.19.4",
     "hono": "^4.12.26",
     "linkedom": "^0.18.0",
     "pino": "^10.3.1",
