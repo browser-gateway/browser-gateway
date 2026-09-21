@@ -29,6 +29,18 @@ updates:
       dashboard:
         patterns:
           - "*"
+    ignore:
+      # typescript-eslint has no TS 7 support, so TS 7 makes `npm run lint`
+      # in web/ fail to start. typescript-eslint#10940.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      # ESLint 10 breaks the eslint-plugin-react bundled inside
+      # eslint-config-next ("contextOrFilename.getFilename is not a function").
+      - dependency-name: eslint
+        update-types: [version-update:semver-major]
+      # Pinned to the next major we run, so it moves when next moves.
+      - dependency-name: eslint-config-next
+        update-types: [version-update:semver-major, version-update:semver-minor]
 
   - package-ecosystem: github-actions
     directory: /
