@@ -179,8 +179,11 @@ describe("runPageAction", () => {
       await new Promise((r) => setTimeout(r, 15));
       return "ok";
     });
-    expect(result.navigationMs).toBeGreaterThanOrEqual(10);
-    expect(result.actionMs).toBeGreaterThanOrEqual(15);
+    // A timer can fire a hair before its nominal delay, so the floors carry
+    // slack. The ordering check is what proves each field measured its own wait.
+    expect(result.navigationMs).toBeGreaterThanOrEqual(8);
+    expect(result.actionMs).toBeGreaterThanOrEqual(13);
+    expect(result.actionMs).toBeGreaterThan(result.navigationMs);
   });
 
   it("returns resolvedUrl from Runtime.evaluate", async () => {

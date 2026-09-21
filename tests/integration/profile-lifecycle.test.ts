@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { WebSocket, WebSocketServer } from "ws";
 import { enableBrowserserveDropOff, type BrowserserveDropOffState } from "./profile-fixtures/browserserve-mock.js";
-import { reservePort, waitForGatewayHealth } from "../helpers/harness.js";
+import { reservePort, waitForGatewayHealth, waitUntil } from "../helpers/harness.js";
 
 const PROFILE_DIR = mkdtempSync(join(tmpdir(), "bg-profile-lifecycle-test-"));
 const CONFIG_PATH = join(PROFILE_DIR, "gateway.yml");
@@ -226,11 +226,9 @@ describe("Phase 3: ?profile= lifecycle wiring", () => {
     await sleep(200);
     ws.close();
 
-    // Give the gateway a beat to commit
-    await sleep(800);
-
+    await waitUntil(() => provider.dropOff.pickUpCalls >= 1, "the gateway to commit the captured cookie", 10_000);
     expect(provider.dropOff.pickUpCalls).toBeGreaterThanOrEqual(1);
-  }, 15_000);
+  }, 30_000);
 
   it("second connect with same profile id injects the captured cookie", async () => {
     // Clear the provider — simulates a fresh browser
@@ -240,12 +238,12 @@ describe("Phase 3: ?profile= lifecycle wiring", () => {
     const ws = await connectGateway("acme-first");
     await sleep(200);
     ws.close();
-    await sleep(800);
 
+    await waitUntil(() => provider.dropOff.dropOffCalls >= 1, "the gateway to inject the saved cookie", 10_000);
     expect(provider.dropOff.dropOffCalls).toBeGreaterThanOrEqual(1);
     const injected = provider.dropOff.latestPayload?.cookies as MockCookie[] | undefined;
     expect(injected?.find((c) => c.name === "session")?.value).toBe("alice");
-  }, 15_000);
+  }, 30_000);
 
   it("rejects ?profile= with invalid characters", async () => {
     const res = await expectConnectFails("..weird/id").catch((e) => e as Error);
