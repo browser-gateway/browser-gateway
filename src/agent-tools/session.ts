@@ -11,7 +11,7 @@ import {
 import { performAction, type ActionStep } from "./actions.js";
 import { captureScreenshot, extractContent, type ExtractOptions, type ExtractResult, type ScreenshotOptions, type ScreenshotResult } from "./read.js";
 import { enableObservation, Observations, type DialogPolicy, type ObservationSnapshot } from "./observe.js";
-import { waitForCondition, type WaitCondition, type WaitResult } from "./wait.js";
+import { clampWaitTimeout, waitForCondition, waitForQuiet, type WaitCondition, type WaitResult } from "./wait.js";
 import { SessionPolicy, type SessionPolicyOptions, type SessionState } from "./policy.js";
 
 export interface TabHandle {
@@ -70,6 +70,7 @@ const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 const DEFAULT_SETTLE_MS = 500;
 const MAX_SETTLE_MS = 10_000;
+const WAIT_REPLY_GRACE_MS = 5_000;
 
 /** One agent session bound to a browser-level CDP connection. Owns its tabs and
  *  their element reference tables; nothing is shared between sessions. */
@@ -134,8 +135,6 @@ export class AgentSession {
 
     this.attachObservers();
     await this.send("Page.enable", {}, attached.sessionId);
-    await this.send("DOM.enable", {}, attached.sessionId);
-    await this.send("Accessibility.enable", {}, attached.sessionId);
     await enableObservation(this.sender(), attached.sessionId, { pageConsole: this.opts.pageConsole === true });
 
     const tab: TabHandle = {
@@ -164,6 +163,7 @@ export class AgentSession {
     await this.send("Page.navigate", { url }, tab.cdpSessionId);
     await loaded;
 
+    await tab.refs.world.warm(this.sender(), tab.cdpSessionId);
     tab.url = await this.currentUrl(tab);
     const title = await this.currentTitle(tab);
     const snapshot = await this.snapshot({}, tab.tabId);
@@ -197,7 +197,7 @@ export class AgentSession {
 
     await this.settle(tab, opts.settleMs ?? DEFAULT_SETTLE_MS);
     const snapshot = await this.snapshot(opts.snapshot ?? {}, tab.tabId);
-    tab.url = await this.currentUrl(tab);
+    tab.url = tab.refs.lastUrl ?? (await this.currentUrl(tab));
     this.policy.touch();
     return {
       ok: failedStep === undefined,
@@ -243,7 +243,8 @@ export class AgentSession {
   async waitFor(condition: WaitCondition, tabId?: string): Promise<WaitResult> {
     const tab = await this.requireTab(tabId);
     this.policy.touch();
-    return waitForCondition(this.sender(), tab.cdpSessionId, condition);
+    const window = clampWaitTimeout(condition.timeoutMs);
+    return waitForCondition(this.sender(window + WAIT_REPLY_GRACE_MS), tab.cdpSessionId, tab.refs, condition);
   }
 
   /** Runs an expression in the page and returns its value. */
@@ -359,8 +360,8 @@ export class AgentSession {
     });
   }
 
-  private sender(): CdpSend {
-    return (method, params, sessionId) => this.send(method, params, sessionId);
+  private sender(minTimeoutMs?: number): CdpSend {
+    return (method, params, sessionId) => this.send(method, params, sessionId, minTimeoutMs);
   }
 
   private async settle(tab: TabHandle, settleMs: number): Promise<void> {
@@ -371,11 +372,14 @@ export class AgentSession {
       if (params.__sessionId === tab.cdpSessionId) navigated = true;
     };
     this.cdp.on("Page.loadEventFired", handler);
-    await new Promise((resolve) => setTimeout(resolve, wait));
+    await waitForQuiet(this.sender(), tab.cdpSessionId, tab.refs, wait).catch(() =>
+      new Promise((resolve) => setTimeout(resolve, wait)),
+    );
     this.cdp.off("Page.loadEventFired", handler);
     if (navigated) {
       tab.refs.clear();
       tab.lastSnapshot = undefined;
+      await tab.refs.world.warm(this.sender(), tab.cdpSessionId);
     }
   }
 
@@ -383,8 +387,9 @@ export class AgentSession {
     method: string,
     params: Record<string, unknown>,
     sessionId: string | undefined,
+    minTimeoutMs = 0,
   ): Promise<unknown> {
-    const timeoutMs = this.opts.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+    const timeoutMs = Math.max(this.opts.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS, minTimeoutMs);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([

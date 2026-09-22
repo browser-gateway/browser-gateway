@@ -1,28 +1,40 @@
+import { PageWorld } from "./world.js";
+
 export interface RefEntry {
-  backendNodeId: number;
   role: string;
   name: string;
 }
 
-/** Per-tab element reference table. Refs (`e1`, `e2`, ...) stay valid until the
- *  next snapshot of that tab; navigation clears them. */
-export class RefTable {
-  private entries = new Map<string, RefEntry>();
-  private next = 1;
+// TODO(isaac): no backend-node-id recovery map — when the world dies every ref is
+// rebuilt and nothing is reported as new. Building it costs the round trips this
+// design removed, so it waits for a cheap bulk node-id read.
 
-  add(entry: RefEntry): string {
-    const id = `e${this.next++}`;
-    this.entries.set(id, entry);
-    return id;
+/** Per-tab element reference table plus the isolated world the refs live in.
+ *  Refs (`e1`, `e2`, ...) are assigned in the page and reused across snapshots
+ *  while an element keeps its role and name; navigation rebuilds them. */
+export class RefTable {
+  readonly world = new PageWorld();
+  /** URL the page reported during the last read, so a caller does not spend a
+   *  round trip asking for it again. */
+  lastUrl: string | undefined;
+  private entries = new Map<string, RefEntry>();
+
+  set(ref: string, entry: RefEntry): void {
+    this.entries.set(ref, entry);
   }
 
   get(ref: string): RefEntry | undefined {
     return this.entries.get(ref);
   }
 
+  replaceAll(next: Iterable<[string, RefEntry]>): void {
+    this.entries = new Map(next);
+  }
+
   clear(): void {
     this.entries.clear();
-    this.next = 1;
+    this.lastUrl = undefined;
+    this.world.reset();
   }
 
   get size(): number {

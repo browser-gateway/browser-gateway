@@ -1,7 +1,4 @@
-export interface Point {
-  x: number;
-  y: number;
-}
+import type { Point } from "./types.js";
 
 export interface Box {
   left: number;

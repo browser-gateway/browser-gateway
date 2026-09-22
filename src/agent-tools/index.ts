@@ -16,11 +16,13 @@ export type {
   ObservedDownload,
   ObservedRequestFailure,
 } from "./observe.js";
-export { clampWaitTimeout, waitForCondition } from "./wait.js";
+export { clampWaitTimeout, waitForCondition, waitForQuiet } from "./wait.js";
 export type { WaitCondition, WaitResult } from "./wait.js";
-export type { CdpSend, SnapshotDiff, SnapshotOptions, SnapshotResult } from "./snapshot.js";
+export { PageWorld } from "./world.js";
+export type { CdpSend, Point } from "./types.js";
+export type { SnapshotDiff, SnapshotOptions, SnapshotResult } from "./snapshot.js";
 export { boxOfQuad, centerOfBox } from "./geometry.js";
-export type { Box, Point } from "./geometry.js";
+export type { Box } from "./geometry.js";
 export { KEY_SPECS, keySpecFor } from "./keys.js";
 export type { KeySpec } from "./keys.js";
 export { agentInstructions } from "./instructions.js";

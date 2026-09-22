@@ -56,6 +56,23 @@ const CONTENT_HTML = `<!doctype html><html><head><title>Content</title></head><b
 const SECOND_HTML = `<!doctype html><html><head><title>Second page</title></head><body>
 <button id="only">Only button</button></body></html>`;
 
+const VISIBILITY_HTML = `<!doctype html><html><head><title>Visibility</title>
+<style>#overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9}</style></head><body>
+<button id="onscreen" type="button">On screen</button>
+<button id="hidden-css" type="button" style="display:none">Hidden by display</button>
+<button id="invisible" type="button" style="visibility:hidden">Hidden by visibility</button>
+<button id="transparent" type="button" style="opacity:0">Hidden by opacity</button>
+<button id="covered" type="button" onclick="document.title='covered clicked'">Covered</button>
+<div id="overlay"></div>
+<div style="height:4000px"></div>
+<button id="below" type="button">Below the fold</button>
+</body></html>`;
+
+function bigPage(count: number): string {
+  const buttons = Array.from({ length: count }, (_, i) => `<button type="button">Item ${i}</button>`).join("");
+  return `<!doctype html><html><head><title>Big</title></head><body>${buttons}</body></html>`;
+}
+
 class NodeWsTransport implements CdpTransport {
   private ws: WebSocket;
   constructor(url: string) {
@@ -81,6 +98,32 @@ class NodeWsTransport implements CdpTransport {
   }
 }
 
+/** Counts every CDP command written to the wire, which on a remote provider is one
+ *  network round trip each unless the client pipelines them. */
+class CountingTransport implements CdpTransport {
+  methods: string[] = [];
+  constructor(private readonly inner: CdpTransport) {}
+  ready(): Promise<void> {
+    return (this.inner as NodeWsTransport).ready();
+  }
+  send(data: string): void {
+    this.methods.push(String((JSON.parse(data) as { method?: string }).method));
+    this.inner.send(data);
+  }
+  onMessage(cb: (data: string) => void): void {
+    this.inner.onMessage(cb);
+  }
+  onClose(cb: (reason?: string) => void): void {
+    this.inner.onClose(cb);
+  }
+  close(): Promise<void> {
+    return this.inner.close();
+  }
+  reset(): void {
+    this.methods = [];
+  }
+}
+
 const chromePath = (() => {
   try {
     return chromeLauncher.Launcher.getInstallations()[0] ?? null;
@@ -101,6 +144,18 @@ async function readOut(session: AgentSession): Promise<string> {
   return String(res.result?.value ?? "");
 }
 
+const STYLED_SELECT_HTML = `<!doctype html><html><body>
+<label id="lang" style="position:relative;display:inline-block;cursor:pointer;padding:4px 8px;border:1px solid #999">
+  <span>en</span>
+  <select id="pick" style="position:absolute;inset:0;opacity:0;width:100%;height:100%"
+    onchange="document.getElementById('out').textContent='lang ' + this.value">
+    <option value="en">English</option><option value="fr">Francais</option>
+  </select>
+</label>
+<p id="out">lang en</p>
+<button>Pay <svg width="10" height="10"><style>.st0 { fill:#0071ce; }</style><rect class="st0" width="10" height="10"/></svg> Card</button>
+</body></html>`;
+
 describe.skipIf(!chromePath)("agent-tools against a real Chrome", () => {
   let httpServer: Server;
   let baseUrl: string;
@@ -115,13 +170,22 @@ describe.skipIf(!chromePath)("agent-tools against a real Chrome", () => {
         res.end("nope");
         return;
       }
+      const url = req.url ?? "";
+      const big = /^\/big\/(\d+)$/.exec(url);
+      if (big) {
+        res.writeHead(200, { "content-type": "text/html" });
+        res.end(bigPage(Number(big[1])));
+        return;
+      }
       const pages: Record<string, string> = {
         "/second": SECOND_HTML,
         "/interactive": INTERACTIVE_HTML,
         "/content": CONTENT_HTML,
+        "/visibility": VISIBILITY_HTML,
+        "/styled-select": STYLED_SELECT_HTML,
       };
       res.writeHead(200, { "content-type": "text/html" });
-      res.end(pages[req.url ?? ""] ?? PAGE_HTML);
+      res.end(pages[url] ?? PAGE_HTML);
     });
     await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
     baseUrl = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
@@ -159,14 +223,16 @@ describe.skipIf(!chromePath)("agent-tools against a real Chrome", () => {
 
   async function connect(extra: { pageConsole?: boolean } = {}): Promise<{
     session: AgentSession;
+    wire: CountingTransport;
     dispose: () => Promise<void>;
   }> {
-    const transport = new NodeWsTransport(browserWsUrl);
-    await transport.ready();
-    const cdp = new CdpProtocolClient(transport);
+    const wire = new CountingTransport(new NodeWsTransport(browserWsUrl));
+    await wire.ready();
+    const cdp = new CdpProtocolClient(wire);
     const session = new AgentSession(cdp, { navigationTimeoutMs: 20_000, ...extra });
     return {
       session,
+      wire,
       dispose: async () => {
         await session.close().catch(() => undefined);
         await cdp.close().catch(() => undefined);
@@ -309,6 +375,23 @@ describe.skipIf(!chromePath)("agent-tools against a real Chrome", () => {
 
       await session.act([{ type: "select", ref: comboRef, text: "Bravo" }], { settleMs: 200 });
       expect(await readOut(session)).toBe("picked b");
+    } finally {
+      await dispose();
+    }
+  }, 60_000);
+
+  it("reports a dropdown hidden under a styled label as a dropdown the agent can choose from", async () => {
+    const { session, dispose } = await connect();
+    try {
+      await session.navigate(`${baseUrl}/styled-select`);
+      const snap = await session.snapshot();
+      const line = snap.text.split("\n").find((l) => l.includes('"en"'));
+      expect(line, snap.text).toMatch(/^e\d+ combobox "en"/);
+      expect(snap.text, "plain text is not a control").not.toContain('"lang en"');
+      expect(snap.text, "icon styles stay out of names").toMatch(/button "Pay Card"/);
+      const ref = line!.split(" ")[0]!;
+      await session.act([{ type: "select", ref, text: "Francais" }], { settleMs: 200 });
+      expect(await readOut(session)).toBe("lang fr");
     } finally {
       await dispose();
     }
@@ -505,6 +588,115 @@ describe.skipIf(!chromePath)("agent-tools against a real Chrome", () => {
       await expect(session.act([step], { settleMs: 0, actionabilityTimeoutMs: 200 })).rejects.toThrow(
         "failed 3 times in a row",
       );
+    } finally {
+      await dispose();
+    }
+  }, 60_000);
+
+  it("costs one round trip to read a page, however many elements it has", async () => {
+    const { session, wire, dispose } = await connect();
+    try {
+      const counts: number[] = [];
+      for (const size of [10, 1000]) {
+        await session.navigate(`${baseUrl}/big/${size}`);
+        wire.reset();
+        const snap = await session.snapshot({ scope: "full", maxLines: size + 10 });
+        expect(snap.text).toContain(`Item ${size - 1}`);
+        counts.push(wire.methods.length);
+      }
+      expect(counts[0]).toBe(1);
+      expect(counts[1]).toBe(1);
+      expect(wire.methods).toEqual(["Runtime.evaluate"]);
+    } finally {
+      await dispose();
+    }
+  }, 120_000);
+
+  it("costs one page call plus one burst of input to click", async () => {
+    const { session, wire, dispose } = await connect();
+    try {
+      await session.navigate(`${baseUrl}/interactive`);
+      const snap = await session.snapshot({ scope: "full" });
+      const goRef = snap.text.split("\n").find((l) => l.includes('"Go"'))!.split(" ")[0]!;
+      wire.reset();
+      await session.act([{ type: "click", ref: goRef }], { settleMs: 0, snapshot: { scope: "full" } });
+      const evaluates = wire.methods.filter((m) => m === "Runtime.evaluate");
+      expect(wire.methods.filter((m) => m === "Input.dispatchMouseEvent")).toHaveLength(3);
+      expect(evaluates.length).toBeLessThanOrEqual(3);
+      expect(wire.methods.filter((m) => m === "DOM.getBoxModel")).toHaveLength(0);
+    } finally {
+      await dispose();
+    }
+  }, 60_000);
+
+  it("never asks the browser for one element's geometry at a time", async () => {
+    const { session, wire, dispose } = await connect();
+    try {
+      await session.navigate(`${baseUrl}/big/400`);
+      await session.snapshot({ scope: "full", maxLines: 500 });
+      await session.snapshot();
+      expect(wire.methods.filter((m) => m === "DOM.getBoxModel")).toHaveLength(0);
+      expect(wire.methods.filter((m) => m === "Accessibility.getFullAXTree")).toHaveLength(0);
+    } finally {
+      await dispose();
+    }
+  }, 120_000);
+
+  it("leaves hidden elements out of the snapshot entirely", async () => {
+    const { session, dispose } = await connect();
+    try {
+      await session.navigate(`${baseUrl}/visibility`);
+      const full = await session.snapshot({ scope: "full", maxLines: 100 });
+      expect(full.text).toContain("On screen");
+      expect(full.text).not.toContain("Hidden by display");
+      expect(full.text).not.toContain("Hidden by visibility");
+      expect(full.text).not.toContain("Hidden by opacity");
+    } finally {
+      await dispose();
+    }
+  }, 60_000);
+
+  it("counts a scrolled-out element as outside the viewport, not as missing", async () => {
+    const { session, dispose } = await connect();
+    try {
+      await session.navigate(`${baseUrl}/visibility`);
+      const viewport = await session.snapshot();
+      expect(viewport.text).not.toContain("Below the fold");
+      expect(viewport.text).toContain("elements outside the viewport");
+      const full = await session.snapshot({ scope: "full", maxLines: 100 });
+      expect(full.text).toContain("Below the fold");
+    } finally {
+      await dispose();
+    }
+  }, 60_000);
+
+  it("refuses to click an element sitting behind an overlay", async () => {
+    const { session, dispose } = await connect();
+    try {
+      await session.navigate(`${baseUrl}/visibility`);
+      const snap = await session.snapshot({ scope: "full", maxLines: 100 });
+      const coveredRef = snap.text.split("\n").find((l) => l.includes('"Covered"'))!.split(" ")[0]!;
+      const result = await session.act([{ type: "click", ref: coveredRef }], {
+        settleMs: 0,
+        actionabilityTimeoutMs: 600,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.failedStep?.error).toContain("covered by another element");
+      expect(await session.evaluate<string>("document.title")).toBe("Visibility");
+    } finally {
+      await dispose();
+    }
+  }, 60_000);
+
+  it("keeps a ref stable across reads while the element keeps its role and name", async () => {
+    const { session, dispose } = await connect();
+    try {
+      await session.navigate(`${baseUrl}/interactive`);
+      const first = await session.snapshot({ scope: "full" });
+      const second = await session.snapshot({ scope: "full" });
+      const refOf = (text: string, label: string): string =>
+        text.split("\n").find((l) => l.includes(label))!.split(" ")[0]!;
+      expect(refOf(second.text, '"Go"')).toBe(refOf(first.text, '"Go"'));
     } finally {
       await dispose();
     }

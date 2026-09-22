@@ -1,8 +1,8 @@
-import { boxOfQuad } from "./geometry.js";
 import { fnv1a } from "./hash.js";
 import type { RefTable } from "./refs.js";
 import { StaleRefError } from "./actions.js";
-import type { CdpSend } from "./snapshot.js";
+import { RESOLVE_FN, type PageResolveReply } from "./page-script.js";
+import type { CdpSend } from "./types.js";
 
 export type ExtractFormat = "text" | "markdown" | "links";
 
@@ -115,20 +115,14 @@ export async function captureScreenshot(
   };
 
   if (opts.ref) {
-    const entry = refs.get(opts.ref);
-    if (!entry) throw new StaleRefError(opts.ref, "Take a fresh snapshot and use the new refs.");
-    const model = (await send("DOM.getBoxModel", { backendNodeId: entry.backendNodeId }, sessionId)) as {
-      model?: { content?: number[] };
-    };
-    const box = boxOfQuad(model.model?.content);
-    if (!box) throw new StaleRefError(opts.ref, "The element has no visible box. Take a fresh snapshot.");
-    params.clip = {
-      x: box.left,
-      y: box.top,
-      width: box.right - box.left,
-      height: box.bottom - box.top,
-      scale: 1,
-    };
+    if (!refs.get(opts.ref)) throw new StaleRefError(opts.ref, "Take a fresh snapshot and use the new refs.");
+    const box = await refs.world.call<PageResolveReply>(send, sessionId, RESOLVE_FN, {
+      ref: opts.ref,
+      mode: "rect",
+      deadlineMs: 0,
+    });
+    if (!box?.ok) throw new StaleRefError(opts.ref, "The element has no visible box. Take a fresh snapshot.");
+    params.clip = { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 };
   }
 
   const shot = (await send("Page.captureScreenshot", params, sessionId)) as { data?: string };
