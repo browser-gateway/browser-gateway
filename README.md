@@ -21,6 +21,10 @@
 </p>
 
 <p align="center">
+  <a href="https://devhunt.org/tool/browsergateway"><img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/devhunt-product-of-the-week.svg" alt="BrowserGateway is the #1 Tool of the Week on DevHunt" height="60" /></a>
+</p>
+
+<p align="center">
   <a href="https://railway.com/new/template/browser-gateway?utm_medium=integration&amp;utm_source=button&amp;utm_campaign=browser-gateway"><img src="https://railway.com/button.svg" alt="Deploy on Railway" height="32" /></a>
   &nbsp;
   <a href="https://render.com/deploy?repo=https://github.com/browser-gateway/browser-gateway"><img src="https://render.com/images/deploy-to-render-button.svg" alt="Deploy to Render" height="32" /></a>
