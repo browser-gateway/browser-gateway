@@ -13,15 +13,15 @@
 </p>
 
 <p align="center">
+  <a href="https://devhunt.org/tool/browsergateway"><img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/devhunt-product-of-the-week.svg" alt="BrowserGateway is the #1 Tool of the Week on DevHunt" height="60" /></a>
+</p>
+
+<p align="center">
   <a href="https://www.npmjs.com/package/browser-gateway"><img src="https://img.shields.io/npm/v/browser-gateway?style=flat-square&logo=npm&logoColor=white" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/browser-gateway"><img src="https://img.shields.io/npm/dm/browser-gateway?style=flat-square&label=downloads" alt="npm downloads" /></a>
   <a href="./LICENSE"><img src="https://img.shields.io/npm/l/browser-gateway?style=flat-square" alt="MIT license" /></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/browser-gateway?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js" /></a>
   <a href="https://github.com/browser-gateway/browser-gateway"><img src="https://img.shields.io/github/stars/browser-gateway/browser-gateway?style=flat-square&logo=github&logoColor=white" alt="GitHub stars" /></a>
-</p>
-
-<p align="center">
-  <a href="https://devhunt.org/tool/browsergateway"><img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/devhunt-product-of-the-week.svg" alt="BrowserGateway is the #1 Tool of the Week on DevHunt" height="60" /></a>
 </p>
 
 <p align="center">
