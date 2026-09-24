@@ -82,7 +82,7 @@ RUN chmod +x /usr/local/bin/bg-entrypoint
 EXPOSE 9500
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://localhost:9500/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+  CMD ["node", "-e", "fetch('http://localhost:9500/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/bg-entrypoint"]
 CMD ["serve"]
