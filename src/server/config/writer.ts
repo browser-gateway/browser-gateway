@@ -28,6 +28,9 @@ export function writeConfig(config: GatewayConfig, configPath?: string): void {
     if (provider.multiProfile) {
       entry.multiProfile = true;
     }
+    if (provider.headers && Object.keys(provider.headers).length > 0) {
+      entry.headers = provider.headers;
+    }
     providers[id] = entry;
   }
 
