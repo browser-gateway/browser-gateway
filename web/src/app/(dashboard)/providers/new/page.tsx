@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import {
   fetchProviders,
   fetchProfiles,
+  routableProviders,
   type ProviderConfigItem,
   type ProfileMetaItem,
 } from "@/lib/api";
@@ -25,7 +26,7 @@ export default function NewProviderPage() {
         const [p, profs] = await Promise.all([fetchProviders(), fetchProfiles()]);
         if (cancelled) return;
         setSiblings(
-          p.providers.map((x: ProviderConfigItem) => ({
+          routableProviders(p.providers).map((x: ProviderConfigItem) => ({
             slug: x.id,
             priority: x.priority,
             weight: x.weight,

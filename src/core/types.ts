@@ -29,6 +29,8 @@ export const ProviderConfigSchema = z
      * etc.). Header values here override any same-named client-provided header.
      */
     headers: z.record(z.string(), z.string()).optional(),
+    /** `false` keeps the provider configured but never routes to, probes, or health-checks it. Omitted means enabled. */
+    enabled: z.boolean().optional(),
   })
   .refine((c) => !(c.profile && c.multiProfile), {
     message: "provider.profile and provider.multiProfile are mutually exclusive",

@@ -61,6 +61,7 @@ export function parseProviderConfigBody(
   const weight = body.weight as number | undefined;
   const profile = body.profile as string | null | undefined;
   const multiProfile = body.multiProfile as boolean | undefined;
+  const enabled = body.enabled as boolean | undefined;
   const headers = raw.headers;
 
   const candidate = {
@@ -73,6 +74,7 @@ export function parseProviderConfigBody(
     profile: profile === null ? undefined : (profile ?? existing?.profile),
     multiProfile: multiProfile ?? existing?.multiProfile ?? false,
     headers: headers === null ? undefined : (headers ?? existing?.headers),
+    enabled: enabled ?? existing?.enabled,
   };
 
   const parsed = ProviderConfigSchema.safeParse(candidate);

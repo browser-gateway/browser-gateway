@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-09-22
+Generated: 2026-09-24
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -331,18 +331,18 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/types.ts`
 
 - **const** `const ProviderConfigSchema` (line 4)
-- **const** `const WebhookSchema` (line 75)
-- **const** `const ProfilesConfigSchema` (line 88)
-- **type** `type ProfilesConfig` (line 104)
-- **const** `const ReplayConfigSchema` (line 116)
-- **type** `type ReplayConfig` (line 124)
-- **const** `const RestConfigSchema` (line 126)
-- **type** `type RestConfig` (line 134)
-- **const** `const GatewayConfigSchema` (line 136)
-- **type** `type ProviderConfig` (line 149)
-- **type** `type GatewayConfig` (line 150)
-- **interface** `interface ProviderState` (line 152)
-- **interface** `interface Session` (line 169)
+- **const** `const WebhookSchema` (line 77)
+- **const** `const ProfilesConfigSchema` (line 90)
+- **type** `type ProfilesConfig` (line 106)
+- **const** `const ReplayConfigSchema` (line 118)
+- **type** `type ReplayConfig` (line 126)
+- **const** `const RestConfigSchema` (line 128)
+- **type** `type RestConfig` (line 136)
+- **const** `const GatewayConfigSchema` (line 138)
+- **type** `type ProviderConfig` (line 151)
+- **type** `type GatewayConfig` (line 152)
+- **interface** `interface ProviderState` (line 154)
+- **interface** `interface Session` (line 171)
 
 ## Server layer (src/server/)
 
@@ -602,12 +602,12 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 16) — Format a Zod error into a human-readable list of "path: message" strings.
 - **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 49) — Parse a provider config body (from POST or PUT /v1/providers/...).
-- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 86) — Validate a webhook request body against {@link WebhookSchema}.
+- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 88) — Validate a webhook request body against {@link WebhookSchema}.
 - **fn** `parseYamlGatewayConfig(yaml: string) → Promise<
   | { kind: "parse-error"; message: string }
   | { kind: "validation-error"; errors: string[] }
   | { kind: "ok"; data: GatewayConfig }
->` (line 104) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
+>` (line 106) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/pipeline-relay.ts`
 
 - **interface** `interface PipelineRelayOpts` (line 15)

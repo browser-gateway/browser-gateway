@@ -632,6 +632,10 @@ async function checkProviders() {
   let allHealthy = true;
 
   for (const [id, provider] of Object.entries(config.providers)) {
+    if (provider.enabled === false) {
+      console.log(`  ${id.padEnd(25)} SKIP  disabled`);
+      continue;
+    }
     const start = Date.now();
     try {
       await probeWebSocket(provider.url, 5000);

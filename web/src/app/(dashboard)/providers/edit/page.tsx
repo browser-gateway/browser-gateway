@@ -7,6 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import {
   fetchProviders,
   fetchProfiles,
+  routableProviders,
   type ProviderConfigItem,
   type ProfileMetaItem,
 } from "@/lib/api";
@@ -41,7 +42,7 @@ export default function EditProviderPage() {
         } else {
           setInitial(match);
           setSiblings(
-            p.providers.map((x: ProviderConfigItem) => ({
+            routableProviders(p.providers).map((x: ProviderConfigItem) => ({
               slug: x.id,
               priority: x.priority,
               weight: x.weight,

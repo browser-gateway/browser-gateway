@@ -21,7 +21,7 @@ import { ArrowLeft, ArrowRight, Loader2, Maximize2, Minimize2, Pause, Play, Refr
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, type SelectOption } from "@/components/ui/select";
-import { fetchProfiles, fetchProviders, type ProfileMetaItem, type ProviderConfigItem } from "@/lib/api";
+import { fetchProfiles, fetchProviders, routableProviders, type ProfileMetaItem, type ProviderConfigItem } from "@/lib/api";
 import { LiveClient, eventModifiers, mouseButton, type FrameMeta } from "@/lib/live-client";
 import { useAuthEnabled, useGatewayToken } from "@/components/token-autofill";
 import { NavGuard } from "@/components/nav-guard";
@@ -130,9 +130,10 @@ export default function PlaygroundPage() {
   useEffect(() => {
     fetchProviders()
       .then((r) => {
-        setProviders(r.providers);
-        if (!selectedProvider && r.providers.length > 0) {
-          setSelectedProvider(r.providers[0].id);
+        const routable = routableProviders(r.providers);
+        setProviders(routable);
+        if (!selectedProvider && routable.length > 0) {
+          setSelectedProvider(routable[0].id);
         }
       })
       .catch((err) => {

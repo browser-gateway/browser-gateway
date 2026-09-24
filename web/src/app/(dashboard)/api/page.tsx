@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CodeBlock } from "@/components/code-block";
 import { EndpointReference } from "@/components/endpoint-reference";
-import { fetchProfiles, type ProfileMetaItem, fetchProviders } from "@/lib/api";
+import { fetchProfiles, type ProfileMetaItem, fetchProviders, routableProviders } from "@/lib/api";
 import { contentDoc, scrapeDoc, screenshotDoc } from "./docs";
 
 export default function ApiPage() {
@@ -35,7 +35,7 @@ export default function ApiPage() {
         setProfiles([]);
       });
     fetchProviders()
-      .then((r) => setProviders(r.providers.map((p) => ({ id: p.id }))))
+      .then((r) => setProviders(routableProviders(r.providers).map((p) => ({ id: p.id }))))
       .catch(() => setProviders([]));
   }, []);
 

@@ -467,6 +467,20 @@ export function createApp(
     }));
   }
 
+  function saveProvider(id: string, next: ProviderConfig, previous: ProviderConfig | undefined) {
+    gateway.config.providers[id] = next;
+    gateway.applyProviderConfig(id, next);
+    return persistConfigOrRollback(gateway.config, () => {
+      if (previous) {
+        gateway.config.providers[id] = previous;
+        gateway.applyProviderConfig(id, previous);
+        return;
+      }
+      delete gateway.config.providers[id];
+      gateway.registry.remove(id);
+    });
+  }
+
   // Provider CRUD endpoints
   app.get("/v1/providers", (c) => {
     const providers = Object.entries(gateway.config.providers).map(([id, p]) => {
@@ -486,6 +500,7 @@ export function createApp(
         profile: p.profile ?? null,
         multiProfile: p.multiProfile || state?.detectedKind === "browserserve" || false,
         headers: p.headers ? redactHeaders(p.headers) : null,
+        enabled: p.enabled !== false,
       };
     });
     return c.json({ providers });
@@ -529,21 +544,11 @@ export function createApp(
     const validated = await validateProviderBody(body);
     if (validated.error) return c.json(validated.error, 400);
 
-    gateway.config.providers[id] = validated.data;
-    gateway.registry.register(id, validated.data);
-
-    try {
-      writeConfig(gateway.config);
-    } catch (err) {
-      // Roll back the in-memory add so the API call is atomic — otherwise a
-      // failed disk write leaves the gateway with a provider that won't
-      // survive restart, and the dashboard's success-vs-error path forks.
-      delete gateway.config.providers[id];
-      gateway.registry.remove(id);
-      const reason = err instanceof Error ? err.message : String(err);
+    const failure = saveProvider(id, validated.data, undefined);
+    if (failure) {
       return c.json({
         error: "Cannot persist provider to disk",
-        details: [reason, "Set BG_DATA_DIR to a writable path (e.g. /data) or mount gateway.yml with write permission."],
+        details: [...failure.details, "Set BG_DATA_DIR to a writable path (e.g. /data) or mount gateway.yml with write permission."],
       }, 500);
     }
 
@@ -561,18 +566,8 @@ export function createApp(
     const validated = await validateProviderBody(body, existing);
     if (validated.error) return c.json(validated.error, 400);
 
-    gateway.config.providers[id] = validated.data;
-
-    const state = gateway.registry.get(id);
-    if (state) {
-      state.config = validated.data;
-    }
-
-    try {
-      writeConfig(gateway.config);
-    } catch {
-      return c.json({ error: "Provider updated but failed to save config file" }, 500);
-    }
+    const failure = saveProvider(id, validated.data, existing);
+    if (failure) return c.json(failure, 500);
 
     return c.json({ ok: true, id });
   });
@@ -583,7 +578,7 @@ export function createApp(
       return c.json({ error: `Provider '${id}' not found` }, 404);
     }
 
-    const state = gateway.registry.get(id);
+    const state = gateway.registry.getIncludingDisabled(id);
     if (state && state.active > 0) {
       return c.json({ error: `Provider '${id}' has ${state.active} active connections. Disconnect them first.` }, 409);
     }

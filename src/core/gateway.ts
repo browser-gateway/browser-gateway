@@ -1,7 +1,7 @@
 import { redactConnectionUrl } from "./redact.js";
 import { EventEmitter } from "node:events";
 import type { Logger } from "pino";
-import type { GatewayConfig, ProviderState } from "./types.js";
+import type { GatewayConfig, ProviderConfig, ProviderState } from "./types.js";
 import { ProviderRegistry } from "./providers/registry.js";
 import { HealthChecker } from "./providers/health.js";
 import { ProviderSelector, isEligibleForProfile, type Strategy } from "./router/selector.js";
@@ -74,6 +74,11 @@ export class Gateway extends EventEmitter {
     this.sessions = new SessionTracker();
 
     for (const [id, providerConfig] of Object.entries(config.providers)) {
+      if (providerConfig.enabled === false) {
+        this.registry.disable(id, providerConfig);
+        this.logger.info({ providerId: id }, "provider disabled, not routed to");
+        continue;
+      }
       this.registry.register(id, providerConfig);
       this.logger.info({ providerId: id, url: redactConnectionUrl(providerConfig.url) }, "provider registered");
     }
@@ -119,8 +124,17 @@ export class Gateway extends EventEmitter {
     return this.concurrency.acquire(providerId, sessionId, provider);
   }
 
+  /** Applies a new or changed provider config, moving it in or out of routing. */
+  applyProviderConfig(id: string, config: ProviderConfig): void {
+    if (config.enabled === false) {
+      this.registry.disable(id, config);
+      return;
+    }
+    this.registry.enable(id, config);
+  }
+
   releaseSlot(sessionId: string, providerId: string): void {
-    const provider = this.registry.get(providerId);
+    const provider = this.registry.getIncludingDisabled(providerId);
     if (!provider) return;
     this.concurrency.release(sessionId, provider);
 

@@ -98,7 +98,7 @@ export function loadConfig(configPath?: string): GatewayConfig {
 function validateProfileEligibility(config: GatewayConfig): void {
   if (!config.profiles?.enabled) return;
 
-  const slots = Object.values(config.providers);
+  const slots = Object.values(config.providers).filter((p) => p.enabled !== false);
   if (slots.length === 0) {
     throw new Error("profiles.enabled is true but no providers are configured.");
   }

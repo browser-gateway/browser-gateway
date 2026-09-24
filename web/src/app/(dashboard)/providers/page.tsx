@@ -13,6 +13,8 @@ import {
   deleteProvider,
   testProvider,
   setStrategy,
+  updateProvider,
+  routableProviders,
   type GatewayStatus,
   type ProviderConfigItem,
   type Strategy,
@@ -38,6 +40,7 @@ export default function ProvidersPage() {
   const [providers, setProviders] = React.useState<ProviderConfigItem[]>([]);
   const [testResults, setTestResults] = React.useState<Record<string, TestResult>>({});
   const [testingId, setTestingId] = React.useState<string | null>(null);
+  const [togglingId, setTogglingId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [savingStrategy, setSavingStrategy] = React.useState(false);
   const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null);
@@ -59,7 +62,7 @@ export default function ProvidersPage() {
 
   const siblings: SiblingProvider[] = React.useMemo(
     () =>
-      providers.map((p) => ({
+      routableProviders(providers).map((p) => ({
         slug: p.id,
         priority: p.priority,
         weight: p.weight,
@@ -81,6 +84,14 @@ export default function ProvidersPage() {
     setSavingStrategy(false);
     if (res.ok) await refresh();
     else setError(res.error ?? "Could not change routing strategy");
+  }
+
+  async function handleToggleEnabled(id: string, enabled: boolean) {
+    setTogglingId(id);
+    const res = await updateProvider(id, { enabled }).catch(() => ({ ok: false, error: "Request failed" }));
+    setTogglingId(null);
+    if (!res.ok) setError(res.error ?? "Could not change the provider");
+    await refresh();
   }
 
   async function handleTest(id: string) {
@@ -186,6 +197,8 @@ export default function ProvidersPage() {
               testResult={testResults[provider.id]}
               testing={testingId === provider.id}
               onTest={() => void handleTest(provider.id)}
+              toggling={togglingId === provider.id}
+              onToggleEnabled={(next) => void handleToggleEnabled(provider.id, next)}
               onDelete={() => setDeleteTarget(provider.id)}
             />
           ))}

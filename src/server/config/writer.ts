@@ -31,6 +31,9 @@ export function writeConfig(config: GatewayConfig, configPath?: string): void {
     if (provider.headers && Object.keys(provider.headers).length > 0) {
       entry.headers = provider.headers;
     }
+    if (provider.enabled === false) {
+      entry.enabled = false;
+    }
     providers[id] = entry;
   }
 

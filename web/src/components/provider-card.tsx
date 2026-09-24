@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Check, Loader2, Pencil, Plug, Trash2, X } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { CapabilityStrip } from "@/components/capability-strip";
 import type { ProviderConfigItem, ProviderStatus } from "@/lib/api";
 import { computePriorityEffect, computeWeightEffect, type SiblingProvider } from "@shared/provider-form";
@@ -14,7 +15,9 @@ interface Props {
   siblings: SiblingProvider[];
   testResult: { ok: boolean; latencyMs: number; error?: string } | undefined;
   testing: boolean;
+  toggling: boolean;
   onTest: () => void;
+  onToggleEnabled: (enabled: boolean) => void;
   onDelete: () => void;
 }
 
@@ -24,9 +27,12 @@ export function ProviderCard({
   siblings,
   testResult,
   testing,
+  toggling,
   onTest,
+  onToggleEnabled,
   onDelete,
 }: Props) {
+  const enabled = provider.enabled !== false;
   const priorityEffect = computePriorityEffect(
     provider.priority,
     siblings.map((s) => s.priority),
@@ -37,13 +43,17 @@ export function ProviderCard({
     siblings,
   );
 
-  const dotClass = status?.cooldownUntil || status?.healthy === false
+  const dotClass = !enabled
+    ? "bg-muted-foreground/40"
+    : status?.cooldownUntil || status?.healthy === false
     ? "bg-destructive animate-pulse"
     : status
     ? "bg-foreground"
     : "bg-muted-foreground/40";
 
-  const stateLabel = status?.cooldownUntil
+  const stateLabel = !enabled
+    ? "Disabled"
+    : status?.cooldownUntil
     ? "Paused"
     : status?.healthy === false
     ? "Not reachable"
@@ -86,13 +96,13 @@ export function ProviderCard({
               <dt className="text-muted-foreground">Priority</dt>
               <dd className="text-foreground">
                 {provider.priority}
-                <span className="text-muted-foreground"> · {priorityEffect.label}</span>
+                <span className="text-muted-foreground"> · {enabled ? priorityEffect.label : "Not routed while disabled."}</span>
               </dd>
 
               <dt className="text-muted-foreground">Weight</dt>
               <dd className="text-foreground">
                 {provider.weight}
-                <span className="text-muted-foreground"> · {weightEffect.label}</span>
+                <span className="text-muted-foreground"> · {enabled ? weightEffect.label : "Not routed while disabled."}</span>
               </dd>
 
               <dt className="text-muted-foreground">Serves</dt>
@@ -159,6 +169,15 @@ export function ProviderCard({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            <Switch
+              size="sm"
+              checked={enabled}
+              disabled={toggling}
+              onCheckedChange={(next) => onToggleEnabled(next)}
+              aria-label={enabled ? `Disable ${provider.id}` : `Enable ${provider.id}`}
+              title={enabled ? "Receiving sessions. Switch off to stop routing here." : "Not receiving sessions. Switch on to route here again."}
+              className="mr-2"
+            />
             <Button
               variant="ghost"
               size="icon-sm"

@@ -100,6 +100,7 @@ export async function addProvider(data: {
   profile?: string | null;
   multiProfile?: boolean;
   headers?: Record<string, string>;
+  enabled?: boolean;
 }): Promise<{ ok: boolean; error?: string; details?: string[] }> {
   const res = await fetch(`${API_BASE}/v1/providers`, {
     method: "POST",
@@ -112,7 +113,7 @@ export async function addProvider(data: {
 
 export async function updateProvider(
   id: string,
-  data: { url?: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null; multiProfile?: boolean; headers?: Record<string, string> },
+  data: { url?: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null; multiProfile?: boolean; headers?: Record<string, string>; enabled?: boolean },
 ): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`${API_BASE}/v1/providers/${id}`, {
     method: "PUT",
@@ -298,6 +299,12 @@ export interface ProviderConfigItem {
   profile: string | null;
   multiProfile: boolean;
   headers: Record<string, string> | null;
+  enabled: boolean;
+}
+
+/** Providers the gateway routes to. Disabled ones stay listed but are skipped by pickers and previews. */
+export function routableProviders(providers: ProviderConfigItem[]): ProviderConfigItem[] {
+  return providers.filter((p) => p.enabled !== false);
 }
 
 export interface ProviderListResponse {

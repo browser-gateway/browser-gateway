@@ -39,6 +39,7 @@ export class Gateway extends EventEmitter {
     constructor(config: GatewayConfig, logger: Logger);
     // (undocumented)
     acquireSlot(providerId: string, sessionId: string): boolean;
+    applyProviderConfig(id: string, config: ProviderConfig): void;
     // (undocumented)
     readonly concurrency: ConcurrencyTracker;
     // (undocumented)
@@ -131,6 +132,7 @@ export const GatewayConfigSchema: z.ZodObject<{
         profile: z.ZodOptional<z.ZodString>;
         multiProfile: z.ZodDefault<z.ZodBoolean>;
         headers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+        enabled: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strip>>;
     pool: z.ZodDefault<z.ZodObject<{
         minSessions: z.ZodDefault<z.ZodNumber>;
@@ -267,6 +269,7 @@ export const ProviderConfigSchema: z.ZodObject<{
     profile: z.ZodOptional<z.ZodString>;
     multiProfile: z.ZodDefault<z.ZodBoolean>;
     headers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    enabled: z.ZodOptional<z.ZodBoolean>;
 }, z.core.$strip>;
 
 // Warning: (ae-forgotten-export) The symbol "ProviderStore" needs to be exported by the entry point index.d.ts
@@ -276,6 +279,8 @@ export class ProviderRegistry implements ProviderStore {
     awaitInitialProbes(opts?: {
         maxWaitMs?: number;
     }): Promise<void>;
+    disable(id: string, config: ProviderConfig): void;
+    enable(id: string, config: ProviderConfig): void;
     // (undocumented)
     get(id: string): ProviderState | undefined;
     // (undocumented)
@@ -286,6 +291,7 @@ export class ProviderRegistry implements ProviderStore {
     //
     // (undocumented)
     getCapabilityRecord(id: string): CapabilityRecord | undefined;
+    getIncludingDisabled(id: string): ProviderState | undefined;
     probe(id: string): Promise<void>;
     // Warning: (ae-forgotten-export) The symbol "RegisterOptions" needs to be exported by the entry point index.d.ts
     //

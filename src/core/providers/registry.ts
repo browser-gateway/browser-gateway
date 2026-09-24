@@ -33,29 +33,52 @@ export interface RegisterOptions {
 
 export class ProviderRegistry implements ProviderStore {
   private providers: Map<string, ProviderState> = new Map();
+  private disabled: Map<string, ProviderState> = new Map();
   private capabilities: Map<string, CapabilityRecord> = new Map();
   private inflightProbes: Map<string, Promise<void>> = new Map();
   private reprobeAttempts: Map<string, number> = new Map();
 
   register(id: string, config: ProviderConfig, opts: RegisterOptions = {}): void {
-    this.providers.set(id, {
-      id,
-      config,
-      active: 0,
-      healthy: true,
-      cooldownUntil: null,
-      failureCount: 0,
-      successCount: 0,
-      lastFailure: null,
-      avgLatencyMs: 0,
-      totalConnections: 0,
-      detectedKind: null,
-      discoveredMaxConcurrent: null,
-    });
+    this.disabled.delete(id);
+    this.providers.set(id, freshState(id, config));
     this.capabilities.set(id, { status: "pending", capabilities: null });
     if (opts.autoProbe !== false) {
       void this.probe(id);
     }
+  }
+
+  /**
+   * Holds a provider out of routing. Its state survives so sessions already
+   * running on it can still release their slot, and re-enabling restores it.
+   */
+  disable(id: string, config: ProviderConfig): void {
+    const state = this.providers.get(id) ?? this.disabled.get(id) ?? freshState(id, config);
+    state.config = config;
+    this.providers.delete(id);
+    this.inflightProbes.delete(id);
+    this.reprobeAttempts.delete(id);
+    this.disabled.set(id, state);
+  }
+
+  /** Returns a disabled provider to routing, keeping its live slot counts. */
+  enable(id: string, config: ProviderConfig): void {
+    const state = this.disabled.get(id);
+    if (!state) {
+      const live = this.providers.get(id);
+      if (live) live.config = config;
+      else this.register(id, config);
+      return;
+    }
+    this.disabled.delete(id);
+    state.config = config;
+    this.providers.set(id, state);
+    if (!this.capabilities.has(id)) this.capabilities.set(id, { status: "pending", capabilities: null });
+    void this.probe(id);
+  }
+
+  /** Looks a provider up whether or not it is enabled. Routing must use `get`. */
+  getIncludingDisabled(id: string): ProviderState | undefined {
+    return this.providers.get(id) ?? this.disabled.get(id);
   }
 
   /**
@@ -174,10 +197,28 @@ export class ProviderRegistry implements ProviderStore {
   remove(id: string): boolean {
     this.capabilities.delete(id);
     this.inflightProbes.delete(id);
-    return this.providers.delete(id);
+    const wasDisabled = this.disabled.delete(id);
+    return this.providers.delete(id) || wasDisabled;
   }
 
   size(): number {
     return this.providers.size;
   }
+}
+
+function freshState(id: string, config: ProviderConfig): ProviderState {
+  return {
+    id,
+    config,
+    active: 0,
+    healthy: true,
+    cooldownUntil: null,
+    failureCount: 0,
+    successCount: 0,
+    lastFailure: null,
+    avgLatencyMs: 0,
+    totalConnections: 0,
+    detectedKind: null,
+    discoveredMaxConcurrent: null,
+  };
 }
