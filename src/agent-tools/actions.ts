@@ -111,7 +111,8 @@ export async function performAction(
       return;
     case "fill":
       await click(send, sessionId, point);
-      await resolve(send, sessionId, refs, { ref, mode: "focus-select", deadlineMs });
+      // Some pages swap an input for a new one when it is clicked; type into what now has focus.
+      await resolve(send, sessionId, refs, { ref, mode: "focus-select", deadlineMs, acceptFocused: true });
       await send("Input.insertText", { text: step.text ?? "" }, sessionId);
       return;
     case "type":

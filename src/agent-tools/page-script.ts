@@ -17,6 +17,9 @@ export interface PageResolveRequest {
   mode: "point" | "select" | "focus-select" | "rect";
   deadlineMs: number;
   option?: string;
+  /** For focus-select right after our own click: when the page replaced the
+   *  element, use the editable element that now has focus and rebind the ref. */
+  acceptFocused?: boolean;
 }
 
 export interface PageResolveReply {
@@ -362,12 +365,30 @@ export const RESOLVE_FN = `(req) => {
     }
     return false;
   };
+  const focusedEditable = () => {
+    let active = document.activeElement;
+    while (active && active.shadowRoot && active.shadowRoot.activeElement) active = active.shadowRoot.activeElement;
+    if (!active || active === document.body) return null;
+    const tag = active.tagName;
+    if (tag === "TEXTAREA" || active.isContentEditable) return active;
+    if (tag === "INPUT" && !/^(button|checkbox|radio|submit|reset|file|image|range|color|hidden)$/i.test(active.type)) {
+      return active;
+    }
+    return null;
+  };
   return (async () => {
     const deadline = Date.now() + req.deadlineMs;
     let reason = "never became visible";
     let previous = null;
     for (;;) {
-      const el = findByRef(req.ref);
+      let el = findByRef(req.ref);
+      if (!el && req.mode === "focus-select" && req.acceptFocused) {
+        el = focusedEditable();
+        if (el) {
+          el.__bgRef = { id: req.ref, role: el.__bgRef ? el.__bgRef.role : "", name: el.__bgRef ? el.__bgRef.name : "" };
+          S.byRef.set(req.ref, el);
+        }
+      }
       if (!el) return { ok: false, stale: true };
 
       if (req.mode === "select") {

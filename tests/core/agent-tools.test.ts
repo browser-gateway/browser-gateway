@@ -389,6 +389,9 @@ describe("AgentSession", () => {
       fake.methodsCalled("Runtime.evaluate").filter((c) => String(c.expression).includes('"mode":"focus-select"')),
     ).toHaveLength(1);
     expect(fake.methodsCalled("Input.insertText")[0]).toMatchObject({ text: "new@example.test" });
+    expect(
+      fake.methodsCalled("Runtime.evaluate").filter((c) => String(c.expression).includes('"acceptFocused":true')),
+    ).toHaveLength(1);
 
     fake.sent.length = 0;
     await session.act([{ type: "type", ref: "e1", text: "more" }], { settleMs: 0 });

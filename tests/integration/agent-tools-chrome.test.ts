@@ -21,6 +21,21 @@ const PAGE_HTML = `<!doctype html><html><head><title>Agent tools fixture</title>
 <a id="footer-link" href="/second">Footer link</a>
 </body></html>`;
 
+const SWAP_HTML = (focusReplacement: boolean) => `<!doctype html><html><head><title>Swap</title></head><body>
+<div id="box"><input aria-label="Search" placeholder="Search"></div>
+<p id="out"></p>
+<script>
+  document.querySelector("input").addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    const next = document.createElement("input");
+    next.setAttribute("aria-label", "Search");
+    next.addEventListener("input", () => { document.getElementById("out").textContent = next.value; });
+    document.getElementById("box").replaceChildren(next);
+    if (${focusReplacement}) next.focus();
+  });
+</script>
+</body></html>`;
+
 const INTERACTIVE_HTML = `<!doctype html><html><head><title>Interactive</title></head><body>
 <input id="name" value="old value">
 <input id="agree" type="checkbox">
@@ -183,6 +198,8 @@ describe.skipIf(!chromePath)("agent-tools against a real Chrome", () => {
         "/content": CONTENT_HTML,
         "/visibility": VISIBILITY_HTML,
         "/styled-select": STYLED_SELECT_HTML,
+        "/swap-focus": SWAP_HTML(true),
+        "/swap-blur": SWAP_HTML(false),
       };
       res.writeHead(200, { "content-type": "text/html" });
       res.end(pages[url] ?? PAGE_HTML);
@@ -329,6 +346,34 @@ describe.skipIf(!chromePath)("agent-tools against a real Chrome", () => {
       expect(await readOut(session)).toBe("clicked typed by agent");
       expect(result.changed.text).toContain("typed by agent");
       expect(result.changed.text).not.toContain("old value\n+");
+    } finally {
+      await dispose();
+    }
+  }, 60_000);
+
+  it("fills a field the page replaces with a focused copy when it is clicked", async () => {
+    const { session, dispose } = await connect();
+    try {
+      await session.navigate(`${baseUrl}/swap-focus`);
+      const snap = await session.snapshot({ scope: "full" });
+      const ref = snap.text.split("\n").find((l) => l.includes('"Search"'))!.split(" ")[0]!;
+      const result = await session.act([{ type: "fill", ref, text: "headless browser" }], { settleMs: 200 });
+      expect(result.ok).toBe(true);
+      expect(await readOut(session)).toBe("headless browser");
+    } finally {
+      await dispose();
+    }
+  }, 60_000);
+
+  it("still reports a replaced field as stale when nothing editable took focus", async () => {
+    const { session, dispose } = await connect();
+    try {
+      await session.navigate(`${baseUrl}/swap-blur`);
+      const snap = await session.snapshot({ scope: "full" });
+      const ref = snap.text.split("\n").find((l) => l.includes('"Search"'))!.split(" ")[0]!;
+      const result = await session.act([{ type: "fill", ref, text: "x" }], { settleMs: 200 });
+      expect(result.ok).toBe(false);
+      expect(result.failedStep?.error).toContain("no longer on the page");
     } finally {
       await dispose();
     }
