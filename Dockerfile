@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 # Stage 1: Build server
-FROM node:22-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS builder
+FROM node:22-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS builder
 WORKDIR /app
 ENV HUSKY=0
 COPY package.json package-lock.json ./
@@ -11,7 +11,7 @@ COPY tsconfig.json ./
 RUN npm run build
 
 # Stage 2: Build dashboard
-FROM node:22-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4 AS web-builder
+FROM node:22-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS web-builder
 WORKDIR /app/web
 ENV HUSKY=0
 COPY web/package.json web/package-lock.json ./
@@ -26,7 +26,7 @@ COPY --from=builder /app/dist/provider-form /app/dist/provider-form
 RUN npm run build
 
 # Stage 3: Production
-FROM node:22-slim@sha256:813a7480f28fdadac1f7f5c824bcdad435b5bc1322a5968bbbdef8d058f9dff4
+FROM node:22-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
 WORKDIR /app
 ENV HUSKY=0
 
