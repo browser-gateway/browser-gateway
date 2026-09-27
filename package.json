@@ -186,7 +186,7 @@
     "husky": "^9.1.7",
     "jscpd": "^5.0.11",
     "knip": "^6.17.1",
-    "puppeteer-core": "25.11.0",
+    "puppeteer-core": "25.12.0",
     "ts-morph": "^28.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",
