@@ -136,6 +136,8 @@ export class ProfilePlugin implements CdpPlugin {
 
   private readonly pages = new Map<string, PageState>();
   private readonly originsSnapshot = new Map<string, OriginStorage>();
+  private readonly inflightSnapshots = new Set<Promise<void>>();
+  private cookiesBeforeBrowserClose: Promise<CdpCookie[] | null> | null = null;
 
   constructor(private readonly opts: ProfilePluginOpts) {
     if (!PROFILE_ID_REGEX.test(opts.profileId)) {
@@ -244,6 +246,68 @@ export class ProfilePlugin implements CdpPlugin {
           error: err instanceof Error ? err.message : String(err),
         });
       }
+    }
+
+    if (this.captureEnabled) this.adoptPagesOpenedBeforeStart(state);
+  }
+
+  /** Snapshots a page's current origin before a navigation the client stream
+   *  never sees (for example one a sibling plugin sends itself). Resolves when
+   *  the snapshot is taken; navigate only after it does. Never rejects. */
+  async snapshotPageBeforeLeave(sessionId: string): Promise<void> {
+    if (!this.started || !this.captureEnabled) return;
+    await this.snapshotPage(sessionId);
+  }
+
+  private adoptPagesOpenedBeforeStart(state: SessionState): void {
+    for (const [sessionId, target] of state.targets) {
+      if (target.type !== "page" || this.pages.has(sessionId)) continue;
+      this.pages.set(sessionId, { topFrameId: null, activeOrigin: originOf(target.url) });
+      state.sendInternalOneWay("Page.enable", {}, sessionId);
+    }
+  }
+
+  private snapshotPage(sessionId: string): Promise<void> | null {
+    const origin = this.pages.get(sessionId)?.activeOrigin;
+    if (!origin || !this.client) return null;
+    return this.track(this.snapshotAndStash(this.client, sessionId, origin));
+  }
+
+  private track(work: Promise<void>): Promise<void> {
+    this.inflightSnapshots.add(work);
+    void work.finally(() => this.inflightSnapshots.delete(work));
+    return work;
+  }
+
+  /** Holds a closing command until the pages it would destroy are
+   *  snapshotted, then forwards it. Without a deferred forward on the
+   *  session, the snapshot is still written ahead of the command. */
+  private holdUntilCaptured(msg: CdpMessage, state: SessionState, sessionIds: string[], readCookies: boolean): CdpMessage | null | undefined {
+    const work: Promise<unknown>[] = [];
+    for (const sessionId of sessionIds) {
+      const pending = this.snapshotPage(sessionId);
+      if (pending) work.push(pending);
+    }
+    if (readCookies && this.client) {
+      this.cookiesBeforeBrowserClose = this.readCookies(this.client);
+      work.push(this.cookiesBeforeBrowserClose);
+    }
+    if (work.length === 0 || !state.forwardClientCommand) return undefined;
+    const forward = state.forwardClientCommand.bind(state);
+    void Promise.allSettled(work).then(() => forward(msg));
+    return null;
+  }
+
+  private async readCookies(client: PluginCdpClient): Promise<CdpCookie[] | null> {
+    try {
+      const resp = (await client.send("Storage.getCookies")) as GetAllCookiesResponse | null;
+      return filterMarkerCookies(resp?.cookies ?? []);
+    } catch (err) {
+      this.opts.logger?.("profile: Storage.getCookies failed", {
+        profileId: this.opts.profileId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return null;
     }
   }
 
@@ -374,22 +438,31 @@ export class ProfilePlugin implements CdpPlugin {
     }
   }
 
-  onCommand(msg: CdpMessage): void {
-    if (!this.started || !this.captureEnabled) return;
-    if (msg.method !== "Page.navigate") return;
+  onCommand(msg: CdpMessage, state: SessionState): CdpMessage | null | undefined {
+    if (!this.started || !this.captureEnabled) return undefined;
+    if (msg.method === "Page.navigate") {
+      this.snapshotBeforeNavigate(msg);
+      return undefined;
+    }
+    if (msg.method === "Target.closeTarget") {
+      const targetId = (msg.params as { targetId?: string } | undefined)?.targetId;
+      const sessionIds = [...state.targets].filter(([, t]) => t.targetId === targetId).map(([id]) => id);
+      return this.holdUntilCaptured(msg, state, sessionIds, false);
+    }
+    if (msg.method === "Browser.close") {
+      return this.holdUntilCaptured(msg, state, [...this.pages.keys()], true);
+    }
+    return undefined;
+  }
+
+  private snapshotBeforeNavigate(msg: CdpMessage): void {
     const sessionId = msg.sessionId;
     if (!sessionId) return;
-    const pageState = this.pages.get(sessionId);
-    if (!pageState?.activeOrigin) return;
-    const nextUrl = (msg.params as { url?: string } | undefined)?.url;
-    if (typeof nextUrl !== "string" || !nextUrl.startsWith("http")) return;
-    let nextOrigin: string;
-    try { nextOrigin = new URL(nextUrl).origin; } catch { return; }
-    if (nextOrigin === pageState.activeOrigin) return;
-    const expectedOrigin = pageState.activeOrigin;
-    const client = this.client;
-    if (!client) return;
-    void this.snapshotAndStash(client, sessionId, expectedOrigin);
+    const activeOrigin = this.pages.get(sessionId)?.activeOrigin;
+    if (!activeOrigin) return;
+    const nextOrigin = originOf((msg.params as { url?: string } | undefined)?.url);
+    if (!nextOrigin || nextOrigin === activeOrigin) return;
+    void this.snapshotPage(sessionId);
   }
 
   private async snapshotAndStash(
@@ -433,7 +506,11 @@ export class ProfilePlugin implements CdpPlugin {
 
     const sessionId = msg.sessionId;
     if (!sessionId) return;
-    const pageState = this.pages.get(sessionId);
+    let pageState = this.pages.get(sessionId);
+    if (!pageState && method === "Page.frameNavigated" && this.state?.targets.get(sessionId)?.type === "page") {
+      pageState = { topFrameId: null, activeOrigin: null };
+      this.pages.set(sessionId, pageState);
+    }
     if (!pageState) return;
 
     if (method === "Page.frameNavigated") {
@@ -469,8 +546,7 @@ export class ProfilePlugin implements CdpPlugin {
         try { nextOrigin = new URL(p.url).origin; } catch { /* fall through */ }
       }
       if (nextOrigin === expectedOrigin) return;
-      const client = this.client;
-      void this.snapshotAndStash(client, sessionId, expectedOrigin);
+      void this.snapshotPage(sessionId);
     }
   }
 
@@ -484,6 +560,7 @@ export class ProfilePlugin implements CdpPlugin {
 
     let saved = false;
     try {
+      await Promise.allSettled([...this.inflightSnapshots]);
       const prepared = this.captureMode === "on-navigate"
         ? await this.buildCapturedOnNavigate()
         : await this.buildCapturedOnClose();
@@ -537,18 +614,10 @@ export class ProfilePlugin implements CdpPlugin {
     const client = this.client!;
     const started = Date.now();
 
-    await this.snapshotActivePages();
+    if (!this.cookiesBeforeBrowserClose) await this.snapshotActivePages();
 
-    let cookies: CdpCookie[] = [];
-    try {
-      const cookieResp = (await client.send("Storage.getCookies")) as GetAllCookiesResponse | null;
-      cookies = filterMarkerCookies(cookieResp?.cookies ?? []);
-    } catch (err) {
-      this.opts.logger?.("profile: Storage.getCookies failed", {
-        profileId: this.opts.profileId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
+    const cookiesBeforeClose = this.cookiesBeforeBrowserClose ? await this.cookiesBeforeBrowserClose : null;
+    const cookies = cookiesBeforeClose ?? (await this.readCookies(client)) ?? [];
 
     const capturedStorage: Record<string, OriginStorage> = {};
     for (const [origin, data] of this.originsSnapshot) {
@@ -616,6 +685,11 @@ export class ProfilePlugin implements CdpPlugin {
   wasExisting(): boolean {
     return this.isExisting;
   }
+}
+
+function originOf(url: string | undefined): string | null {
+  if (typeof url !== "string" || !url.startsWith("http")) return null;
+  try { return new URL(url).origin; } catch { return null; }
 }
 
 function emptyProfile(): CapturedProfile {

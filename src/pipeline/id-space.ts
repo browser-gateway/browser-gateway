@@ -24,6 +24,12 @@ export class InternalIdSpace {
     return { id, promise };
   }
 
+  /** True iff `id` is in the internal range, answered or not. Replies to
+   *  fire-and-forget or timed-out commands must still never reach a client. */
+  isInternal(id: number): boolean {
+    return id >= INTERNAL_ID_BASE;
+  }
+
   /** True iff `id` belongs to an outstanding internal request. */
   owns(id: number): boolean {
     return this.pending.has(id);

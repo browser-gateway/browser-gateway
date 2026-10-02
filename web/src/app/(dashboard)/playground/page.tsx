@@ -21,7 +21,7 @@ import { ArrowLeft, ArrowRight, Loader2, Maximize2, Minimize2, Pause, Play, Refr
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, type SelectOption } from "@/components/ui/select";
-import { fetchProfiles, fetchProviders, routableProviders, type ProfileMetaItem, type ProviderConfigItem } from "@/lib/api";
+import { canSaveToProfile, fetchProfiles, fetchProviders, routableProviders, type ProfileMetaItem, type ProviderConfigItem } from "@/lib/api";
 import { LiveClient, eventModifiers, mouseButton, type FrameMeta } from "@/lib/live-client";
 import { useAuthEnabled, useGatewayToken } from "@/components/token-autofill";
 import { NavGuard } from "@/components/nav-guard";
@@ -48,6 +48,10 @@ export default function PlaygroundPage() {
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [selectedProfile, setSelectedProfile] = useState<string>("");
   const [saveProfile, setSaveProfile] = useState<boolean>(true);
+  const profileSavable = useMemo(() => {
+    const provider = providers?.find((p) => p.id === selectedProvider);
+    return !selectedProfile || !provider || canSaveToProfile(provider, selectedProfile);
+  }, [providers, selectedProvider, selectedProfile]);
   const [keepAliveSeconds, setKeepAliveSeconds] = useState<number>(DEFAULT_KEEP_ALIVE_SECONDS);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -213,14 +217,14 @@ export default function PlaygroundPage() {
     client.connect({
       provider: selectedProvider,
       profile: selectedProfile || undefined,
-      readOnly: selectedProfile ? !saveProfile : undefined,
+      readOnly: selectedProfile ? !(saveProfile && profileSavable) : undefined,
       token: authEnabled ? realToken : null,
       maxWidth: DEFAULT_VIEWPORT.width,
       maxHeight: DEFAULT_VIEWPORT.height,
       keepAliveSeconds,
     });
     clientRef.current = client;
-  }, [selectedProvider, selectedProfile, saveProfile, authEnabled, realToken, urlInput, keepAliveSeconds]);
+  }, [selectedProvider, selectedProfile, saveProfile, profileSavable, authEnabled, realToken, urlInput, keepAliveSeconds]);
 
   const handleStop = useCallback(() => {
     clientRef.current?.close();
@@ -502,15 +506,17 @@ export default function PlaygroundPage() {
             )}
 
             {profilesEnabled && selectedProfile && (
-              <label className="flex items-center gap-2 text-[12px] text-muted-foreground select-none">
+              <label
+              title={profileSavable ? undefined : "Pin this provider to the profile, or use browserserve, to save changes."}
+              className="flex items-center gap-2 text-[12px] text-muted-foreground select-none">
                 <input
                   type="checkbox"
-                  checked={saveProfile}
+                  checked={saveProfile && profileSavable}
                   onChange={(e) => setSaveProfile(e.target.checked)}
-                  disabled={status === "live" || status === "connecting"}
+                  disabled={status === "live" || status === "connecting" || !profileSavable}
                   className="size-3.5 accent-foreground rounded"
                 />
-                Save changes to profile
+                {profileSavable ? "Save changes to profile" : "Read-only on this provider"}
               </label>
             )}
 

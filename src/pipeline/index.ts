@@ -28,4 +28,5 @@ export type {
 export { PluginCdpClient } from "./plugins/profile-cdp-client.js";
 export type { ProfileStorage, LoadedProfile, LockToken } from "./plugins/profile-storage.js";
 export { ScreencastBridgePlugin } from "./plugins/screencast-bridge.js";
+export { BrowserCloseAsDisconnectPlugin } from "./plugins/browser-close-as-disconnect.js";
 export type { ScreencastBridgePluginOpts } from "./plugins/screencast-bridge.js";

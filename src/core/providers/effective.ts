@@ -24,7 +24,7 @@ export function isEligibleForProfile(
  * that leaks into subsequent profile-B sessions.
  */
 export function isEligibleProviderForProfile(
-  provider: ProviderState,
+  provider: Pick<ProviderState, "detectedKind"> & { config: Pick<ProviderState["config"], "profile"> },
   requestedProfile: string | null | undefined,
 ): boolean {
   if (provider.detectedKind === "browserserve") return true;

@@ -10,7 +10,8 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import { resolveWsUrl } from "../../core/providers/cdp.js";
-import { LifecycleError, type ProfileLifecycle, type AcquiredProfile } from "../profile/lifecycle.js";
+import { isEligibleProviderForProfile } from "../../core/providers/effective.js";
+import { LifecycleError, isReadOnlyProfileRequest, type ProfileLifecycle, type AcquiredProfile } from "../profile/lifecycle.js";
 import { Pipeline, type PipelineSocket } from "../../pipeline/pipeline.js";
 import { ScreencastBridgePlugin } from "../../pipeline/plugins/screencast-bridge.js";
 import { ProfileResidueError } from "../../pipeline/plugins/profile.js";
@@ -97,10 +98,19 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         writeHttpError(socket, 400, { error: "profiles are not enabled on this gateway" });
         return;
       }
+      if (!isReadOnlyProfileRequest(url) && !isEligibleProviderForProfile(provider, profileId)) {
+        writeHttpError(socket, 400, {
+          error: `provider ${providerId} cannot save profile "${profileId}": pin it to the profile or use a browserserve provider, or open the profile read-only`,
+        });
+        return;
+      }
       try {
-        acquired = await profileLifecycle.acquire(profileId);
+        const readOnly = isReadOnlyProfileRequest(url);
+        acquired = readOnly
+          ? await profileLifecycle.acquireReadOnly(profileId)
+          : await profileLifecycle.acquire(profileId);
         logger.info(
-          { profileId, isExisting: acquired.isExisting, cookies: acquired.cookies.length },
+          { profileId, readOnly, isExisting: acquired.isExisting, cookies: acquired.cookies.length },
           "live: profile acquired",
         );
       } catch (err) {
@@ -141,6 +151,15 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         return;
       }
 
+      const isBrowserserveProfile = acquired !== null && provider.detectedKind === "browserserve";
+      const profilePlugin = acquired && profileLifecycle
+        ? makeProfilePluginFromAcquired(
+          acquired,
+          profileLifecycle,
+          logger,
+          { providerId: provider.id, skipResidueCheck: isBrowserserveProfile },
+        )
+        : null;
       const bridge = new ScreencastBridgePlugin({
         viewer: viewer as unknown as PipelineSocket,
         format,
@@ -149,20 +168,12 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         viewportHeight: maxHeight,
         everyNthFrame,
         keepAliveSeconds,
+        onBeforeNavigate: profilePlugin ? (sessionId) => profilePlugin.snapshotPageBeforeLeave(sessionId) : undefined,
+        clearCookiesOnStart: profilePlugin === null,
         logger: (msg, data) => logger.info(data ?? {}, msg),
       });
 
-      const isBrowserserveProfile = acquired !== null && provider.detectedKind === "browserserve";
-      const plugins: CdpPlugin[] = [];
-      if (acquired && profileLifecycle) {
-        plugins.push(makeProfilePluginFromAcquired(
-          acquired,
-          profileLifecycle,
-          logger,
-          { providerId: provider.id, skipResidueCheck: isBrowserserveProfile },
-        ));
-      }
-      plugins.push(bridge);
+      const plugins: CdpPlugin[] = profilePlugin ? [bridge, profilePlugin] : [bridge];
 
       const pipeline = new Pipeline(
         upstreamReady.ws as unknown as PipelineSocket,

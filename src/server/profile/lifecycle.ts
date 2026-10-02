@@ -58,6 +58,11 @@ export type LifecycleFailureReason =
   | "INJECT_FAILED"
   | "UNKNOWN_DEK_VERSION";
 
+/** True when a connect or live url asks to open its profile without saving. */
+export function isReadOnlyProfileRequest(url: URL): boolean {
+  return ["1", "true", "yes"].includes((url.searchParams.get("readOnly") ?? "").toLowerCase());
+}
+
 export class LifecycleError extends Error {
   constructor(
     public readonly reason: LifecycleFailureReason,

@@ -182,6 +182,66 @@ describe("Pipeline", () => {
     expect(events).toEqual(["start", "end"]);
   });
 
+  it("a held client command forwarded later keeps its id and its response reaches the client", async () => {
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    let held: CdpMessage | null = null;
+    let state: SessionState | null = null;
+    const plugin: CdpPlugin = {
+      name: "holder",
+      onSessionStart: async (s) => { state = s; },
+      onCommand: (msg) => {
+        if (msg.method !== "Target.closeTarget") return undefined;
+        held = msg;
+        return null;
+      },
+    };
+    const done = runPipeline(client, upstream, [plugin]);
+    await new Promise((r) => setTimeout(r, 5));
+    client.receive(jsonMsg({ id: 41, method: "Target.closeTarget", params: { targetId: "t1" } }));
+    expect(parseSent(upstream)).toEqual([]);
+    state!.forwardClientCommand!(held!);
+    expect(parseSent(upstream)).toEqual([{ id: 41, method: "Target.closeTarget", params: { targetId: "t1" } }]);
+    upstream.receive(jsonMsg({ id: 41, result: { success: true } }));
+    expect(parseSent(client)).toEqual([{ id: 41, result: { success: true } }]);
+    client.close();
+    await done;
+    state!.forwardClientCommand!(held!);
+    expect(parseSent(upstream)).toHaveLength(1);
+  });
+
+  it("never forwards the reply to a fire-and-forget internal command to the client", async () => {
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    let state: SessionState | null = null;
+    const plugin: CdpPlugin = { name: "oneway", onSessionStart: async (s) => { state = s; } };
+    const done = runPipeline(client, upstream, [plugin]);
+    await new Promise((r) => setTimeout(r, 5));
+    state!.sendInternalOneWay("Page.enable", {}, "s1");
+    const sent = parseSent(upstream).find((m) => m.method === "Page.enable")!;
+    upstream.receive(jsonMsg({ id: sent.id, result: {}, sessionId: "s1" }));
+    upstream.receive(jsonMsg({ id: 7, result: {} }));
+    expect(parseSent(client)).toEqual([{ id: 7, result: {} }]);
+    client.close();
+    await done;
+  });
+
+  it("onSessionEnd runs in reverse start order", async () => {
+    const events: string[] = [];
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    const make = (name: string): CdpPlugin => ({
+      name,
+      onSessionStart: async () => { events.push(`start:${name}`); },
+      onSessionEnd: async () => { events.push(`end:${name}`); },
+    });
+    const done = runPipeline(client, upstream, [make("a"), make("b"), make("c")]);
+    await new Promise((r) => setTimeout(r, 5));
+    client.close();
+    await done;
+    expect(events).toEqual(["start:a", "start:b", "start:c", "end:c", "end:b", "end:a"]);
+  });
+
   it("onSessionStart timeout — hung plugin fails start with ok:false, does not wedge", async () => {
     const upstream = new FakeSocket();
     const plugin: CdpPlugin = {

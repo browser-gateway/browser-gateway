@@ -22,6 +22,11 @@ export interface PipelineRelayOpts {
   sessionId: string;
   plugins: CdpPlugin[];
   reconnectRegistry?: ReconnectRegistry;
+  /** Rewrites the resolved upstream url before connecting (e.g. a profile
+   *  hand-off token). A throw skips this provider. */
+  prepareUpstreamUrl?: (url: string) => Promise<string>;
+  /** Runs once after a connected session ends. */
+  onSessionEnded?: () => void;
 }
 
 export type PipelineRelayResult =
@@ -47,6 +52,18 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<Pipe
     );
   } catch {
     upstreamUrl = provider.config.url;
+  }
+
+  if (opts.prepareUpstreamUrl) {
+    try {
+      upstreamUrl = await opts.prepareUpstreamUrl(upstreamUrl);
+    } catch (err) {
+      logger.warn(
+        { sessionId, providerId: provider.id, error: err instanceof Error ? err.message : String(err) },
+        "pipeline: upstream preparation failed, trying next provider",
+      );
+      return { connected: false };
+    }
   }
 
   const outbound = resolveProviderOutbound(upstreamUrl, provider.config.headers);
@@ -138,6 +155,7 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<Pipe
     { sessionId, providerId: provider.id, durationMs, reason: result.reason, ...result.counters },
     "pipeline session ended",
   );
+  opts.onSessionEnded?.();
 
   return { connected: true };
 }

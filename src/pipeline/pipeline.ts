@@ -38,7 +38,8 @@ export type PipelineStartResult =
  *     probe whether the provider can serve the session before committing
  *     to a client upgrade — enables failover.
  *  2. {@link Pipeline.run} — attaches the client (or runs solo), pumps
- *     bytes, runs `onSessionEnd` for every plugin on close. */
+ *     bytes, runs `onSessionEnd` for every plugin on close, in reverse
+ *     start order so a plugin's end step still sees what later plugins set up. */
 export class Pipeline {
   private client: PipelineSocket | null = null;
   private readonly upstream: PipelineSocket;
@@ -108,6 +109,10 @@ export class Pipeline {
       } catch {
         /* ignore — fire-and-forget */
       }
+    };
+    this.state.forwardClientCommand = (msg) => {
+      if (this.closed) return;
+      trySend(this.upstream, JSON.stringify(msg));
     };
     this.state.close = (reason: string) => this.finalize(reason);
   }
@@ -270,6 +275,7 @@ export class Pipeline {
         this.ids.settle(msg.id, msg);
         return;
       }
+      if (this.ids.isInternal(msg.id)) return;
       for (const p of this.plugins) {
         if (!p.onResponse) continue;
         try {
@@ -318,7 +324,7 @@ export class Pipeline {
   }
 
   private async runOnSessionEnd(reason: string): Promise<void> {
-    for (const p of this.plugins) {
+    for (const p of [...this.plugins].reverse()) {
       if (!p.onSessionEnd) continue;
       try {
         await withTimeout(p.onSessionEnd(this.state, reason), this.onSessionEndTimeoutMs, `onSessionEnd/${p.name}`);

@@ -34,6 +34,10 @@ export interface SessionState {
   sendInternal<T = unknown>(method: string, params?: Record<string, unknown>, sessionId?: string): Promise<T>;
   /** Fire-and-forget internal command. No response tracked. */
   sendInternalOneWay(method: string, params?: Record<string, unknown>, sessionId?: string): void;
+  /** Send a client command upstream unchanged, keeping its own id so the
+   *  response reaches the client. For a command a plugin held back by
+   *  returning `null` from `onCommand`. No-op once the session has closed. */
+  forwardClientCommand?(msg: CdpMessage): void;
   /** Trigger pipeline finalization from within a plugin. Idempotent — a
    *  second call is a no-op. `onSessionEnd` still runs for every plugin,
    *  including the caller. Safe to call from any hook. */

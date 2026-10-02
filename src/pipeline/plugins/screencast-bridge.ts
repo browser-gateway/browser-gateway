@@ -24,6 +24,7 @@ const DEFAULTS = {
   deviceScaleFactor: 1,
   dropThresholdBytes: 1_000_000,
   keepAliveSeconds: 0,
+  clearCookiesOnStart: true,
 };
 
 export interface ScreencastBridgePluginOpts {
@@ -39,6 +40,14 @@ export interface ScreencastBridgePluginOpts {
   /** Hard session-duration cap in seconds. 0 disables. When set, a warn
    *  control fires 30s before, then session terminates. */
   keepAliveSeconds?: number;
+  /** Clear the browser's cookies when the session starts, so a reused
+   *  browser opens empty. Default true. Set false when the session loads a
+   *  saved profile, or the clear wipes the profile's logins. */
+  clearCookiesOnStart?: boolean;
+  /** Called just before the bridge navigates its page to another url, while
+   *  the current document is still alive (e.g. to snapshot its storage). The
+   *  navigation waits for a returned promise. */
+  onBeforeNavigate?: (sessionId: string) => void | Promise<void>;
   logger?: (msg: string, data?: Record<string, unknown>) => void;
 }
 
@@ -66,8 +75,9 @@ interface FrameParams {
 export class ScreencastBridgePlugin implements CdpPlugin {
   readonly name = "screencast-bridge";
 
-  private readonly opts: Required<Omit<ScreencastBridgePluginOpts, "logger" | "viewer">> & {
+  private readonly opts: Required<Omit<ScreencastBridgePluginOpts, "logger" | "viewer" | "onBeforeNavigate">> & {
     logger?: (msg: string, data?: Record<string, unknown>) => void;
+    onBeforeNavigate?: (sessionId: string) => void | Promise<void>;
     viewer: PipelineSocket;
   };
   private cdpSessionId: string | null = null;
@@ -92,7 +102,9 @@ export class ScreencastBridgePlugin implements CdpPlugin {
       deviceScaleFactor: opts.deviceScaleFactor ?? DEFAULTS.deviceScaleFactor,
       dropThresholdBytes: opts.dropThresholdBytes ?? DEFAULTS.dropThresholdBytes,
       keepAliveSeconds: opts.keepAliveSeconds ?? DEFAULTS.keepAliveSeconds,
+      clearCookiesOnStart: opts.clearCookiesOnStart ?? DEFAULTS.clearCookiesOnStart,
       logger: opts.logger,
+      onBeforeNavigate: opts.onBeforeNavigate,
     };
   }
 
@@ -122,7 +134,7 @@ export class ScreencastBridgePlugin implements CdpPlugin {
 
     await state.sendInternal("Page.enable", {}, this.cdpSessionId);
 
-    state.sendInternalOneWay("Storage.clearCookies", {});
+    if (this.opts.clearCookiesOnStart) state.sendInternalOneWay("Storage.clearCookies", {});
     state.sendInternalOneWay(
       "Page.addScriptToEvaluateOnNewDocument",
       { source: SAME_TAB_SCRIPT },
@@ -186,6 +198,11 @@ export class ScreencastBridgePlugin implements CdpPlugin {
       state.sendInternalOneWay("Target.closeTarget", { targetId: this.targetId });
     }
     try { this.opts.viewer.close(1000, "stream ended"); } catch { /* already closed */ }
+  }
+
+  private async notifyBeforeNavigate(): Promise<void> {
+    if (!this.cdpSessionId || !this.opts.onBeforeNavigate) return;
+    try { await this.opts.onBeforeNavigate(this.cdpSessionId); } catch { /* observer errors never block navigation */ }
   }
 
   private handleScreencastFrame(state: SessionState, msg: CdpMessage): void {
@@ -315,6 +332,7 @@ export class ScreencastBridgePlugin implements CdpPlugin {
           break;
         case "navigate":
           if (msg.url) {
+            await this.notifyBeforeNavigate();
             await state.sendInternal("Page.navigate", { url: msg.url }, this.cdpSessionId);
           } else if (msg.action === "reload") {
             await state.sendInternal("Page.reload", {}, this.cdpSessionId);
@@ -327,6 +345,7 @@ export class ScreencastBridgePlugin implements CdpPlugin {
             const targetIdx = hist.currentIndex + (msg.action === "back" ? -1 : 1);
             const entry = hist.entries[targetIdx];
             if (entry) {
+              await this.notifyBeforeNavigate();
               await state.sendInternal("Page.navigateToHistoryEntry", { entryId: entry.id }, this.cdpSessionId);
             }
           }

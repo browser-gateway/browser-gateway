@@ -8,6 +8,7 @@ export class SessionStateImpl implements SessionState {
   readonly targets = new Map<string, TargetInfo>();
   sendInternal!: <T = unknown>(method: string, params?: Record<string, unknown>, sessionId?: string) => Promise<T>;
   sendInternalOneWay!: (method: string, params?: Record<string, unknown>, sessionId?: string) => void;
+  forwardClientCommand!: (msg: CdpMessage) => void;
   close!: (reason: string) => void;
 
   constructor(upstreamUrl: string) {

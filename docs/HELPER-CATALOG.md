@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-09-24
+Generated: 2026-10-02
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -270,7 +270,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/providers/effective.ts`
 
 - **fn** `isEligibleForProfile(config: ProviderConfig, requestedProfile: string | null | undefined) → boolean` (line 9) — Static config-shape check: does the provider's declared `profile` / `multiProfile`
-- **fn** `isEligibleProviderForProfile(provider: ProviderState, requestedProfile: string | null | undefined) → boolean` (line 26) — Runtime profile-eligibility. A provider slot is eligible to serve the requested
+- **fn** `isEligibleProviderForProfile(provider: Pick<ProviderState, "detectedKind"> & { config: Pick<ProviderState["config"], "profile"> }, requestedProfile: string | null | undefined) → boolean` (line 26) — Runtime profile-eligibility. A provider slot is eligible to serve the requested
 - **fn** `effectiveMaxConcurrent(provider: ProviderState) → number | undefined` (line 40) — The concurrency ceiling actually enforced for a provider: explicit
 - **fn** `hasFreeSlot(provider: ProviderState) → boolean` (line 45) — True when the provider has a free slot under its effective ceiling.
 ### `src/core/providers/health.ts`
@@ -404,8 +404,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
 ### `src/server/live/upgrade.ts`
 
-- **interface** `interface CreateLiveHandlerDeps` (line 37)
-- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 44)
+- **interface** `interface CreateLiveHandlerDeps` (line 38)
+- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 45)
 ### `src/server/mcp/config-defaults.ts`
 
 - **fn** `buildMcpGatewayConfig(port: number, providers: Record<string, ProviderConfig>) → GatewayConfig` (line 11)
@@ -479,8 +479,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface LifecycleOptions` (line 23)
 - **interface** `interface AcquiredProfile` (line 38)
 - **type** `type LifecycleFailureReason` (line 54)
-- **class** `class LifecycleError` (line 61)
-- **class** `class ProfileLifecycle` (line 72) — Orchestrates acquire/inject/commit/release for a profile around one session.
+- **fn** `isReadOnlyProfileRequest(url: URL) → boolean` (line 62) — True when a connect or live url asks to open its profile without saving.
+- **class** `class LifecycleError` (line 66)
+- **class** `class ProfileLifecycle` (line 77) — Orchestrates acquire/inject/commit/release for a profile around one session.
 ### `src/server/profile/node-profile-storage.ts`
 
 - **class** `class NodeProfileStorage` (line 17) — Node-side {@link ProfileStorage} adapter. Wraps the existing
@@ -611,15 +612,15 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/ws/pipeline-relay.ts`
 
 - **interface** `interface PipelineRelayOpts` (line 15)
-- **type** `type PipelineRelayResult` (line 27)
-- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<PipelineRelayResult>` (line 38) — Two-phase pipeline handoff for `/v1/connect`:
+- **type** `type PipelineRelayResult` (line 32)
+- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<PipelineRelayResult>` (line 43) — Two-phase pipeline handoff for `/v1/connect`:
 ### `src/server/ws/probe.ts`
 
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000, headers?: Record<string, string>) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
 ### `src/server/ws/upgrade.ts`
 
-- **interface** `interface PipelineReplayContext` (line 117)
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 122)
+- **interface** `interface PipelineReplayContext` (line 183)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 188)
 ### `src/server/ws/upstream-open.ts`
 
 - **fn** `openUpstream(url: string, timeoutMs: number, headers?: Record<string, string>) → Promise<{ ok: true; ws: WebSocket } | { ok: false; err: string }>` (line 7) — Open a Node `ws` upstream and race it against a timeout. Resolves once

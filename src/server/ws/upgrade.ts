@@ -11,6 +11,7 @@ import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
 import { NodeTcpPipeTransport } from "../transport/node.js";
 import { isEligibleForProfile } from "../../core/router/selector.js";
 import {
+  isReadOnlyProfileRequest,
   LifecycleError,
   type ProfileLifecycle,
   type AcquiredProfile,
@@ -30,6 +31,7 @@ import type { ReplayConfig } from "../../core/types.js";
 import { handlePipelineRelay } from "./pipeline-relay.js";
 import { ScreencastCapturePlugin } from "../../pipeline/plugins/screencast-capture.js";
 import { ProfileResidueError } from "../../pipeline/plugins/profile.js";
+import { BrowserCloseAsDisconnectPlugin } from "../../pipeline/plugins/browser-close-as-disconnect.js";
 import { NodeReplayStorage } from "../replay/node-storage.js";
 import { CHUNK_MAX_BYTES, CHUNK_MAX_ELAPSED_MS } from "../replay/constants.js";
 import type { CdpPlugin } from "../../pipeline/types.js";
@@ -74,6 +76,10 @@ function buildPluginList(inputs: PluginListInputs): CdpPlugin[] {
     ));
   }
 
+  if (inputs.acquired && inputs.isBrowserserveProfile && !inputs.acquired.readOnly) {
+    plugins.push(new BrowserCloseAsDisconnectPlugin());
+  }
+
   if (inputs.sessionRecord && inputs.pipelineReplay) {
     plugins.push(new ScreencastCapturePlugin({
       sessionId: inputs.sessionId,
@@ -91,6 +97,66 @@ function buildPluginList(inputs: PluginListInputs): CdpPlugin[] {
   }
 
   return plugins;
+}
+
+/** Pipeline-relay hooks that carry a profile through browserserve's own
+ *  hand-off: drop off before connecting, pick up after the session ends. */
+function browserserveHandOffHooks(
+  acquired: AcquiredProfile,
+  profileLifecycle: ProfileLifecycle,
+  logger: Logger,
+): { prepareUpstreamUrl: (url: string) => Promise<string>; onSessionEnded: () => void } {
+  let handOff: { url: string; token: string } | null = null;
+  return {
+    prepareUpstreamUrl: async (url) => {
+      handOff = await handOffBrowserserveProfile(url, acquired);
+      return handOff.url;
+    },
+    onSessionEnded: () => {
+      if (!handOff) return;
+      if (acquired.readOnly) {
+        void profileLifecycle.release(acquired);
+        return;
+      }
+      pickUpBrowserserveProfile(handOff.url, handOff.token, acquired, profileLifecycle, logger);
+    },
+  };
+}
+
+/** Hands a profile to a browserserve provider and returns the url that
+ *  connects with it. */
+async function handOffBrowserserveProfile(
+  resolvedUrl: string,
+  acquired: AcquiredProfile,
+): Promise<{ url: string; token: string }> {
+  const { base, authToken } = browserserveHttp(resolvedUrl);
+  const token = await dropOffProfile(base, authToken, toBrowserservePayload(acquired));
+  // readOnly=1 tells browserserve to skip capture on close
+  const url = withProfileToken(resolvedUrl, token) + (acquired.readOnly ? "&readOnly=1" : "");
+  return { url, token };
+}
+
+function pickUpBrowserserveProfile(
+  resolvedUrl: string,
+  token: string,
+  acquired: AcquiredProfile,
+  profileLifecycle: ProfileLifecycle,
+  logger: Logger,
+): void {
+  const { base, authToken } = browserserveHttp(resolvedUrl);
+  pickUpProfile(base, authToken, token)
+    .then((captured) =>
+      captured
+        ? profileLifecycle.commitCaptured(acquired, fromBrowserservePayload(captured))
+        : profileLifecycle.release(acquired),
+    )
+    .catch((err) => {
+      logger.warn(
+        { profileId: acquired.profileId, error: err instanceof Error ? err.message : String(err) },
+        "browserserve profile pick-up failed",
+      );
+      profileLifecycle.release(acquired).catch(() => undefined);
+    });
 }
 
 function respondError(socket: Duplex, status: number, body: Record<string, unknown>): void {
@@ -177,9 +243,7 @@ export function createWebSocketHandler(
     // Profile acquisition — lock + decrypt happen BEFORE provider selection so we
     // fail-fast on contention. Inject happens after we have a wsUrl.
     const profileId = url.searchParams.get("profile");
-    const readOnly = ["1", "true", "yes"].includes(
-      (url.searchParams.get("readOnly") ?? "").toLowerCase(),
-    );
+    const readOnly = isReadOnlyProfileRequest(url);
     let acquired: AcquiredProfile | null = null;
     if (profileId !== null) {
       if (!profileLifecycle) {
@@ -336,10 +400,14 @@ export function createWebSocketHandler(
 
         let connected: boolean;
         if (plugins.length > 0) {
+          const handOff = isBrowserserveProfile && profileLifecycle
+            ? browserserveHandOffHooks(acquired!, profileLifecycle, logger)
+            : {};
           const relayResult = await handlePipelineRelay({
             gateway, logger, req, socket, head, provider, sessionId,
             plugins,
             reconnectRegistry,
+            ...handOff,
           });
           if (!relayResult.connected && relayResult.residue) {
             lastResidueError = relayResult.residue;
@@ -472,13 +540,9 @@ async function pipeToProvider(
   if (acquired && profileLifecycle) {
     if (isBrowserserve) {
       try {
-        const { base, authToken } = browserserveHttp(resolvedUrl);
-        browserserveToken = await dropOffProfile(base, authToken, toBrowserservePayload(acquired));
-        resolvedUrl = withProfileToken(resolvedUrl, browserserveToken);
-        if (acquired.readOnly) {
-          // Tells browserserve to skip capture on close (faster teardown).
-          resolvedUrl += "&readOnly=1";
-        }
+        const handOff = await handOffBrowserserveProfile(resolvedUrl, acquired);
+        browserserveToken = handOff.token;
+        resolvedUrl = handOff.url;
       } catch (err) {
         logger.warn(
           { sessionId, providerId: provider.id, error: err instanceof Error ? err.message : String(err) },
@@ -548,21 +612,7 @@ async function pipeToProvider(
       if (capturedAcquired.readOnly) {
         void profileLifecycle.release(capturedAcquired);
       } else if (isBrowserserve && browserserveToken) {
-        const token = browserserveToken;
-        const { base, authToken } = browserserveHttp(resolvedUrl);
-        pickUpProfile(base, authToken, token)
-          .then((captured) =>
-            captured
-              ? profileLifecycle.commitCaptured(capturedAcquired, fromBrowserservePayload(captured))
-              : profileLifecycle.release(capturedAcquired),
-          )
-          .catch((err) => {
-            logger.warn(
-              { profileId: capturedAcquired.profileId, error: err instanceof Error ? err.message : String(err) },
-              "browserserve profile pick-up failed",
-            );
-            profileLifecycle.release(capturedAcquired).catch(() => undefined);
-          });
+        pickUpBrowserserveProfile(resolvedUrl, browserserveToken, capturedAcquired, profileLifecycle, logger);
       } else {
         profileLifecycle.commit(capturedAcquired, resolvedUrl).catch((err) => {
           logger.warn(

@@ -302,6 +302,11 @@ export interface ProviderConfigItem {
   enabled: boolean;
 }
 
+/** Mirror of isEligibleProviderForProfile from src/core/providers/effective.ts. */
+export function canSaveToProfile(provider: Pick<ProviderConfigItem, "detectedKind" | "profile">, profileId: string): boolean {
+  return provider.detectedKind === "browserserve" || provider.profile === profileId;
+}
+
 /** Providers the gateway routes to. Disabled ones stay listed but are skipped by pickers and previews. */
 export function routableProviders(providers: ProviderConfigItem[]): ProviderConfigItem[] {
   return providers.filter((p) => p.enabled !== false);

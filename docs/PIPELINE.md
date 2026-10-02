@@ -40,7 +40,7 @@ const result = await pipeline.run(client); // Phase 2 — bind client, pump byte
 
 **Phase 1 (`start`)** attaches upstream listeners and runs every plugin's `onSessionStart` in order. If any plugin throws, the upstream is closed, no `onSessionEnd` fires, and `{ ok: false, plugin }` returns. The client socket is never touched — the caller can 503, retry with a different provider, or fail fast.
 
-**Phase 2 (`run`)** attaches the client (or `null` for solo mode, see below), starts the byte pump + idle/max timers, and resolves when the session ends. `onSessionEnd` runs for every plugin on close.
+**Phase 2 (`run`)** attaches the client (or `null` for solo mode, see below), starts the byte pump + idle/max timers, and resolves when the session ends. `onSessionEnd` runs for every plugin on close, one at a time in reverse start order: the last plugin to start is the first to end, so an earlier plugin's end step still sees pages and state that later plugins created.
 
 The split exists because "the profile failed to inject on provider A" is a recoverable failure — the client should silently retry against provider B. The old single-phase design would have needed to close the client socket to signal failure. Two phases keep the failover transparent.
 
