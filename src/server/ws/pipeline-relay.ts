@@ -131,6 +131,7 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<Pipe
   gateway.emit("session.created", { sessionId, providerId: provider.id });
   logger.info({ sessionId, providerId: provider.id }, "session established");
 
+  gateway.sessions.setCloser(sessionId, () => client.close(1013, "idle-timeout"));
   client.on("message", () => gateway.sessions.recordActivity(sessionId));
 
   const result = await pipeline.run(client as unknown as PipelineSocket);

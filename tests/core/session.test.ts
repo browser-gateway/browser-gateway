@@ -93,4 +93,27 @@ describe("SessionTracker", () => {
     const idleSessions = tracker.getIdleSessions(30000);
     expect(idleSessions).toHaveLength(0);
   });
+
+  it("closes a live session through its registered closer, once", () => {
+    tracker.create("s1", "b1");
+    let calls = 0;
+    tracker.setCloser("s1", () => { calls++; });
+    expect(tracker.close("s1")).toBe(true);
+    expect(tracker.close("s1")).toBe(false);
+    expect(calls).toBe(1);
+  });
+
+  it("forgets the closer when the session is removed", () => {
+    tracker.create("s1", "b1");
+    let calls = 0;
+    tracker.setCloser("s1", () => { calls++; });
+    tracker.remove("s1");
+    expect(tracker.close("s1")).toBe(false);
+    expect(calls).toBe(0);
+  });
+
+  it("ignores a closer for a session it does not track", () => {
+    tracker.setCloser("ghost", () => { throw new Error("must not run"); });
+    expect(tracker.close("ghost")).toBe(false);
+  });
 });

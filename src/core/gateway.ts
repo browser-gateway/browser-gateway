@@ -353,11 +353,13 @@ export class Gateway extends EventEmitter {
     this.idleCheckTimer = setInterval(() => {
       const idleSessions = this.sessions.getIdleSessions(idleTimeoutMs);
       for (const session of idleSessions) {
+        const closed = this.sessions.close(session.id);
+        this.onIdleSession?.(session.id);
+        if (!closed) continue;
         this.logger.warn(
           { sessionId: session.id, providerId: session.providerId, idleMs: Date.now() - session.lastActivity },
           "terminating idle session"
         );
-        this.onIdleSession?.(session.id);
       }
     }, Math.min(idleTimeoutMs, 30_000));
 

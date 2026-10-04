@@ -2,6 +2,7 @@ import type { Session } from "../types.js";
 
 export class SessionTracker {
   private sessions: Map<string, Session> = new Map();
+  private closers: Map<string, () => void> = new Map();
 
   create(id: string, providerId: string, profileId?: string): Session {
     const session: Session = {
@@ -33,7 +34,22 @@ export class SessionTracker {
     if (session) {
       this.sessions.delete(id);
     }
+    this.closers.delete(id);
     return session;
+  }
+
+  /** Registers how to end a live session; `close` runs at most once. */
+  setCloser(id: string, close: () => void): void {
+    if (this.sessions.has(id)) this.closers.set(id, close);
+  }
+
+  /** Ends a live session through its registered closer. Returns false when none is registered. */
+  close(id: string): boolean {
+    const close = this.closers.get(id);
+    if (!close) return false;
+    this.closers.delete(id);
+    close();
+    return true;
   }
 
   getAll(): Session[] {

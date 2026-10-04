@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import pino from "pino";
 import { Gateway } from "../../src/core/gateway.js";
 import type { GatewayConfig } from "../../src/core/types.js";
@@ -157,3 +157,29 @@ describe("Gateway", () => {
   });
 });
 
+describe("Gateway idle sessions", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("closes a session idle past idleTimeoutMs and leaves an active one alone", () => {
+    vi.useFakeTimers();
+    const base = createConfig();
+    const gw = new Gateway(
+      createConfig({ gateway: { ...base.gateway, healthCheckInterval: 3_600_000, sessions: { idleTimeoutMs: 1000 } } }),
+      silentLogger,
+    );
+    const closed: string[] = [];
+    gw.sessions.create("idle", "fast");
+    gw.sessions.setCloser("idle", () => closed.push("idle"));
+    gw.sessions.create("busy", "fast");
+    gw.sessions.setCloser("busy", () => closed.push("busy"));
+    gw.start();
+
+    for (let i = 0; i < 4; i++) {
+      vi.advanceTimersByTime(600);
+      gw.sessions.recordActivity("busy");
+    }
+
+    expect(closed).toEqual(["idle"]);
+    gw.stop();
+  });
+});

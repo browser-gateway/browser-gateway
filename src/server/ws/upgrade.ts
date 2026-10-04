@@ -637,6 +637,7 @@ async function pipeToProvider(
     connectionTimeoutMs: gateway.config.gateway.connectionTimeout,
     onUpgrade: () => {
       gateway.sessions.create(sessionId, provider.id, acquired?.profileId);
+      gateway.sessions.setCloser(sessionId, () => clientSocket.destroy());
       gateway.emit("session.created", { sessionId, providerId: provider.id });
       logger.info({ sessionId, providerId: provider.id }, "session established");
     },

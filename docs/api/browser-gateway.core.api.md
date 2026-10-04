@@ -466,6 +466,7 @@ export class SessionPool {
 
 // @public (undocumented)
 export class SessionTracker {
+    close(id: string): boolean;
     // (undocumented)
     count(): number;
     // (undocumented)
@@ -480,6 +481,7 @@ export class SessionTracker {
     recordActivity(id: string): void;
     // (undocumented)
     remove(id: string): Session | undefined;
+    setCloser(id: string, close: () => void): void;
 }
 
 // @public (undocumented)

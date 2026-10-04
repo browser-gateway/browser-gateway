@@ -2,7 +2,6 @@
 
 import { createServer } from "node:http";
 import { safeTokenCompare } from "./util/token-compare.js";
-import type { Duplex } from "node:stream";
 import { existsSync, readFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -303,17 +302,6 @@ async function startServer() {
     undefined,
     { storePath: replayStorePath, replayConfig: config.replay },
   );
-
-  const activeSockets = new Map<string, { client: Duplex; provider: Duplex }>();
-
-  gateway.setIdleSessionHandler((sessionId) => {
-    const sockets = activeSockets.get(sessionId);
-    if (sockets) {
-      sockets.client.destroy();
-      sockets.provider.destroy();
-      activeSockets.delete(sessionId);
-    }
-  });
 
   const mcpTransports = new Map<string, StreamableHTTPServerTransport>();
   const mcpAllowedOrigins = parseAllowedOrigins(process.env.BG_ALLOWED_ORIGINS);
