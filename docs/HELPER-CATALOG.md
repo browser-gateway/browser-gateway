@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-10-04
+Generated: 2026-10-06
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -13,6 +13,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ## Core engine (src/core/)
 
+### `src/core/cdp/callback-transport.ts`
+
+- **class** `class CallbackTransport` (line 6) — The handler bookkeeping every socket-backed CDP transport shares. Subclasses
 ### `src/core/cdp/dispatch.ts`
 
 - **interface** `interface PendingCall` (line 5) — Pure CDP response dispatch — shared between `WsCDPClient` (Node ws) and

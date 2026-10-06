@@ -37,6 +37,10 @@ export class RefTable {
     this.world.reset();
   }
 
+  entriesList(): Array<[string, RefEntry]> {
+    return [...this.entries];
+  }
+
   get size(): number {
     return this.entries.size;
   }

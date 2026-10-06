@@ -407,7 +407,8 @@ describe("AgentSession", () => {
     await session.act([{ type: "press", key: "Enter" }], { settleMs: 0 });
     const keys = fake.methodsCalled("Input.dispatchKeyEvent");
     expect(keys[0]).toMatchObject({ key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-    expect(keys.some((k) => k.type === "char" && k.text === "\r")).toBe(true);
+    expect(keys[0]).toMatchObject({ type: "keyDown", text: "\r" });
+    expect(keys[0]).not.toHaveProperty("nativeVirtualKeyCode");
     expect(keys.at(-1)).toMatchObject({ type: "keyUp" });
   });
 
@@ -604,7 +605,8 @@ describe("AgentSession", () => {
     fake.emitEvent("Log.entryAdded", { entry: { level: "error", text: "boom" } });
     fake.emitEvent("Network.loadingFailed", { documentURL: "https://x.test/a.js", errorText: "net::ERR_FAILED" });
     fake.emitEvent("Page.downloadWillBegin", { url: "https://x.test/f.pdf", suggestedFilename: "f.pdf" });
-    fake.emitEvent("Target.targetCreated", { targetInfo: { type: "page", url: "https://popup.test", openerId: "t1" } });
+    fake.emitEvent("Target.targetCreated", { targetInfo: { type: "page", url: "https://popup.test", openerId: "target1", targetId: "target9" } });
+    fake.emitEvent("Target.targetCreated", { targetInfo: { type: "page", url: "https://other.test", openerId: "someone-else", targetId: "target10" } });
     const seen = session.observed();
     expect(seen.console[0]).toMatchObject({ level: "error", text: "boom" });
     expect(seen.failedRequests[0]).toMatchObject({ errorText: "net::ERR_FAILED" });

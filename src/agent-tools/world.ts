@@ -20,6 +20,11 @@ export class PageWorld {
   private contextId: number | undefined;
   private generation = 0;
 
+  /** The tab's main frame id once known. */
+  get mainFrameId(): string | undefined {
+    return this.frameId;
+  }
+
   /** Bumped whenever the world is rebuilt; every ref minted before it is void. */
   get worldGeneration(): number {
     return this.generation;

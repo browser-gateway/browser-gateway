@@ -1,0 +1,78 @@
+[
+  [
+    {
+      "type": "tool_use",
+      "id": "toolu_01PTtxYimKPoQdup8eSWneQe",
+      "name": "screenshot",
+      "input": {},
+      "toolset_name": "browser",
+      "caller": {
+        "type": "direct"
+      }
+    }
+  ],
+  [
+    {
+      "type": "tool_use",
+      "id": "toolu_01NmDZavwhMBc1EtvPDScL1J",
+      "name": "left_click",
+      "input": {
+        "target": {
+          "type": "coordinate",
+          "x": 480,
+          "y": 33
+        }
+      },
+      "toolset_name": "browser",
+      "caller": {
+        "type": "direct"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_015XEd8v4yv5w3xc5eYivbJD",
+      "name": "type",
+      "input": {
+        "text": "Grace Hopper"
+      },
+      "toolset_name": "browser",
+      "caller": {
+        "type": "direct"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_01Uxthm4XQowq9pmdBYBMKgy",
+      "name": "key",
+      "input": {
+        "text": "Return"
+      },
+      "toolset_name": "browser",
+      "caller": {
+        "type": "direct"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_01MQkkosmgbabawYLr56fKVZ",
+      "name": "wait",
+      "input": {
+        "duration": 2
+      },
+      "toolset_name": "browser",
+      "caller": {
+        "type": "direct"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_018CAF8H2nFpwwQwftmNCdun",
+      "name": "screenshot",
+      "input": {},
+      "toolset_name": "browser",
+      "caller": {
+        "type": "direct"
+      }
+    }
+  ]
+]

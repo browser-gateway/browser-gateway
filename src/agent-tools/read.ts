@@ -18,18 +18,63 @@ export interface ExtractResult {
   truncated: boolean;
 }
 
+export interface ScreenshotRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface ScreenshotOptions {
   ref?: string;
   fullPage?: boolean;
   quality?: number;
   skipIfUnchanged?: boolean;
+  /** Default jpeg. */
+  format?: "jpeg" | "png";
+  /** Part of the viewport to capture, in CSS pixels relative to the visible area. */
+  region?: ScreenshotRegion;
+  /** Output pixels per CSS pixel. 0.5 halves the image; 2 doubles a zoomed region. */
+  scale?: number;
 }
 
 export interface ScreenshotResult {
   base64?: string;
   bytes: number;
-  format: "jpeg";
+  format: "jpeg" | "png";
   unchanged: boolean;
+  /** Image size in pixels; known for png. */
+  width?: number;
+  height?: number;
+}
+
+export interface ViewportMetrics {
+  width: number;
+  height: number;
+  scrollX: number;
+  scrollY: number;
+  devicePixelRatio: number;
+}
+
+const METRICS_EXPRESSION = "({ width: innerWidth, height: innerHeight, scrollX, scrollY, devicePixelRatio })";
+
+/** Visible area size and scroll offset in CSS pixels, plus the device pixel ratio. */
+export async function readViewportMetrics(send: CdpSend, sessionId: string): Promise<ViewportMetrics> {
+  const res = (await send("Runtime.evaluate", { expression: METRICS_EXPRESSION, returnByValue: true }, sessionId)) as {
+    result?: { value?: ViewportMetrics };
+  };
+  const v = res.result?.value;
+  if (!v) throw new Error("could not read the page's viewport size");
+  return v;
+}
+
+/** Width and height from a base64 PNG header, without decoding the image. */
+export function pngSize(base64: string): { width: number; height: number } | null {
+  if (!base64.startsWith("iVBORw0KGgo")) return null;
+  const head = atob(base64.slice(0, 32));
+  const at = (i: number) => head.charCodeAt(i);
+  const read = (i: number) => ((at(i) << 24) | (at(i + 1) << 16) | (at(i + 2) << 8) | at(i + 3)) >>> 0;
+  return { width: read(16), height: read(20) };
 }
 
 const DEFAULT_MAX_CHARS = 8_000;
@@ -108,11 +153,9 @@ export async function captureScreenshot(
   opts: ScreenshotOptions = {},
   previousHash?: string,
 ): Promise<{ result: ScreenshotResult; hash: string }> {
-  const params: Record<string, unknown> = {
-    format: "jpeg",
-    quality: opts.quality ?? DEFAULT_QUALITY,
-    captureBeyondViewport: opts.fullPage === true,
-  };
+  const format = opts.format ?? "jpeg";
+  const params: Record<string, unknown> = { format, captureBeyondViewport: opts.fullPage === true };
+  if (format === "jpeg") params.quality = opts.quality ?? DEFAULT_QUALITY;
 
   if (opts.ref) {
     if (!refs.get(opts.ref)) throw new StaleRefError(opts.ref, "Take a fresh snapshot and use the new refs.");
@@ -123,16 +166,28 @@ export async function captureScreenshot(
     });
     if (!box?.ok) throw new StaleRefError(opts.ref, "The element has no visible box. Take a fresh snapshot.");
     params.clip = { x: box.x, y: box.y, width: box.width, height: box.height, scale: 1 };
+  } else if (opts.region || opts.scale !== undefined) {
+    // clip is measured from the top of the document, not the visible area.
+    const m = await readViewportMetrics(send, sessionId);
+    const r = opts.region ?? { x: 0, y: 0, width: m.width, height: m.height };
+    params.clip = {
+      x: r.x + m.scrollX,
+      y: r.y + m.scrollY,
+      width: r.width,
+      height: r.height,
+      scale: (opts.scale ?? 1) / m.devicePixelRatio,
+    };
   }
 
   const shot = (await send("Page.captureScreenshot", params, sessionId)) as { data?: string };
   const base64 = shot.data ?? "";
   const hash = fnv1a(base64).toString(16);
   if (opts.skipIfUnchanged && previousHash === hash) {
-    return { result: { bytes: 0, format: "jpeg", unchanged: true }, hash };
+    return { result: { bytes: 0, format, unchanged: true }, hash };
   }
+  const size = format === "png" ? pngSize(base64) : null;
   return {
-    result: { base64, bytes: Math.floor((base64.length * 3) / 4), format: "jpeg", unchanged: false },
+    result: { base64, bytes: Math.floor((base64.length * 3) / 4), format, unchanged: false, ...(size ?? {}) },
     hash,
   };
 }

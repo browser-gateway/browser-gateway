@@ -1,7 +1,8 @@
-import { keySpecFor } from "./keys.js";
+import { clickAt, InputState, mouseMove, pressChord, wheelAt, type MouseButton } from "./input.js";
+import type { ModifierKey } from "./keys.js";
 import { RESOLVE_FN, type PageResolveReply, type PageResolveRequest } from "./page-script.js";
 import type { RefTable } from "./refs.js";
-import type { CdpSend, Point } from "./types.js";
+import type { CdpSend } from "./types.js";
 
 export type ActionType =
   | "click"
@@ -23,11 +24,15 @@ export interface ActionStep {
   direction?: "up" | "down";
   amount?: number;
   ms?: number;
+  button?: MouseButton;
+  clickCount?: number;
+  modifiers?: ModifierKey[];
 }
 
 export interface ActionOptions {
   actionabilityTimeoutMs?: number;
   commandTimeoutMs?: number;
+  input?: InputState;
 }
 
 export class StaleRefError extends Error {
@@ -65,16 +70,18 @@ export async function performAction(
   step: ActionStep,
   opts: ActionOptions = {},
 ): Promise<void> {
+  const input = opts.input ?? new InputState();
   if (step.type === "wait") {
     await delay(Math.min(Math.max(step.ms ?? 500, 0), MAX_WAIT_STEP_MS));
     return;
   }
   if (step.type === "scroll") {
-    await scroll(send, sessionId, step.direction ?? "down", step.amount ?? 600);
+    const amount = step.amount ?? 600;
+    await wheelAt(send, sessionId, input, { x: 10, y: 10 }, 0, step.direction === "up" ? -amount : amount);
     return;
   }
   if (step.type === "press" && !step.ref) {
-    await pressKey(send, sessionId, requireKey(step));
+    await pressChord(send, sessionId, input, requireKey(step));
     return;
   }
 
@@ -100,28 +107,28 @@ export async function performAction(
 
   switch (step.type) {
     case "click":
-      await click(send, sessionId, point);
+      await clickAt(send, sessionId, input, point, step);
       return;
     case "hover":
-      await mouseMove(send, sessionId, point);
+      await mouseMove(send, sessionId, input, point);
       return;
     case "check":
     case "uncheck":
-      if ((resolved.checked === true) !== (step.type === "check")) await click(send, sessionId, point);
+      if ((resolved.checked === true) !== (step.type === "check")) await clickAt(send, sessionId, input, point);
       return;
     case "fill":
-      await click(send, sessionId, point);
+      await clickAt(send, sessionId, input, point);
       // Some pages swap an input for a new one when it is clicked; type into what now has focus.
       await resolve(send, sessionId, refs, { ref, mode: "focus-select", deadlineMs, acceptFocused: true });
       await send("Input.insertText", { text: step.text ?? "" }, sessionId);
       return;
     case "type":
-      await click(send, sessionId, point);
+      await clickAt(send, sessionId, input, point);
       await send("Input.insertText", { text: step.text ?? "" }, sessionId);
       return;
     case "press":
-      await click(send, sessionId, point);
-      await pressKey(send, sessionId, requireKey(step));
+      await clickAt(send, sessionId, input, point);
+      await pressChord(send, sessionId, input, requireKey(step));
       return;
     default:
       throw new Error(`unsupported action ${String(step.type)}`);
@@ -145,46 +152,6 @@ async function resolve(
 function requireKey(step: ActionStep): string {
   if (!step.key) throw new Error("press needs a key");
   return step.key;
-}
-
-/** Input events for one gesture are written back to back without awaiting each in
- *  turn: the browser processes them in arrival order, so the gesture costs one
- *  round trip instead of one per event. */
-function dispatchAll(send: CdpSend, sessionId: string, events: Array<[string, Record<string, unknown>]>) {
-  return Promise.all(events.map(([method, params]) => send(method, params, sessionId)));
-}
-
-async function click(send: CdpSend, sessionId: string, point: Point): Promise<void> {
-  const base = { x: point.x, y: point.y, button: "left", clickCount: 1, buttons: 1 };
-  await dispatchAll(send, sessionId, [
-    ["Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, buttons: 0 }],
-    ["Input.dispatchMouseEvent", { ...base, type: "mousePressed" }],
-    ["Input.dispatchMouseEvent", { ...base, type: "mouseReleased", buttons: 0 }],
-  ]);
-}
-
-async function mouseMove(send: CdpSend, sessionId: string, point: Point): Promise<void> {
-  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, buttons: 0 }, sessionId);
-}
-
-async function scroll(send: CdpSend, sessionId: string, direction: "up" | "down", amount: number): Promise<void> {
-  await send(
-    "Input.dispatchMouseEvent",
-    { type: "mouseWheel", x: 10, y: 10, deltaX: 0, deltaY: direction === "down" ? amount : -amount },
-    sessionId,
-  );
-}
-
-async function pressKey(send: CdpSend, sessionId: string, key: string): Promise<void> {
-  const spec = keySpecFor(key);
-  const common = { key, code: spec.code, windowsVirtualKeyCode: spec.keyCode, nativeVirtualKeyCode: spec.keyCode };
-  const text = spec.text ?? (key.length === 1 ? key : undefined);
-  const events: Array<[string, Record<string, unknown>]> = [
-    ["Input.dispatchKeyEvent", { ...common, type: spec.text ? "keyDown" : "rawKeyDown" }],
-  ];
-  if (text !== undefined) events.push(["Input.dispatchKeyEvent", { ...common, type: "char", text }]);
-  events.push(["Input.dispatchKeyEvent", { ...common, type: "keyUp" }]);
-  await dispatchAll(send, sessionId, events);
 }
 
 function delay(ms: number): Promise<void> {

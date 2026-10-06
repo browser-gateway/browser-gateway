@@ -1,12 +1,31 @@
 export { AgentSession } from "./session.js";
 export { NotActionableError, StaleRefError } from "./actions.js";
-export type { ActOptions, ActResult, AgentSessionOptions, NavigateResult, TabHandle } from "./session.js";
+export type {
+  ActOptions,
+  ActResult,
+  AgentSessionOptions,
+  NavigateResult,
+  ReadPageOptions,
+  ReadPageResult,
+  TabHandle,
+  TabInfo,
+} from "./session.js";
+export { findElements } from "./find.js";
+export type { FindMatch } from "./find.js";
 export type { ActionStep, ActionType } from "./actions.js";
 export { RefTable } from "./refs.js";
 export type { RefEntry } from "./refs.js";
 export { buildSnapshot, diffSnapshots } from "./snapshot.js";
-export { captureScreenshot, extractContent } from "./read.js";
-export type { ExtractFormat, ExtractOptions, ExtractResult, ScreenshotOptions, ScreenshotResult } from "./read.js";
+export { captureScreenshot, extractContent, pngSize, readViewportMetrics } from "./read.js";
+export type {
+  ExtractFormat,
+  ExtractOptions,
+  ExtractResult,
+  ScreenshotOptions,
+  ScreenshotRegion,
+  ScreenshotResult,
+  ViewportMetrics,
+} from "./read.js";
 export { enableObservation, Observations } from "./observe.js";
 export type {
   DialogPolicy,
@@ -14,8 +33,10 @@ export type {
   ObservedConsole,
   ObservedDialog,
   ObservedDownload,
+  ObservedRequest,
   ObservedRequestFailure,
 } from "./observe.js";
+export { redactUrl } from "./observe.js";
 export { clampWaitTimeout, waitForCondition, waitForQuiet } from "./wait.js";
 export type { WaitCondition, WaitResult } from "./wait.js";
 export { PageWorld } from "./world.js";
@@ -23,8 +44,10 @@ export type { CdpSend, Point } from "./types.js";
 export type { SnapshotDiff, SnapshotOptions, SnapshotResult } from "./snapshot.js";
 export { boxOfQuad, centerOfBox } from "./geometry.js";
 export type { Box } from "./geometry.js";
-export { KEY_SPECS, keySpecFor } from "./keys.js";
-export type { KeySpec } from "./keys.js";
+export { KEY_SPECS, keySpecFor, MODIFIER_BITS, modifierMask, normalizeKeyName, parseChord } from "./keys.js";
+export type { Chord, KeySpec, ModifierKey } from "./keys.js";
+export { InputState } from "./input.js";
+export type { ClickOptions, MouseButton } from "./input.js";
 export { agentInstructions } from "./instructions.js";
 export type { InstructionsOptions } from "./instructions.js";
 export {

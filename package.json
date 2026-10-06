@@ -44,6 +44,10 @@
       "types": "./dist/agent-tools/index.d.ts",
       "default": "./dist/agent-tools/index.js"
     },
+    "./agent-tools/computer-use": {
+      "types": "./dist/agent-tools/computer-use/index.d.ts",
+      "default": "./dist/agent-tools/computer-use/index.js"
+    },
     "./selection": {
       "types": "./dist/core/selection.d.ts",
       "default": "./dist/core/selection.js"

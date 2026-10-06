@@ -1,0 +1,77 @@
+[
+  [
+    {
+      "type": "tool_use",
+      "id": "toolu_01Wvfgth4rsLS7QxuvsCPwbT",
+      "name": "screenshot",
+      "input": {},
+      "toolset_name": "computer",
+      "caller": {
+        "type": "direct"
+      }
+    }
+  ],
+  [
+    {
+      "type": "tool_use",
+      "id": "toolu_01KNBhXAqUDXhHvRVcMAhnGs",
+      "name": "left_click",
+      "input": {
+        "coordinate": [
+          480,
+          33
+        ]
+      },
+      "toolset_name": "computer",
+      "caller": {
+        "type": "direct"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_01XFaREtP7x7dF49RAgyBRF9",
+      "name": "type",
+      "input": {
+        "text": "Grace Hopper"
+      },
+      "toolset_name": "computer",
+      "caller": {
+        "type": "direct"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_011ZgcSATz6TTzpNrhuRxkDB",
+      "name": "key",
+      "input": {
+        "text": "Return"
+      },
+      "toolset_name": "computer",
+      "caller": {
+        "type": "direct"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_01U3remszFGsHQZyWPgLJmRF",
+      "name": "wait",
+      "input": {
+        "duration": 2
+      },
+      "toolset_name": "computer",
+      "caller": {
+        "type": "direct"
+      }
+    },
+    {
+      "type": "tool_use",
+      "id": "toolu_01LBRHetGShep9GACewtYNSC",
+      "name": "screenshot",
+      "input": {},
+      "toolset_name": "computer",
+      "caller": {
+        "type": "direct"
+      }
+    }
+  ]
+]

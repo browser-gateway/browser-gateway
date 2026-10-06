@@ -1,16 +1,15 @@
 import WebSocket from "ws";
-import type { CdpTransport } from "../../core/cdp/protocol.js";
+import { CallbackTransport } from "../../core/cdp/callback-transport.js";
 
 /** Node WebSocket transport for the isomorphic CDP client. */
-export class NodeCdpTransport implements CdpTransport {
+export class NodeCdpTransport extends CallbackTransport {
   private readonly ws: WebSocket;
-  private messageHandler: ((data: string) => void) | null = null;
-  private closeHandler: ((reason?: string) => void) | null = null;
 
   constructor(url: string, headers?: Record<string, string>) {
+    super();
     this.ws = new WebSocket(url, { headers, handshakeTimeout: 30_000, perMessageDeflate: false });
-    this.ws.on("message", (raw) => this.messageHandler?.(String(raw)));
-    this.ws.on("close", (code, reason) => this.closeHandler?.(String(reason) || `closed ${code}`));
+    this.ws.on("message", (raw) => this.emitMessage(String(raw)));
+    this.ws.on("close", (code, reason) => this.emitClose(String(reason) || `closed ${code}`));
   }
 
   ready(timeoutMs = 30_000): Promise<void> {
@@ -35,19 +34,7 @@ export class NodeCdpTransport implements CdpTransport {
     this.ws.send(data);
   }
 
-  onMessage(cb: (data: string) => void): void {
-    this.messageHandler = cb;
-  }
-
-  onClose(cb: (reason?: string) => void): void {
-    this.closeHandler = cb;
-  }
-
-  async close(): Promise<void> {
-    try {
-      this.ws.close();
-    } catch {
-      /* already closed */
-    }
+  protected closeSocket(): void {
+    this.ws.close();
   }
 }

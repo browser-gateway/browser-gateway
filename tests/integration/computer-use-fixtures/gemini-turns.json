@@ -1,0 +1,30 @@
+[
+  [
+    {
+      "functionCall": {
+        "name": "click",
+        "args": {
+          "y": 36,
+          "intent": "Click the search box on the Wikipedia page",
+          "x": 325
+        },
+        "id": "call_252631"
+      },
+      "thoughtSignature": "EqYDCqMDAWkUfRO94CbSDSnqfEmNnvKAvDhQ149ZS7RfelTk69n2xIwPylkS9mBAaFGZqApm1YwVC4C83eaqRyjsaANkhOGCG2pCT27Byfs19zzd+TpbQ4Oh/mriliwACT+3ix4xgRWTpFz7mokU6Y4lpAB2lmdOjX2oAgSWqzra0doLGVjRq2H48vjlhTKpfUAv6jFFDqBWforcphSA4eqEXoytFDrOarH8p+jhLcvyMbw0IkBNCGsjgJ2nvq+3l9B9WNAVJ4mBqqHXLuCvZd4hYYKpxgzcVcFZ+KCVtm/JJ40HvDXtzVG11yOkno/zHursBjWaQkFBXC6BPrhuZbz4TLyKkR3VLfrtt/mJ6xgVsJA2zJ/hPpgpjRmz62wljFQaEKrIOvjLpgcCuzZTFrp81sl3l3HAmSpd5fbFamfZWbRnswamGqNB2KInytGWme6u91G7fNHgmtfytZD/KxCsAmj8UsN0Ozx6BaL8uLZEv9qzdXXwtFf4FG/yRVrdKS2fKFg2krt0wT01974m2gYNqF2S9XODVYnJnZTYmiv6lMXIb8iSPXI="
+    }
+  ],
+  [
+    {
+      "functionCall": {
+        "name": "type",
+        "args": {
+          "intent": "Type Grace Hopper into the search box and press enter",
+          "press_enter": true,
+          "text": "Grace Hopper"
+        },
+        "id": "call_280597"
+      },
+      "thoughtSignature": "EpIBCo8BAWkUfROVEEkzxQda4lDIx+WSgpFQIDnZ1tgJl+bnxbFF9aRBjGMaRcIV6SssNxY2r3WyDWRyQm6mGwqwEydcnLhSqE+wGFLvopcuyr7qHKL3qrUnisP63aYwwBC8G0cXH/Stq6mjQ02zXNt2iFzD1vdksdle0D8HutslDOcBMJ9ohENtd/phM1lt+g+NJ4E="
+    }
+  ]
+]

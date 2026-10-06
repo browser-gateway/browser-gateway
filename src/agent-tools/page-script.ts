@@ -496,3 +496,97 @@ export const WAIT_FN = `(req) => new Promise((resolve) => {
     characterData: true });
   check();
 })`;
+
+export interface PageTreeRequest {
+  filter: "visible" | "interactive" | "all";
+  depth: number;
+  ref?: string;
+  maxChars: number;
+}
+
+export interface PageTreeReply {
+  url: string;
+  lines: string[];
+  refs: Array<[string, string, string]>;
+  truncated: boolean;
+  missingRef?: boolean;
+}
+
+export const READ_TREE_FN = `(req) => {
+  ${SHARED}
+  const lines = [];
+  const refs = [];
+  let chars = 0;
+  let truncated = false;
+  let visited = 0;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const emit = (depth, line) => {
+    if (truncated) return;
+    const text = "  ".repeat(depth) + line;
+    if (chars + text.length + 1 > req.maxChars) { truncated = true; return; }
+    lines.push(text);
+    chars += text.length + 1;
+  };
+  const directText = (el) => {
+    let t = "";
+    for (const n of el.childNodes) if (n.nodeType === 3) t += n.nodeValue;
+    return t.replace(/\\s+/g, " ").trim();
+  };
+  const pointer = (el) => {
+    if (getComputedStyle(el).cursor !== "pointer") return false;
+    const parent = el.parentElement;
+    return !parent || getComputedStyle(parent).cursor !== "pointer";
+  };
+  const DESCEND_INTO = new Set(["listbox", "tablist", "radiogroup"]);
+  let rootEl = null;
+  const visit = (el, depth, doc) => {
+    if (truncated) return;
+    if (++visited > 20000) { truncated = true; return; }
+    if (el.nodeType !== 1 || SKIP_TAGS.has(el.tagName)) return;
+    if (typeof el.checkVisibility === "function" && !el.checkVisibility({ checkVisibilityCSS: true })) return;
+    const r = el.getBoundingClientRect();
+    const sized = r.width > 0 || r.height > 0;
+    const inScope = req.filter === "all" ? sized : sized && r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
+    const role = roleOf(el);
+    let next = depth;
+    if (INTERACTIVE.has(role) || (!role && pointer(el))) {
+      if (inScope) {
+        const shownRole = role || "button";
+        const name = clip(nameOf(el, doc, true));
+        const ref = refFor(el, shownRole, name);
+        refs.push([ref, shownRole, name]);
+        emit(depth, shownRole + (name ? ' "' + name + '"' : "") + stateOf(el, shownRole) + " [" + ref + "]");
+        next = depth + 1;
+      }
+      if (el !== rootEl && !DESCEND_INTO.has(role)) return;
+    } else if (CONTEXT.has(role)) {
+      if (inScope) {
+        const name = clip(nameOf(el, doc, role === "heading"));
+        emit(depth, role + (name ? ' "' + name + '"' : ""));
+        next = depth + 1;
+      }
+    } else if (req.filter !== "interactive" && inScope) {
+      const text = directText(el);
+      if (text) emit(depth, "text " + JSON.stringify(clip(text)));
+    }
+    if (next > req.depth) return;
+    if (el.tagName === "IFRAME") {
+      let inner = null;
+      try { inner = el.contentDocument; } catch (e) { inner = null; }
+      if (inner && inner.body) visit(inner.body, next, inner);
+      return;
+    }
+    if (el.shadowRoot) for (const child of el.shadowRoot.children) visit(child, next, doc);
+    for (const child of el.children) visit(child, next, doc);
+  };
+  let root = document.body || document.documentElement;
+  if (req.ref) {
+    const found = findByRef(req.ref);
+    if (!found) return { url: location.href, lines: [], refs: [], truncated: false, missingRef: true };
+    root = found;
+  }
+  rootEl = root;
+  visit(root, 0, root.ownerDocument || document);
+  return { url: location.href, lines: lines, refs: refs, truncated: truncated };
+}`;
