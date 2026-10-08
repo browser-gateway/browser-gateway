@@ -13,6 +13,7 @@ import { ChevronDown, ChevronRight, Loader2, Play } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CodeBlock } from "@/components/code-block";
 import { EndpointReference } from "@/components/endpoint-reference";
@@ -215,10 +216,15 @@ function ScreenshotForm({ profiles, profilesEnabled, providers }: FormSectionPro
         <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" className="font-mono text-[13px]" />
       </FormRow>
       <FormRow label="Format">
-        <NativeSelect value={format} onChange={(e) => setFormat(e.target.value as "png" | "jpeg")}>
-          <option value="png">PNG</option>
-          <option value="jpeg">JPEG</option>
-        </NativeSelect>
+        <Select
+          value={format}
+          options={[
+            { value: "png", label: "PNG" },
+            { value: "jpeg", label: "JPEG" },
+          ]}
+          onChange={setFormat}
+          fullWidth
+        />
       </FormRow>
       <FormRow label="Full page">
         <label className="text-[13px] text-muted-foreground flex items-center gap-2">
@@ -464,14 +470,12 @@ function ProfileDropdown(props: {
   return (
     <FormRow label="Profile">
       <div className="space-y-1">
-        <NativeSelect value={props.value} onChange={(e) => props.onChange(e.target.value)}>
-          <option value="">(no profile)</option>
-          {props.profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.id}
-            </option>
-          ))}
-        </NativeSelect>
+        <Select
+          value={props.value}
+          options={[{ value: "", label: "(no profile)" }, ...props.profiles.map((p) => ({ value: p.id, label: p.id }))]}
+          onChange={props.onChange}
+          fullWidth
+        />
         <p className="text-[11px] text-muted-foreground">
           Optional. Runs with the saved cookies and storage of this profile.
         </p>
@@ -489,28 +493,17 @@ function ProviderDropdown(props: {
   return (
     <FormRow label="Provider">
       <div className="space-y-1">
-        <NativeSelect value={props.value} onChange={(e) => props.onChange(e.target.value)}>
-          <option value="">Auto (gateway picks)</option>
-          {props.providers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.id}
-            </option>
-          ))}
-        </NativeSelect>
+        <Select
+          value={props.value}
+          options={[{ value: "", label: "Auto (gateway picks)" }, ...props.providers.map((p) => ({ value: p.id, label: p.id }))]}
+          onChange={props.onChange}
+          fullWidth
+        />
         <p className="text-[11px] text-muted-foreground">
           Optional. Pin this request to one backend. No failover when pinned.
         </p>
       </div>
     </FormRow>
-  );
-}
-
-function NativeSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <select
-      {...props}
-      className="bg-muted/30 border border-border/40 rounded h-10 px-3.5 text-[13px] font-mono w-full focus:outline-none focus:ring-1 focus:ring-foreground/40"
-    />
   );
 }
 
