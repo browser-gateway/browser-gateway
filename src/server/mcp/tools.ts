@@ -2,7 +2,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
-import { agentToolDefinition, type ActionStep, type ActionType } from "../../agent-tools/index.js";
+import {
+  agentToolDefinition,
+  fetchPage,
+  screenshotPage,
+  type ActionStep,
+  type ActionType,
+  type AgentToolDefinition,
+} from "../../agent-tools/index.js";
 import type { McpBrowserSession, McpSessionManager } from "./sessions.js";
 
 const ACTION_TYPES = [
@@ -37,8 +44,28 @@ function failed(err: unknown): { content: Array<{ type: "text"; text: string }>;
   return { content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }], isError: true };
 }
 
+function definition(name: string): AgentToolDefinition {
+  const def = agentToolDefinition(name);
+  if (!def) throw new Error(`no shared definition for tool ${name}`);
+  return def;
+}
+
 function describeTool(name: string): string {
-  return agentToolDefinition(name)?.description ?? name;
+  return definition(name).description;
+}
+
+function annotate(name: string): AgentToolDefinition["annotations"] {
+  return definition(name).annotations;
+}
+
+function toolConfig(name: string) {
+  const def = definition(name);
+  return {
+    title: def.annotations.title,
+    description: def.description,
+    annotations: def.annotations,
+    ...(def.alwaysLoad ? { _meta: { "anthropic/alwaysLoad": true } } : {}),
+  };
 }
 
 function sessionSummary(session: McpBrowserSession): Record<string, unknown> {
@@ -73,6 +100,67 @@ export function registerTools(
     }
   };
 
+  const oneShot = async <T>(run: (session: McpBrowserSession) => Promise<T>): Promise<T> => {
+    await sessions.reapExpired();
+    const session = await sessions.createSession();
+    if (!session) throw new Error("no provider available right now. Try again shortly.");
+    try {
+      return await run(session);
+    } finally {
+      await sessions.releaseSession(session.sessionId);
+    }
+  };
+
+  mcp.registerTool(
+    "fetch_page",
+    {
+      ...toolConfig("fetch_page"),
+      inputSchema: {
+        url: z.string().url(),
+        format: z.enum(["markdown", "text", "links"]).optional(),
+        selector: z.string().optional(),
+        maxChars: z.number().optional(),
+        waitForText: z.string().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        return text(await oneShot((session) => fetchPage(session.agent, args)));
+      } catch (err) {
+        logger.warn({ tool: "fetch_page", error: (err as Error).message }, "mcp tool failed");
+        return failed(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "screenshot_page",
+    {
+      ...toolConfig("screenshot_page"),
+      inputSchema: {
+        url: z.string().url(),
+        fullPage: z.boolean().optional(),
+        quality: z.number().min(1).max(100).optional(),
+        waitForText: z.string().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        const shot = await oneShot((session) => screenshotPage(session.agent, args));
+        const { image, ...page } = shot;
+        return {
+          content: [
+            { type: "image" as const, data: image.base64 ?? "", mimeType: `image/${image.format}` },
+            { type: "text" as const, text: JSON.stringify(page) },
+          ],
+        };
+      } catch (err) {
+        logger.warn({ tool: "screenshot_page", error: (err as Error).message }, "mcp tool failed");
+        return failed(err);
+      }
+    },
+  );
+
   mcp.tool(
     "browser_session",
     describeTool("browser_session"),
@@ -82,6 +170,7 @@ export function registerTools(
       idleMinutes: z.number().min(1).max(30).optional().describe("Close after this long with no action. Default 5."),
       pageConsole: z.boolean().optional().describe("Also capture the page's own console output."),
     },
+    annotate("browser_session"),
     async ({ action, sessionId, idleMinutes, pageConsole }) => {
       await sessions.reapExpired();
       if (action === "open") {
@@ -110,6 +199,7 @@ export function registerTools(
     "browser_navigate",
     describeTool("browser_navigate"),
     { url: z.string().url(), sessionId: sessionIdArg, tabId: tabIdArg },
+    annotate("browser_navigate"),
     async ({ url, sessionId, tabId }) =>
       use(sessionId, async (session) => {
         const result = await session.agent.navigate(url, tabId);
@@ -135,6 +225,7 @@ export function registerTools(
       sessionId: sessionIdArg,
       tabId: tabIdArg,
     },
+    annotate("browser_snapshot"),
     async ({ sessionId, tabId, ...opts }) =>
       use(sessionId, async (session) => {
         const snap = await session.agent.snapshot(opts, tabId);
@@ -152,6 +243,7 @@ export function registerTools(
       sessionId: sessionIdArg,
       tabId: tabIdArg,
     },
+    annotate("browser_act"),
     async ({ steps, stopOnError, settleMs, sessionId, tabId }) =>
       use(sessionId, async (session) =>
         session.agent.act(steps as ActionStep[], { stopOnError, settleMs, tabId }),
@@ -168,6 +260,7 @@ export function registerTools(
       sessionId: sessionIdArg,
       tabId: tabIdArg,
     },
+    annotate("browser_extract"),
     async ({ sessionId, tabId, ...opts }) =>
       use(sessionId, async (session) => session.agent.extract(opts, tabId)),
   );
@@ -183,6 +276,7 @@ export function registerTools(
       sessionId: sessionIdArg,
       tabId: tabIdArg,
     },
+    annotate("browser_screenshot"),
     async ({ sessionId, tabId, ...opts }) => {
       await sessions.reapExpired();
       try {
@@ -211,6 +305,7 @@ export function registerTools(
       sessionId: sessionIdArg,
       tabId: tabIdArg,
     },
+    annotate("browser_wait"),
     async ({ sessionId, tabId, ...condition }) =>
       use(sessionId, async (session) => session.agent.waitFor(condition, tabId)),
   );
@@ -224,6 +319,7 @@ export function registerTools(
       url: z.string().url().optional(),
       sessionId: sessionIdArg,
     },
+    annotate("browser_tabs"),
     async ({ action, tabId, url, sessionId }) =>
       use(sessionId, async (session) => {
         if (action === "new") {
@@ -248,6 +344,7 @@ export function registerTools(
     "browser_evaluate",
     describeTool("browser_evaluate"),
     { expression: z.string(), sessionId: sessionIdArg, tabId: tabIdArg },
+    annotate("browser_evaluate"),
     async ({ expression, sessionId, tabId }) =>
       use(sessionId, async (session) => ({ value: await session.agent.evaluate(expression, tabId) })),
   );
@@ -256,6 +353,7 @@ export function registerTools(
     "browser_observe",
     describeTool("browser_observe"),
     { sessionId: sessionIdArg },
+    annotate("browser_observe"),
     async ({ sessionId }) => use(sessionId, async (session) => session.agent.observed()),
   );
 

@@ -108,6 +108,14 @@ describe.skipIf(!chromePath)("browse CLI", () => {
     expect(extracted.stdout).toContain("saved written by cli");
   }, 120_000);
 
+  it("reads a page as markdown in one command", async () => {
+    const fetched = await cli("fetch", baseUrl, "--format", "text");
+    expect(fetched.code).toBe(0);
+    expect(fetched.stdout.split("\n")[0]).toContain("CLI fixture");
+    expect(fetched.stdout).toContain("nothing saved");
+    expect(fetched.stdout).not.toContain("blocked:");
+  }, 120_000);
+
   it("reports a stale ref with a non-zero exit code", async () => {
     await cli("open", baseUrl);
     const result = await cli("click", "@e999");

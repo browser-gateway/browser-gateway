@@ -140,6 +140,7 @@ function printBrowseHelp(): void {
 Drives one browser per named session. The session stays open between commands.
 
 Verbs:
+  fetch <url>                 read a page as markdown in one step (--format, --selector, --max, --wait-for)
   open <url>                  go to a page, print its interactive elements
   snapshot                    list clickable and typeable elements (e1, e2, ...)
   click @e4                   click an element

@@ -1,4 +1,4 @@
-import type { AgentSession, ActionStep, ActionType } from "../../agent-tools/index.js";
+import { fetchPage, type AgentSession, type ActionStep, type ActionType, type ExtractFormat } from "../../agent-tools/index.js";
 import { flagNumber, normaliseRef, type BrowseRequest, type BrowseResponse } from "./protocol.js";
 
 const ACTION_VERBS: Record<string, ActionType> = {
@@ -18,6 +18,20 @@ export async function runBrowseCommand(session: AgentSession, req: BrowseRequest
   const { verb, args, flags } = req;
   const tabId = typeof flags.tab === "string" ? flags.tab : undefined;
   const ok = (text: string, data?: unknown): BrowseResponse => ({ id: req.id, ok: true, text, data });
+
+  if (verb === "fetch") {
+    const url = args[0];
+    if (!url) throw new Error("fetch needs a url");
+    const result = await fetchPage(session, {
+      url,
+      format: typeof flags.format === "string" ? (flags.format as ExtractFormat) : undefined,
+      selector: typeof flags.selector === "string" ? flags.selector : undefined,
+      maxChars: flagNumber(flags, "max"),
+      waitForText: typeof flags["wait-for"] === "string" ? flags["wait-for"] : undefined,
+    });
+    const header = [`${result.title} (${result.url})`, result.blocked ? `blocked: ${result.blocked}` : ""];
+    return ok([...header.filter(Boolean), result.text].join("\n"), result);
+  }
 
   if (verb === "open") {
     const url = args[0];

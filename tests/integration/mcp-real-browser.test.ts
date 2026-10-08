@@ -21,6 +21,9 @@ const PAGE_HTML = `<!doctype html><html><head><title>MCP fixture</title></head><
 <p>Order total is 42 dollars.</p>
 </body></html>`;
 
+const CHALLENGE_HTML = `<!doctype html><html><head><title>Just a moment...</title></head><body>
+<p>Checking your browser before accessing the site.</p></body></html>`;
+
 const chromePath = (() => {
   try {
     return chromeLauncher.Launcher.getInstallations()[0] ?? null;
@@ -54,9 +57,9 @@ describe.skipIf(!chromePath)("MCP over a real browser", () => {
     requireBuiltCli();
     GATEWAY_PORT = await reservePort();
 
-    httpServer = createServer((_req, res) => {
+    httpServer = createServer((req, res) => {
       res.writeHead(200, { "content-type": "text/html" });
-      res.end(PAGE_HTML);
+      res.end(req.url === "/challenge" ? CHALLENGE_HTML : PAGE_HTML);
     });
     await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
     baseUrl = `http://127.0.0.1:${(httpServer.address() as AddressInfo).port}`;
@@ -205,5 +208,69 @@ logging:
     } finally {
       await client.callTool({ name: "browser_session", arguments: { action: "close", sessionId } });
     }
+  }, 120_000);
+
+  async function providerActive(): Promise<number> {
+    const status = (await (await fetch(`http://127.0.0.1:${GATEWAY_PORT}/v1/status`)).json()) as {
+      providers: Array<{ active: number }>;
+    };
+    return status.providers.reduce((sum, p) => sum + p.active, 0);
+  }
+
+  async function waitForNoActiveSlots(): Promise<number> {
+    for (let i = 0; i < 50; i++) {
+      const active = await providerActive();
+      if (active === 0) return 0;
+      await sleep(100);
+    }
+    return providerActive();
+  }
+
+  it("advertises the one-call tools with annotations and asks clients to load them up front", async () => {
+    const { tools } = await client.listTools();
+    const fetchTool = tools.find((t) => t.name === "fetch_page");
+    const shotTool = tools.find((t) => t.name === "screenshot_page");
+    expect(fetchTool?.annotations?.readOnlyHint).toBe(true);
+    expect(fetchTool?._meta?.["anthropic/alwaysLoad"]).toBeUndefined();
+    expect(shotTool?._meta?.["anthropic/alwaysLoad"]).toBe(true);
+    expect(shotTool?.title).toBe("Screenshot page (real browser)");
+    expect(tools.find((t) => t.name === "browser_act")?.annotations?.readOnlyHint).toBe(false);
+  });
+
+  it("reads a url in one call and gives its browser back", async () => {
+    const result = parse(await client.callTool({ name: "fetch_page", arguments: { url: baseUrl } }));
+    expect(result.title).toBe("MCP fixture");
+    expect(String(result.text)).toContain("Order total is 42 dollars");
+    expect(result.blocked).toBeUndefined();
+    const listed = parse(await client.callTool({ name: "browser_session", arguments: { action: "list" } }));
+    expect(listed.sessions).toEqual([]);
+    expect(await waitForNoActiveSlots()).toBe(0);
+  }, 120_000);
+
+  it("screenshots a url in one call and gives its browser back", async () => {
+    const result = (await client.callTool({ name: "screenshot_page", arguments: { url: baseUrl } })) as {
+      content: Array<{ type: string; data?: string; mimeType?: string; text?: string }>;
+    };
+    const image = result.content.find((c) => c.type === "image");
+    expect(image?.mimeType).toBe("image/jpeg");
+    expect(Buffer.from(image!.data!, "base64").length).toBeGreaterThan(1000);
+    const page = JSON.parse(result.content.find((c) => c.type === "text")!.text!) as { title: string };
+    expect(page.title).toBe("MCP fixture");
+    expect(await waitForNoActiveSlots()).toBe(0);
+  }, 120_000);
+
+  it("flags a bot check page instead of passing it off as content", async () => {
+    const result = parse(await client.callTool({ name: "fetch_page", arguments: { url: `${baseUrl}/challenge` } }));
+    expect(String(result.blocked)).toContain("bot check");
+    expect(await waitForNoActiveSlots()).toBe(0);
+  }, 120_000);
+
+  it("gives the browser back when a one-call read fails", async () => {
+    const result = await client.callTool({
+      name: "fetch_page",
+      arguments: { url: baseUrl, selector: "#does-not-exist" },
+    });
+    expect(result).toBeDefined();
+    expect(await waitForNoActiveSlots()).toBe(0);
   }, 120_000);
 });

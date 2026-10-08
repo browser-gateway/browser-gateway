@@ -292,6 +292,14 @@ export class AgentSession {
   }
 
   async navigate(url: string, tabId?: string): Promise<NavigateResult> {
+    const loaded = await this.goto(url, tabId);
+    const snapshot = await this.snapshot({}, loaded.tabId);
+    this.policy.touch();
+    return { ...loaded, snapshot, session: this.policy.state(), warning: this.policy.warning() };
+  }
+
+  /** Loads a url and waits for it, without building a snapshot. */
+  async goto(url: string, tabId?: string): Promise<{ tabId: string; url: string; title: string }> {
     const tab = await this.requireTab(tabId);
     this.policy.touch();
     tab.refs.clear();
@@ -299,9 +307,7 @@ export class AgentSession {
 
     await this.loadingVia(tab, () => this.send("Page.navigate", { url }, tab.cdpSessionId));
     const title = await this.currentTitle(tab);
-    const snapshot = await this.snapshot({}, tab.tabId);
-    this.policy.touch();
-    return { tabId: tab.tabId, url: tab.url, title, snapshot, session: this.policy.state(), warning: this.policy.warning() };
+    return { tabId: tab.tabId, url: tab.url, title };
   }
 
   /** Runs steps in order against one tab, waits for the page to settle, and

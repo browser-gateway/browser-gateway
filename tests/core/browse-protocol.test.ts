@@ -75,10 +75,24 @@ describe("agent skill", () => {
     expect(renderSkillMarkdown()).toContain(shared.trim());
   });
 
+  it("ships a SKILL.md identical to the rendered skill", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { renderSkillMarkdown } = await import("../../src/server/browse/skill.js");
+    const shipped = readFileSync(new URL("../../skills/browser-gateway/SKILL.md", import.meta.url), "utf8");
+    expect(shipped).toBe(renderSkillMarkdown());
+  });
+
+  it("leads the skill description with the fallback case", async () => {
+    const { skillFrontmatter } = await import("../../src/server/browse/skill.js");
+    expect(skillFrontmatter.description).toMatch(/^Real browser for web pages/);
+    expect(skillFrontmatter.description).toContain("WebFetch fails");
+    expect(skillFrontmatter.description).toContain("screenshot of a website");
+  });
+
   it("documents every browse verb", async () => {
     const { renderSkillMarkdown } = await import("../../src/server/browse/skill.js");
     const md = renderSkillMarkdown();
-    for (const verb of ["open", "snapshot", "click", "fill", "extract", "screenshot", "wait", "tabs", "close"]) {
+    for (const verb of ["fetch", "open", "snapshot", "click", "fill", "extract", "screenshot", "wait", "tabs", "close"]) {
       expect(md).toContain(`browse ${verb}`);
     }
   });

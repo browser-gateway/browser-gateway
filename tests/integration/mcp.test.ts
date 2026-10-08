@@ -126,6 +126,8 @@ logging:
 
     expect(toolNames).toEqual(
       expect.arrayContaining([
+        "fetch_page",
+        "screenshot_page",
         "browser_session",
         "browser_navigate",
         "browser_snapshot",
@@ -139,7 +141,7 @@ logging:
         "browser_status",
       ]),
     );
-    expect(tools.tools.length).toBeLessThanOrEqual(12);
+    expect(tools.tools.length).toBeLessThanOrEqual(13);
 
     await client.close();
   });

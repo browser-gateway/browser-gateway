@@ -1,6 +1,6 @@
 ---
 name: browser-gateway
-description: Drive a real browser from the terminal: open pages, read them, click and type, across local Chrome or any cloud browser provider routed through browser-gateway. Use when a task needs a live web page rather than an HTTP fetch.
+description: Real browser for web pages, from the terminal. Use when WebFetch fails (403, 402, 429, captcha, empty or JavaScript-only page), when a page needs a login, or when the user wants a screenshot of a website. Opens pages, reads them as markdown, clicks and types, on local Chrome or any cloud browser provider routed through browser-gateway.
 ---
 
 # Browser control with browser-gateway
@@ -23,6 +23,7 @@ browser-gateway browse open https://example.com --endpoint ws://127.0.0.1:9222/d
 
 | Command | What it does |
 |---|---|
+| `browse fetch <url>` | Read a page as markdown in one step; says when it looks blocked |
 | `browse open <url>` | Go to a page and print its clickable and typeable elements |
 | `browse snapshot` | List those elements again (e1, e2, ...) |
 | `browse click @e4` | Click an element |
@@ -45,6 +46,10 @@ Flags: `--session <name>` for parallel work, `--json` for raw output, `--full` f
 
 ## How to work with it
 
+Real browsers for web pages. Use these tools when the user wants a screenshot of a website, when a page needs JavaScript, a login or a real browser, or when a built-in web fetch failed or returned 403, 402, 429, a captcha or an almost empty page.
+- One page to read: browse fetch <url>. To see a page: browse open <url>, then browse screenshot.
+- Several steps on a site (log in, fill a form, click through): browse open, then the other verbs.
+
 Browser sessions. Each browser is a real session on the provider you routed to.
 
 Session rules:
@@ -60,7 +65,7 @@ Working efficiently:
 - Send several steps in one act call (fill, fill, click) instead of one call each.
 - After an action you get only what changed. Ask for a full snapshot only when you need it.
 - Use extract to read a page. It is far cheaper than a screenshot.
-- Take screenshots only when you must see layout, and prefer one element over the whole page.
+- Inside a session, prefer extract over screenshot unless you need to see the layout, and prefer one element over the whole page.
 - Use a saved profile to skip logins instead of signing in again.
 
 When something fails:

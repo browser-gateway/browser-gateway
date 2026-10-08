@@ -684,14 +684,14 @@ describe("act step validation", () => {
 
 describe("tool definitions", () => {
   it("states the server's own idle ceiling on browser_session", () => {
-    const [session] = agentToolDefinitions({ maxIdleMinutes: 5 });
+    const session = agentToolDefinitions({ maxIdleMinutes: 5 }).find((t) => t.name === "browser_session")!;
     const idle = session.inputSchema.properties["idleMinutes"] as Record<string, unknown>;
     expect(idle["maximum"]).toBe(5);
     expect(String(idle["description"])).toContain("Maximum 5 minutes");
   });
 
   it("leaves the schema untouched when no ceiling is given", () => {
-    const [session] = agentToolDefinitions();
+    const session = agentToolDefinitions().find((t) => t.name === "browser_session")!;
     const idle = session.inputSchema.properties["idleMinutes"] as Record<string, unknown>;
     expect(idle["maximum"]).toBe(30);
   });

@@ -57,6 +57,10 @@ export default tseslint.config(
     },
   },
   {
+    files: ["plugins/**/*.mjs"],
+    languageOptions: { globals: { process: "readonly", URL: "readonly" } },
+  },
+  {
     files: ["tests/**/*.ts"],
     rules: {
       // Tests can repeat themselves freely

@@ -48,6 +48,8 @@ export { KEY_SPECS, keySpecFor, MODIFIER_BITS, modifierMask, normalizeKeyName, p
 export type { Chord, KeySpec, ModifierKey } from "./keys.js";
 export { InputState } from "./input.js";
 export type { ClickOptions, MouseButton } from "./input.js";
+export { detectBlockedPage, fetchPage, screenshotPage } from "./one-shot.js";
+export type { FetchPageOptions, FetchPageResult, ScreenshotPageOptions, ScreenshotPageResult } from "./one-shot.js";
 export { agentInstructions } from "./instructions.js";
 export type { InstructionsOptions } from "./instructions.js";
 export {
@@ -64,4 +66,4 @@ export { fnv1a } from "./hash.js";
 export { AGENT_TOOL_DEFINITIONS, AGENT_TOOL_NAMES, agentToolDefinition, agentToolDefinitions } from "./tool-defs.js";
 export { mcpSetupDoc } from "./setup-doc.js";
 export type { McpSetupDocOptions } from "./setup-doc.js";
-export type { AgentToolDefinition } from "./tool-defs.js";
+export type { AgentToolAnnotations, AgentToolDefinition } from "./tool-defs.js";

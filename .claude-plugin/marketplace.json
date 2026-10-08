@@ -1,0 +1,47 @@
+{
+  "name": "browser-gateway",
+  "description": "Real browsers for coding agents: read and screenshot pages that web fetch cannot, through BrowserGateway.",
+  "owner": { "name": "Monostellar Limited", "url": "https://browsergateway.com" },
+  "plugins": [
+    {
+      "name": "browser-gateway",
+      "displayName": "BrowserGateway Cloud",
+      "description": "Cloud browsers through the hosted BrowserGateway MCP server. When WebFetch is blocked or gets an empty page, Claude retries with a real browser.",
+      "source": "./plugins/browser-gateway",
+      "homepage": "https://browsergateway.com",
+      "license": "MIT",
+      "keywords": ["browser", "web fetch", "screenshot", "mcp"],
+      "userConfig": {
+        "router_key": {
+          "type": "string",
+          "title": "Router key",
+          "description": "The router key from your BrowserGateway dashboard (Routers page).",
+          "sensitive": true,
+          "required": true
+        }
+      },
+      "mcpServers": {
+        "browser-gateway": {
+          "type": "http",
+          "url": "https://cdp.browsergateway.io/mcp",
+          "headers": { "Authorization": "Bearer ${user_config.router_key}" }
+        }
+      }
+    },
+    {
+      "name": "browser-gateway-local",
+      "displayName": "BrowserGateway Local",
+      "description": "A real browser on your own machine through the open-source browser-gateway MCP server. When WebFetch is blocked or gets an empty page, Claude retries with a real browser.",
+      "source": "./plugins/browser-gateway",
+      "homepage": "https://browsergateway.com",
+      "license": "MIT",
+      "keywords": ["browser", "web fetch", "screenshot", "mcp"],
+      "mcpServers": {
+        "browser-gateway": {
+          "command": "npx",
+          "args": ["-y", "browser-gateway", "mcp", "--headless"]
+        }
+      }
+    }
+  ]
+}

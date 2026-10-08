@@ -2,6 +2,8 @@ export interface InstructionsOptions {
   idleTimeoutS?: number;
   hardCapHours?: number;
   hosted?: boolean;
+  /** Name the `browse` CLI verbs instead of MCP tool names. */
+  cli?: boolean;
 }
 
 /** Usage rules handed to the agent: MCP `instructions`, CLI help and SKILL.md all
@@ -14,6 +16,17 @@ export function agentInstructions(opts: InstructionsOptions = {}): string {
     : "Each browser is a real session on the provider you routed to.";
 
   return [
+    "Real browsers for web pages. Use these tools when the user wants a screenshot of a website, when a page needs JavaScript, a login or a real browser, or when a built-in web fetch failed or returned 403, 402, 429, a captcha or an almost empty page.",
+    ...(opts.cli
+      ? [
+          "- One page to read: browse fetch <url>. To see a page: browse open <url>, then browse screenshot.",
+          "- Several steps on a site (log in, fill a form, click through): browse open, then the other verbs.",
+        ]
+      : [
+          "- One page to read: fetch_page. One page to see: screenshot_page. Both open and close their own browser.",
+          "- Several steps on a site (log in, fill a form, click through): browser_session, then the other browser_ tools.",
+        ]),
+    "",
     `Browser sessions. ${cost}`,
     "",
     "Session rules:",
@@ -29,7 +42,7 @@ export function agentInstructions(opts: InstructionsOptions = {}): string {
     "- Send several steps in one act call (fill, fill, click) instead of one call each.",
     "- After an action you get only what changed. Ask for a full snapshot only when you need it.",
     "- Use extract to read a page. It is far cheaper than a screenshot.",
-    "- Take screenshots only when you must see layout, and prefer one element over the whole page.",
+    "- Inside a session, prefer extract over screenshot unless you need to see the layout, and prefer one element over the whole page.",
     "- Use a saved profile to skip logins instead of signing in again.",
     "",
     "When something fails:",

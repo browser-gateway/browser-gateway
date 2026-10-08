@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-10-06
+Generated: 2026-10-08
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -389,15 +389,15 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface BrowseResponse` (line 8)
 - **interface** `interface BrowseFlags` (line 16)
 - **const** `const BROWSE_VERBS` (line 24)
-- **type** `type BrowseVerb` (line 46)
-- **fn** `isBrowseVerb(value: string) → value is BrowseVerb` (line 48)
-- **fn** `parseBrowseArgs(argv: string[]) → { verb: string; args: string[]; flags: BrowseFlags }` (line 53) — Splits `browse` argv into positionals and flags. Values may be `--flag=x` or `--flag x`.
-- **fn** `normaliseRef(value: string | undefined) → string | undefined` (line 93) — Accepts `@e4` or `e4` so agents can paste either form.
-- **fn** `flagNumber(flags: Record<string, string | boolean>, name: string) → number | undefined` (line 98)
+- **type** `type BrowseVerb` (line 47)
+- **fn** `isBrowseVerb(value: string) → value is BrowseVerb` (line 49)
+- **fn** `parseBrowseArgs(argv: string[]) → { verb: string; args: string[]; flags: BrowseFlags }` (line 54) — Splits `browse` argv into positionals and flags. Values may be `--flag=x` or `--flag x`.
+- **fn** `normaliseRef(value: string | undefined) → string | undefined` (line 94) — Accepts `@e4` or `e4` so agents can paste either form.
+- **fn** `flagNumber(flags: Record<string, string | boolean>, name: string) → number | undefined` (line 99)
 ### `src/server/browse/skill.ts`
 
-- **fn** `renderSkillMarkdown() → string` (line 28) — SKILL.md content. Body renders {@link agentInstructions} so the CLI, the MCP
-- **const** `const skillFrontmatter` (line 73)
+- **fn** `renderSkillMarkdown() → string` (line 29) — SKILL.md content. Body renders {@link agentInstructions} so the CLI, the MCP
+- **const** `const skillFrontmatter` (line 74)
 ### `src/server/config/loader.ts`
 
 - **const** `const loadedConfigPath: string | null` (line 27)
@@ -432,7 +432,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class McpSessionManager` (line 33) — Owns one {@link AgentSession} per MCP browser session, routed through the
 ### `src/server/mcp/tools.ts`
 
-- **fn** `registerTools(mcp: McpServer, gateway: Gateway, sessions: McpSessionManager, logger: Logger) → void` (line 55)
+- **fn** `registerTools(mcp: McpServer, gateway: Gateway, sessions: McpSessionManager, logger: Logger) → void` (line 82)
 ### `src/server/mcp/ws-transport.ts`
 
 - **class** `class NodeCdpTransport` (line 5) — Node WebSocket transport for the isomorphic CDP client.

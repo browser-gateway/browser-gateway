@@ -22,6 +22,7 @@ export interface BrowseFlags {
 }
 
 export const BROWSE_VERBS = [
+  "fetch",
   "open",
   "snapshot",
   "click",

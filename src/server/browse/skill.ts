@@ -2,10 +2,11 @@ import { agentInstructions, IDLE_DEFAULT_MS } from "../../agent-tools/index.js";
 
 const FRONTMATTER_NAME = "browser-gateway";
 const DESCRIPTION =
-  "Drive a real browser from the terminal: open pages, read them, click and type, across local Chrome or any cloud browser provider routed through browser-gateway. Use when a task needs a live web page rather than an HTTP fetch.";
+  "Real browser for web pages, from the terminal. Use when WebFetch fails (403, 402, 429, captcha, empty or JavaScript-only page), when a page needs a login, or when the user wants a screenshot of a website. Opens pages, reads them as markdown, clicks and types, on local Chrome or any cloud browser provider routed through browser-gateway.";
 
 const VERB_TABLE = `| Command | What it does |
 |---|---|
+| \`browse fetch <url>\` | Read a page as markdown in one step; says when it looks blocked |
 | \`browse open <url>\` | Go to a page and print its clickable and typeable elements |
 | \`browse snapshot\` | List those elements again (e1, e2, ...) |
 | \`browse click @e4\` | Click an element |
@@ -56,7 +57,7 @@ Flags: \`--session <name>\` for parallel work, \`--json\` for raw output, \`--fu
 
 ## How to work with it
 
-${agentInstructions({ idleTimeoutS: IDLE_DEFAULT_MS / 1000 })}
+${agentInstructions({ idleTimeoutS: IDLE_DEFAULT_MS / 1000, cli: true })}
 
 ## Worked example
 
