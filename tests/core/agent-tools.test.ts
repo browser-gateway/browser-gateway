@@ -730,3 +730,34 @@ describe("waitForCondition", () => {
     });
   });
 });
+
+class SelfClosingPage extends FakeBrowser {
+  closeOnRelease = true;
+  override send(frame: string): void {
+    const msg = JSON.parse(frame) as { method: string; params: Record<string, unknown> };
+    if (msg.method === "Input.dispatchMouseEvent" && msg.params.type === "mouseReleased") {
+      this.sent.push({ method: msg.method, params: msg.params });
+      if (this.closeOnRelease) setTimeout(() => this.emitEvent("Target.targetDestroyed", { targetId: "target1" }), 10);
+      return;
+    }
+    super.send(frame);
+  }
+}
+
+describe("input on a page that closes itself", () => {
+  it("finishes the click when the tab closes instead of waiting for an answer that never comes", async () => {
+    const fake = new SelfClosingPage();
+    const session = new AgentSession(new CdpProtocolClient(fake), { commandTimeoutMs: 5_000 });
+    const started = Date.now();
+    await session.clickAt({ x: 10, y: 10 });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(session.tabIds).toEqual([]);
+  });
+
+  it("still reports a click that gets no answer while the tab stays open", async () => {
+    const fake = new SelfClosingPage();
+    fake.closeOnRelease = false;
+    const session = new AgentSession(new CdpProtocolClient(fake), { commandTimeoutMs: 50 });
+    await expect(session.clickAt({ x: 10, y: 10 })).rejects.toThrow(/timed out/);
+  });
+});

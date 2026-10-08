@@ -155,6 +155,7 @@ export class AgentSession {
   private viewportSize?: { width: number; height: number; deviceScaleFactor: number };
   private readonly adoptions = new Set<Promise<void>>();
   private readonly popupsAwaitingUrl = new Set<string>();
+  private readonly tabGoneWaiters = new Map<string, Set<() => void>>();
 
   constructor(
     private readonly cdp: CdpProtocolClient,
@@ -584,14 +585,40 @@ export class AgentSession {
     }
   }
 
+  /** Runs input against a tab. A page that closes itself in response (a "close"
+   *  button) ends the input; Chrome may never answer the command that closed it. */
   private async withInput(
     tabId: string | undefined,
     run: (send: CdpSend, sessionId: string, input: InputState) => Promise<unknown>,
   ): Promise<void> {
     const tab = await this.requireTab(tabId);
     this.policy.touch();
-    await run(this.sender(), tab.cdpSessionId, tab.input);
+    const gone = this.whenTabGone(tab.targetId);
+    const action = run(this.sender(), tab.cdpSessionId, tab.input);
+    action.catch(() => undefined);
+    try {
+      await Promise.race([action, gone.promise]);
+    } catch (err) {
+      if (this.tabs.has(tab.tabId)) throw err;
+    } finally {
+      gone.cancel();
+    }
     this.policy.touch();
+  }
+
+  private whenTabGone(targetId: string): { promise: Promise<void>; cancel: () => void } {
+    let done: () => void = () => undefined;
+    const promise = new Promise<void>((resolve) => (done = resolve));
+    const waiters = this.tabGoneWaiters.get(targetId) ?? new Set<() => void>();
+    waiters.add(done);
+    this.tabGoneWaiters.set(targetId, waiters);
+    return {
+      promise,
+      cancel: () => {
+        waiters.delete(done);
+        if (waiters.size === 0) this.tabGoneWaiters.delete(targetId);
+      },
+    };
   }
 
   /** Runs a command that starts a page load and waits for the load to finish,
@@ -712,6 +739,9 @@ export class AgentSession {
         this.tabs.delete(tabId);
         if (this.activeTabId === tabId) this.activeTabId = this.tabs.keys().next().value ?? null;
       }
+      if (!targetId) return;
+      for (const done of this.tabGoneWaiters.get(targetId) ?? []) done();
+      this.tabGoneWaiters.delete(targetId);
     });
   }
 
