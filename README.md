@@ -136,7 +136,9 @@ See the [Replays docs](https://docs.browsergateway.com/replays) for the storage 
 
 ### MCP server for AI agents
 
-- **Eight browser tools** - navigate, snapshot, screenshot, viewport, interact, evaluate, close, status
+- **One-call tools** - `fetch_page` reads any url as markdown and `screenshot_page` captures it, each in a single call that opens and closes its own browser
+- **Session tools** - `browser_session`, `browser_navigate`, `browser_snapshot`, `browser_act`, `browser_extract`, `browser_screenshot`, `browser_wait`, `browser_tabs`, `browser_evaluate`, `browser_observe` for logins, forms and multi-step work
+- **Fallback for coding agents** - a Claude Code plugin sends Claude to `fetch_page` when its built-in web fetch is blocked, empty or needs JavaScript (`/plugin marketplace add browser-gateway/browser-gateway`); setup for Codex, Cursor and Gemini CLI in [plugins/browser-gateway](plugins/browser-gateway/README.md)
 - **Zero config** - auto-detects Chrome and launches it on first tool use
 - **Concurrent sessions** - every agent gets its own browser, no shared state
 - **Raw CDP** - no Playwright or Puppeteer dependency
