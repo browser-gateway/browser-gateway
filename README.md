@@ -101,7 +101,7 @@ A web dashboard ships with every install. Open `http://localhost:9500/web` after
 - **Cooldown** - failing providers are skipped and recover automatically after a TTL
 - **Health checks** - periodic connectivity probes mark providers unhealthy before clients hit them
 - **Graceful shutdown** - active sessions drain cleanly on SIGTERM and SIGINT
-- **Session reconnect** - dropped clients resume against the same provider with cookies and page state intact
+- **Session reconnect** - a dropped client reconnects with `?sessionId=<X-Session-Id>`; on a provider that issues a resume token (browserserve with its resume window on) it gets the same browser back with its pages, cookies and storage, otherwise a new browser on the same provider
 - **Webhooks** - fire on provider down, recover, and queue-overflow events
 
 ### REST API
