@@ -70,6 +70,7 @@ export default function PlaygroundPage() {
   // Last mouse position INSIDE the canvas (in model coords). Used for the
   // cursor overlay. null when the mouse is outside.
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
@@ -174,7 +175,9 @@ export default function PlaygroundPage() {
 
     const client = new LiveClient({
       onOpen: () => setStatus("live"),
+      onRefresh: (state) => setRefreshing(state === "started"),
       onClose: ({ code, reason }) => {
+        setRefreshing(false);
         setStatus("closed");
         setStatusMsg(`connection closed (${code}${reason ? `: ${reason}` : ""})`);
       },
@@ -607,6 +610,12 @@ export default function PlaygroundPage() {
               height={DEFAULT_VIEWPORT.height}
               className="absolute inset-0 w-full h-full pointer-events-none"
             />
+            {refreshing && (
+              <div className="absolute inset-0 flex items-center justify-center gap-2 bg-background/60 backdrop-blur-sm text-[13px] text-foreground">
+                <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                Updating browser
+              </div>
+            )}
           </div>
 
           {status === "idle" && (

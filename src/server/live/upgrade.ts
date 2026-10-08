@@ -131,7 +131,7 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
     const quality = clampInt(url.searchParams.get("quality"), 1, 100, 60);
     const maxWidth = clampInt(url.searchParams.get("maxWidth"), 320, 3840, 1280);
     const maxHeight = clampInt(url.searchParams.get("maxHeight"), 240, 2160, 720);
-    const everyNthFrame = clampInt(url.searchParams.get("everyNthFrame"), 1, 10, 2);
+    const everyNthFrame = clampInt(url.searchParams.get("everyNthFrame"), 1, 10, 1);
     const keepAliveRaw = url.searchParams.get("keepAlive");
     const keepAliveSeconds = keepAliveRaw === null ? 0 : clampInt(keepAliveRaw, 60, 1200, 300);
 

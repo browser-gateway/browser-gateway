@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { ScreencastBridgePlugin } from "../../../src/pipeline/plugins/screencast-bridge.js";
 import type { PipelineSocket } from "../../../src/pipeline/pipeline.js";
 import type { CdpMessage, SessionState, TargetInfo } from "../../../src/pipeline/types.js";
@@ -113,5 +113,216 @@ describe("ScreencastBridgePlugin onBeforeNavigate", () => {
     const bridge = new ScreencastBridgePlugin({ viewer });
     const msg: CdpMessage = { method: "Network.requestWillBeSent", sessionId: "other" };
     expect(bridge.onEvent(msg, new FakeState())).toBeUndefined();
+  });
+});
+
+class RecordingState extends FakeState {
+  readonly calls: Array<{ method: string; params?: Record<string, unknown> }> = [];
+  loginCheck = false;
+  stuck = false;
+  skipNextMoves = 0;
+  private moves = 0;
+  override async sendInternal<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+    this.calls.push({ method, params });
+    if (method === "Runtime.evaluate") {
+      const expression = String(params?.expression ?? "");
+      if (expression.includes("defineProperty")) return { result: { value: this.moves } } as T;
+      return { result: { value: this.loginCheck } } as T;
+    }
+    if (method === "Input.dispatchMouseEvent" && params?.type === "mouseMoved") {
+      if (this.skipNextMoves > 0) this.skipNextMoves--;
+      else if (!this.stuck) this.moves++;
+    }
+    return super.sendInternal<T>(method);
+  }
+  navigations(): string[] {
+    return this.calls.filter((c) => c.method === "Page.navigate").map((c) => String(c.params?.url));
+  }
+  probes(): Array<{ x: unknown; y: unknown }> {
+    return this.calls.filter((c) => c.method === "Input.dispatchMouseEvent" && c.params?.type === "mouseMoved").map((c) => ({ x: c.params?.x, y: c.params?.y }));
+  }
+}
+
+describe("ScreencastBridgePlugin password warning recovery", () => {
+  const pageNav = (url: string): CdpMessage => ({ method: "Page.frameNavigated", sessionId: "s1", params: { frame: { url } } });
+  const loaded: CdpMessage = { method: "Page.loadEventFired", sessionId: "s1", params: {} };
+  const press = { type: "mouse", event: { kind: "press", x: 100, y: 300, button: "left", clickCount: 1 } };
+
+  async function start() {
+    const viewer = new FakeViewer();
+    const state = new RecordingState();
+    const order: string[] = [];
+    const bridge = new ScreencastBridgePlugin({ viewer, onBeforeNavigate: () => { order.push("before-navigate"); } });
+    await bridge.onSessionStart(state);
+    bridge.onEvent(pageNav("https://site.test/login"), state);
+    bridge.onEvent(loaded, state);
+    return { viewer, state, bridge, order };
+  }
+
+  async function login(viewer: FakeViewer, state: RecordingState, bridge: ScreencastBridgePlugin, landedUrl = "https://site.test/home") {
+    state.loginCheck = true;
+    viewer.receive(press);
+    await vi.advanceTimersByTimeAsync(0);
+    bridge.onEvent(pageNav(landedUrl), state);
+    bridge.onEvent(loaded, state);
+  }
+
+  const refreshNotices = (viewer: FakeViewer) =>
+    viewer.sent.filter((m): m is string => typeof m === "string" && m.includes('"refresh"')).map((m) => JSON.parse(m).state);
+
+  afterEach(() => vi.useRealTimers());
+
+  it("asks the page about the click before sending the click", async () => {
+    const { viewer, state } = await start();
+    viewer.receive(press);
+    await settle();
+    const methods = state.calls.map((c) => c.method);
+    expect(methods.indexOf("Runtime.evaluate")).toBeLessThan(methods.indexOf("Input.dispatchMouseEvent"));
+  });
+
+  it("leaves and returns once the page stops receiving input after a login", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    await login(viewer, state, bridge);
+    state.stuck = true;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(state.navigations()).toEqual(["about:blank", "https://site.test/home"]);
+    expect(refreshNotices(viewer)).toEqual(["started", "done"]);
+  });
+
+  it("never reloads a login whose page keeps receiving input", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    await login(viewer, state, bridge);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(state.navigations()).toEqual([]);
+    expect(refreshNotices(viewer)).toEqual([]);
+  });
+
+  it("does not reload after a single missed check", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    await login(viewer, state, bridge);
+    state.skipNextMoves = 1;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(state.navigations()).toEqual([]);
+  });
+
+  it("shows the notice on the first missed check and hides it when the page answers again", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    await login(viewer, state, bridge);
+    state.skipNextMoves = 1;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(refreshNotices(viewer)).toEqual(["started", "done"]);
+    expect(state.navigations()).toEqual([]);
+  });
+
+  it("stops watching after the watch window", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    await login(viewer, state, bridge);
+    await vi.advanceTimersByTimeAsync(7000);
+    const probes = state.probes().length;
+    state.stuck = true;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(state.probes().length).toBe(probes);
+    expect(state.navigations()).toEqual([]);
+  });
+
+  it("does not judge a page that is still loading", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    state.loginCheck = true;
+    viewer.receive(press);
+    await vi.advanceTimersByTimeAsync(0);
+    bridge.onEvent(pageNav("https://site.test/home"), state);
+    state.stuck = true;
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(state.navigations()).toEqual([]);
+    bridge.onEvent(loaded, state);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(state.navigations()).toEqual(["about:blank", "https://site.test/home"]);
+  });
+
+  it("saves the profile snapshot before leaving the page", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge, order } = await start();
+    await login(viewer, state, bridge);
+    state.stuck = true;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(order).toEqual(["before-navigate"]);
+  });
+
+  it("recovers once per login and ignores its own navigations", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    await login(viewer, state, bridge);
+    state.stuck = true;
+    await vi.advanceTimersByTimeAsync(1000);
+    bridge.onEvent(pageNav("https://site.test/home"), state);
+    bridge.onEvent(loaded, state);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(state.navigations()).toEqual(["about:blank", "https://site.test/home"]);
+  });
+
+  it("recovers a login that stays on the same page", async () => {
+    vi.useFakeTimers();
+    const { viewer, state } = await start();
+    state.loginCheck = true;
+    viewer.receive(press);
+    await vi.advanceTimersByTimeAsync(0);
+    state.stuck = true;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(state.navigations()).toEqual(["about:blank", "https://site.test/login"]);
+  });
+
+  it("does nothing for a click that is not a login", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    viewer.receive(press);
+    await vi.advanceTimersByTimeAsync(0);
+    bridge.onEvent(pageNav("https://site.test/next"), state);
+    bridge.onEvent(loaded, state);
+    state.stuck = true;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(state.navigations()).toEqual([]);
+    expect(state.probes()).toEqual([]);
+  });
+
+  it("moves the pointer to a new spot on every check", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    await login(viewer, state, bridge);
+    await vi.advanceTimersByTimeAsync(1000);
+    const probes = state.probes();
+    expect(probes.length).toBeGreaterThan(2);
+    for (let i = 1; i < probes.length; i++) expect(probes[i]).not.toEqual(probes[i - 1]);
+    expect(probes[0]).not.toEqual({ x: 100, y: 300 });
+  });
+
+  it("watches Enter and sends it with the text that submits a form", async () => {
+    const { viewer, state } = await start();
+    viewer.receive({ type: "key", event: { kind: "down", key: "Enter", code: "Enter", keyCode: 13 } });
+    await settle();
+    const evaluate = state.calls.find((c) => c.method === "Runtime.evaluate");
+    expect(String(evaluate?.params?.expression)).toContain("activeElement");
+    const key = state.calls.find((c) => c.method === "Input.dispatchKeyEvent");
+    expect(key?.params).toMatchObject({ type: "keyDown", text: "\r" });
+    expect(key?.params).not.toHaveProperty("nativeVirtualKeyCode");
+  });
+
+  it("does not add text to Enter held with a shortcut modifier", async () => {
+    const { viewer, state } = await start();
+    viewer.receive({ type: "key", event: { kind: "down", key: "Enter", code: "Enter", keyCode: 13, modifiers: 2 } });
+    await settle();
+    const key = state.calls.find((c) => c.method === "Input.dispatchKeyEvent");
+    expect(key?.params).not.toHaveProperty("text");
+  });
+
+  it("streams every frame by default", async () => {
+    const { state } = await start();
+    const cast = state.calls.find((c) => c.method === "Page.startScreencast");
+    expect(cast?.params).toMatchObject({ everyNthFrame: 1 });
   });
 });

@@ -35,6 +35,8 @@ export interface LiveClientEvents {
   onExpiring?: (secondsRemaining: number) => void;
   /** Fired when the server has hit the keep-alive limit. A close follows. */
   onExpired?: () => void;
+  /** Fired when the server starts reloading the page in the background ("started"), and when it is usable again ("done"). */
+  onRefresh?: (state: "started" | "done") => void;
 }
 
 export interface ConnectOpts {
@@ -181,6 +183,7 @@ export class LiveClient {
       code?: string;
       message?: string;
       secondsRemaining?: number;
+      state?: string;
     };
     try {
       msg = JSON.parse(text);
@@ -210,6 +213,10 @@ export class LiveClient {
     }
     if (msg.type === "expiring" && typeof msg.secondsRemaining === "number") {
       this.listeners.onExpiring?.(msg.secondsRemaining);
+      return;
+    }
+    if (msg.type === "refresh" && (msg.state === "started" || msg.state === "done")) {
+      this.listeners.onRefresh?.(msg.state);
       return;
     }
     if (msg.type === "expired") {
