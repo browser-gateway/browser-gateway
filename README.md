@@ -142,6 +142,13 @@ See the [Replays docs](https://docs.browsergateway.com/replays) for the storage 
 - **Raw CDP** - no Playwright or Puppeteer dependency
 - **Compatible** - Claude Code, Cursor, and any MCP-compatible client
 
+### Computer use for Claude and Gemini
+
+- **Any browser for the model's own browser tool** - runs Claude's browser and computer use tools and Gemini computer use on any provider behind the gateway
+- **About ten lines** - `runClaudeLoop` / `runGeminiLoop` take your own model call and handle actions, screenshots and results
+- **Safe defaults** - http and https only, private networks blocked, optional site allowlist, Gemini's confirm step for risky actions
+- **No extra dependencies** - `browser-gateway/agent-tools/computer-use`, tested on Node.js, Bun, Deno and the Cloudflare Workers runtime
+
 ### Management
 
 - **Dashboard** - manage providers, watch sessions, and edit config from the browser
@@ -445,6 +452,7 @@ Full docs live at **[docs.browsergateway.com](https://docs.browsergateway.com)**
 - [Session Lifecycle](https://docs.browsergateway.com/sessions)
 - [REST API](https://docs.browsergateway.com/rest-api)
 - [MCP Server for AI Agents](https://docs.browsergateway.com/mcp)
+- [Computer Use (Claude and Gemini)](https://docs.browsergateway.com/computer-use)
 - [CLI Reference](https://docs.browsergateway.com/cli)
 - [Web Dashboard](https://docs.browsergateway.com/dashboard)
 - [How Failover Works](https://docs.browsergateway.com/operating/failover)
