@@ -157,3 +157,10 @@ export function withResumeToken(url: string, token: string): string {
   resumed.searchParams.set("resume", token);
   return resumed.toString();
 }
+
+const CLIENT_SESSION_KEY = /^[A-Za-z0-9_-]{8,64}$/;
+
+/** True for a well-formed `sessionKey` a client chose itself: 8 to 64 letters, digits, `_` or `-`. */
+export function isClientSessionKey(value: string | null | undefined): value is string {
+  return typeof value === "string" && CLIENT_SESSION_KEY.test(value);
+}

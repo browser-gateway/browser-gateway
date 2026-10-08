@@ -333,6 +333,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `resolveProviderOutbound(providerUrl: string, providerHeaders?: Record<string, string>) → ResolvedOutbound` (line 130) — Compose the upstream headers a bridge must send from provider-config `headers`
 - **const** `const PROVIDER_RESUME_TOKEN_HEADER` (line 152) — Upgrade response header (lowercase) carrying a provider token that reattaches a later connection to the same browser.
 - **fn** `withResumeToken(url: string, token: string) → string` (line 155) — Returns `url` with a provider resume token, so the connection reattaches to the browser the token names.
+- **fn** `isClientSessionKey(value: string | null | undefined) → value is string` (line 164) — True for a well-formed `sessionKey` a client chose itself: 8 to 64 letters, digits, `_` or `-`.
 ### `src/core/types.ts`
 
 - **const** `const ProviderConfigSchema` (line 4)

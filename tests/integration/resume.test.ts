@@ -45,7 +45,9 @@ function createResumableProvider(port: number): ResumableProvider {
     wss.once("headers", (headers) => headers.push(`Browserserve-Resume-Token: ${token}`));
     wss.handleUpgrade(req, socket, head, (ws) => {
       ws.on("message", () => ws.send(browserId));
-      ws.on("close", () => parked.set(token, browserId));
+      ws.on("close", (code) => {
+        if (code !== 1000 && code !== 1005) parked.set(token, browserId);
+      });
     });
   });
   server.listen(port);
@@ -161,6 +163,34 @@ logging:
     expect(next.headers["x-session-resumed"]).toBeUndefined();
     expect(await browserIdOf(next.ws)).not.toBe(browser);
     next.ws.close();
+    await sleep(300);
+  });
+
+  it("starts a session under a client-chosen key, then resumes it with the same url", async () => {
+    const key = `job-${randomUUID().slice(0, 8)}`;
+    const first = await connect(`sessionKey=${key}`);
+    expect(first.headers["x-session-id"]).toBe(key);
+    expect(first.headers["x-session-resumed"]).toBeUndefined();
+    const browser = await browserIdOf(first.ws);
+    first.ws.terminate();
+    await sleep(300);
+    const again = await connect(`sessionKey=${key}`);
+    expect(again.headers["x-session-id"]).toBe(key);
+    expect(again.headers["x-session-resumed"]).toBe("true");
+    expect(await browserIdOf(again.ws)).toBe(browser);
+    again.ws.close();
+    await sleep(300);
+    const fresh = await connect(`sessionKey=${key}`);
+    expect(fresh.headers["x-session-id"]).toBe(key);
+    expect(fresh.headers["x-session-resumed"]).toBeUndefined();
+    fresh.ws.close();
+    await sleep(300);
+  });
+
+  it("ignores a malformed session key and assigns its own id", async () => {
+    const first = await connect("sessionKey=bad%20key");
+    expect(first.headers["x-session-id"]).not.toBe("bad key");
+    first.ws.close();
     await sleep(300);
   });
 });

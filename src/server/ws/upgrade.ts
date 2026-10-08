@@ -6,7 +6,7 @@ import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { ProviderState } from "../../core/types.js";
 import type { RelayTransport, RelayCloseReason } from "../../core/transport.js";
-import { resolveProviderOutbound, withResumeToken, PROVIDER_RESUME_TOKEN_HEADER } from "../../core/transport.js";
+import { isClientSessionKey, resolveProviderOutbound, withResumeToken, PROVIDER_RESUME_TOKEN_HEADER } from "../../core/transport.js";
 import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
 import { NodeTcpPipeTransport } from "../transport/node.js";
 import { isEligibleForProfile } from "../../core/router/selector.js";
@@ -319,7 +319,9 @@ export function createWebSocketHandler(
     }
 
     // Session reconnection
-    const reconnectSessionId = url.searchParams.get("sessionId");
+    const sessionKey = url.searchParams.get("sessionKey");
+    const clientKey = isClientSessionKey(sessionKey) ? sessionKey : null;
+    const reconnectSessionId = url.searchParams.get("sessionId") ?? clientKey;
     if (reconnectSessionId && reconnectRegistry) {
       const parked = reconnectRegistry.claim(reconnectSessionId);
 
@@ -355,7 +357,7 @@ export function createWebSocketHandler(
     }
 
     // Normal routing (new session or failed reconnect)
-    const sessionId = randomUUID();
+    const sessionId = clientKey && !gateway.sessions.get(clientKey) ? clientKey : randomUUID();
 
     // Optional pin to a specific provider. Used internally by the REST/MCP
     // dispatcher so users can target one backend. When set, failover is
