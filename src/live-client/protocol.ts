@@ -82,7 +82,14 @@ export interface ServerExpiredMessage {
   type: "expired";
 }
 
+/** Server→client notice that the server is reloading the page in the background ("started"), and when it is usable again ("done"). */
+export interface ServerRefreshMessage {
+  type: "refresh";
+  state: "started" | "done";
+}
+
 export type ServerControlMessage =
+  | ServerRefreshMessage
   | ServerFrameMetaMessage
   | ServerUrlMessage
   | ServerErrorMessage

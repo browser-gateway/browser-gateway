@@ -6,6 +6,8 @@ import {
 import type { PipelineSocket } from "../pipeline.js";
 import type { CdpMessage, CdpPlugin, SessionState } from "../types.js";
 import { base64ToBytes, listen } from "../socket-io.js";
+import { KEY_SPECS, MODIFIER_BITS } from "../../agent-tools/keys.js";
+import { LOGIN_ENTER_EXPRESSION, inputCounterExpression, loginClickExpression } from "./login-detector.js";
 
 /** Same-tab hijack: forces `target=_blank` links, `window.open`, and forms
  *  submitted with `target=_blank` to stay in the viewer's tab. Without this
@@ -15,12 +17,17 @@ const SAME_TAB_SCRIPT =
   "document.addEventListener('submit',e=>{const f=e.target;if(f&&f.target&&String(f.target).toLowerCase()==='_blank')f.target='_self';},true);" +
   "try{window.open=(u)=>{if(u)location.href=String(u);return null;};}catch(_){}})();";
 
+// Chrome's password breach warning blocks all input until the tab leaves the site, and opens ~1-2.5 s after the post-login page loads.
+const LOGIN_WATCH_WINDOW_MS = 6000;
+const LOGIN_WATCH_INTERVAL_MS = 100;
+const LOGIN_WATCH_MISSES = 2;
+
 const DEFAULTS = {
   format: "jpeg" as const,
   quality: 60,
   viewportWidth: 1280,
   viewportHeight: 720,
-  everyNthFrame: 2,
+  everyNthFrame: 1,
   deviceScaleFactor: 1,
   dropThresholdBytes: 1_000_000,
   keepAliveSeconds: 0,
@@ -90,6 +97,16 @@ export class ScreencastBridgePlugin implements CdpPlugin {
   private expireTimer: ReturnType<typeof setTimeout> | null = null;
   private warnTimer: ReturnType<typeof setTimeout> | null = null;
   private viewerAttached = false;
+  private lastTopUrl: string | null = null;
+  private recovering = false;
+  private loginWatchUntil = 0;
+  private loginWatchRunning = false;
+  private pageLoading = false;
+  private pointer = { x: 1, y: 1 };
+  private probeOffset = false;
+  private inputCount: number | null = null;
+  private refreshNoticeShown = false;
+  private readonly inputCounterKey = `__bg${Math.random().toString(36).slice(2)}`;
 
   constructor(opts: ScreencastBridgePluginOpts) {
     this.opts = {
@@ -177,9 +194,19 @@ export class ScreencastBridgePlugin implements CdpPlugin {
       return null;
     }
 
+    if (msg.method === "Page.loadEventFired" && msg.sessionId === this.cdpSessionId) {
+      this.pageLoading = false;
+    }
+
     if (msg.method === "Page.frameNavigated" && msg.sessionId === this.cdpSessionId) {
       const params = msg.params as { frame?: { url?: string; parentId?: string } } | undefined;
       if (params?.frame && !params.frame.parentId && params.frame.url) {
+        if (this.recovering) return;
+        this.lastTopUrl = params.frame.url;
+        if (this.loginWatchUntil) {
+          this.pageLoading = true;
+          this.loginWatchUntil = Date.now() + LOGIN_WATCH_WINDOW_MS;
+        }
         this.sendControl({ type: "url", url: params.frame.url });
       }
     }
@@ -189,6 +216,7 @@ export class ScreencastBridgePlugin implements CdpPlugin {
     this.closed = true;
     if (this.expireTimer) { clearTimeout(this.expireTimer); this.expireTimer = null; }
     if (this.warnTimer) { clearTimeout(this.warnTimer); this.warnTimer = null; }
+    this.loginWatchUntil = 0;
 
     if (this.cdpSessionId) {
       state.sendInternalOneWay("Page.stopScreencast", {}, this.cdpSessionId);
@@ -198,6 +226,97 @@ export class ScreencastBridgePlugin implements CdpPlugin {
       state.sendInternalOneWay("Target.closeTarget", { targetId: this.targetId });
     }
     try { this.opts.viewer.close(1000, "stream ended"); } catch { /* already closed */ }
+  }
+
+  private watchForLogin(state: SessionState, expression: string): void {
+    if (!this.cdpSessionId) return;
+    this.evaluate<boolean>(state, expression)
+      .then((isLogin) => {
+        if (isLogin !== true || this.closed) return;
+        this.opts.logger?.("live: login detected");
+        this.pageLoading = false;
+        this.loginWatchUntil = Date.now() + LOGIN_WATCH_WINDOW_MS;
+        if (!this.loginWatchRunning) void this.watchAfterLogin(state);
+      })
+      .catch(() => { /* page gone mid-check; nothing to watch */ });
+  }
+
+  private async watchAfterLogin(state: SessionState): Promise<void> {
+    this.loginWatchRunning = true;
+    let misses = 0;
+    try {
+      while (!this.closed && Date.now() < this.loginWatchUntil) {
+        await new Promise((r) => setTimeout(r, LOGIN_WATCH_INTERVAL_MS));
+        if (this.pageLoading) { misses = 0; this.inputCount = null; continue; }
+        misses = (await this.pageReceivesInput(state)) ? 0 : misses + 1;
+        if (misses === 1) this.showRefreshNotice(true);
+        if (misses === 0) this.showRefreshNotice(false);
+        if (misses >= LOGIN_WATCH_MISSES) {
+          this.loginWatchUntil = 0;
+          await this.recoverFromLoginWarning(state);
+        }
+      }
+    } finally {
+      this.loginWatchRunning = false;
+      this.loginWatchUntil = 0;
+      this.inputCount = null;
+      this.showRefreshNotice(false);
+    }
+  }
+
+  private async pageReceivesInput(state: SessionState): Promise<boolean> {
+    if (!this.cdpSessionId) return true;
+    try {
+      const counter = inputCounterExpression(this.inputCounterKey);
+      if (this.inputCount === null) this.inputCount = (await this.evaluate<number>(state, counter)) ?? null;
+      this.probeOffset = !this.probeOffset;
+      await state.sendInternal(
+        "Input.dispatchMouseEvent",
+        { type: "mouseMoved", x: this.pointer.x + (this.probeOffset ? 1 : 0), y: this.pointer.y, button: "none", buttons: 0, modifiers: 0 },
+        this.cdpSessionId,
+      );
+      const before = this.inputCount;
+      const after = await this.evaluate<number>(state, counter);
+      this.inputCount = typeof after === "number" ? after : null;
+      return typeof before !== "number" || typeof after !== "number" || after > before;
+    } catch {
+      this.inputCount = null;
+      return true;
+    }
+  }
+
+  private showRefreshNotice(show: boolean): void {
+    if (show === this.refreshNoticeShown) return;
+    this.refreshNoticeShown = show;
+    this.sendControl({ type: "refresh", state: show ? "started" : "done" });
+  }
+
+  private async evaluate<T>(state: SessionState, expression: string): Promise<T | undefined> {
+    const r = await state.sendInternal<{ result?: { value?: T } }>(
+      "Runtime.evaluate",
+      { expression, returnByValue: true },
+      this.cdpSessionId ?? undefined,
+    );
+    return r?.result?.value;
+  }
+
+  private async recoverFromLoginWarning(state: SessionState): Promise<void> {
+    const url = this.lastTopUrl;
+    if (this.closed || !this.cdpSessionId || !url || !/^https?:/i.test(url)) return;
+    this.opts.logger?.("live: password warning blocked the page, reloading");
+    this.recovering = true;
+    this.showRefreshNotice(true);
+    try {
+      await this.notifyBeforeNavigate();
+      await state.sendInternal("Page.navigate", { url: "about:blank" }, this.cdpSessionId);
+      await state.sendInternal("Page.navigate", { url }, this.cdpSessionId);
+    } catch (err) {
+      this.opts.logger?.("live: login recovery failed", { err: err instanceof Error ? err.message : String(err) });
+    } finally {
+      this.recovering = false;
+      this.inputCount = null;
+      this.showRefreshNotice(false);
+    }
   }
 
   private async notifyBeforeNavigate(): Promise<void> {
@@ -287,6 +406,13 @@ export class ScreencastBridgePlugin implements CdpPlugin {
     try {
       switch (msg.type) {
         case "mouse":
+          if (msg.event.kind !== "wheel") {
+            this.pointer = { x: msg.event.x, y: msg.event.y };
+            this.probeOffset = false;
+          }
+          if (msg.event.kind === "press" && (msg.event.button ?? "left") === "left") {
+            this.watchForLogin(state, loginClickExpression(msg.event.x, msg.event.y));
+          }
           await state.sendInternal(
             "Input.dispatchMouseEvent",
             {
@@ -308,7 +434,9 @@ export class ScreencastBridgePlugin implements CdpPlugin {
             this.cdpSessionId,
           );
           break;
-        case "key":
+        case "key": {
+          if (msg.event.kind === "down" && msg.event.key === "Enter") this.watchForLogin(state, LOGIN_ENTER_EXPRESSION);
+          const text = msg.event.text ?? keyDownText(msg.event);
           await state.sendInternal(
             "Input.dispatchKeyEvent",
             {
@@ -316,12 +444,10 @@ export class ScreencastBridgePlugin implements CdpPlugin {
                 msg.event.kind === "down" ? "keyDown"
                 : msg.event.kind === "up" ? "keyUp"
                 : "char",
-              ...(msg.event.text !== undefined ? { text: msg.event.text, unmodifiedText: msg.event.text.toLowerCase() } : {}),
+              ...(text !== undefined ? { text, unmodifiedText: text.toLowerCase() } : {}),
               ...(msg.event.code ? { code: msg.event.code } : {}),
               ...(msg.event.key ? { key: msg.event.key } : {}),
-              ...(msg.event.keyCode !== undefined
-                ? { windowsVirtualKeyCode: msg.event.keyCode, nativeVirtualKeyCode: msg.event.keyCode }
-                : {}),
+              ...(msg.event.keyCode !== undefined ? { windowsVirtualKeyCode: msg.event.keyCode } : {}),
               modifiers: msg.event.modifiers ?? 0,
               autoRepeat: false,
               isKeypad: false,
@@ -330,6 +456,7 @@ export class ScreencastBridgePlugin implements CdpPlugin {
             this.cdpSessionId,
           );
           break;
+        }
         case "navigate":
           if (msg.url) {
             await this.notifyBeforeNavigate();
@@ -404,6 +531,14 @@ export class ScreencastBridgePlugin implements CdpPlugin {
       state.close("keep-alive-expired");
     }, totalMs);
   }
+}
+
+const SHORTCUT_MODIFIERS = MODIFIER_BITS.Alt | MODIFIER_BITS.Control | MODIFIER_BITS.Meta;
+
+/** Text a key must carry on keyDown for its default action to run, e.g. Enter submitting a form. */
+function keyDownText(event: { kind: string; key?: string; modifiers?: number }): string | undefined {
+  if (event.kind !== "down" || !event.key || ((event.modifiers ?? 0) & SHORTCUT_MODIFIERS) !== 0) return undefined;
+  return KEY_SPECS[event.key]?.text;
 }
 
 function extractText(evt: unknown): string | undefined {
