@@ -5,6 +5,8 @@ export interface ParkedSession {
   parkedAt: number;
   originalConnectedAt: number;
   messageCount: number;
+  /** Provider token that reattaches to the same browser, when the provider issued one. */
+  resumeToken?: string;
 }
 
 export class ReconnectRegistry {
@@ -31,6 +33,7 @@ export class ReconnectRegistry {
     providerUrl: string,
     connectedAt: number,
     messageCount: number,
+    resumeToken?: string,
   ): void {
     this.parked.set(sessionId, {
       sessionId,
@@ -39,6 +42,7 @@ export class ReconnectRegistry {
       parkedAt: Date.now(),
       originalConnectedAt: connectedAt,
       messageCount,
+      ...(resumeToken ? { resumeToken } : {}),
     });
   }
 

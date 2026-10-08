@@ -8,6 +8,7 @@ import type {
   RelayResult,
   RelayTransport,
 } from "../../core/transport.js";
+import { PROVIDER_RESUME_TOKEN_HEADER } from "../../core/transport.js";
 
 interface NodeClientMeta {
   req: IncomingMessage;
@@ -104,14 +105,16 @@ export class NodeTcpPipeTransport implements RelayTransport {
         }
 
         gotUpgrade = true;
-        opts.onUpgrade?.({ upstreamStatus: 101 });
+        const upgrade = splitUpgradeResponse(headerStr);
+        opts.onUpgrade?.({ upstreamStatus: 101, responseHeaders: upgrade.headers });
 
-        const headerPart = responseBuffer.subarray(0, headerEnd).toString();
         const afterHeaders = responseBuffer.subarray(headerEnd + 4);
-        const forwardedHeaders = opts.sessionId
-          ? `${headerPart}\r\nX-Session-Id: ${opts.sessionId}\r\n\r\n`
-          : `${headerPart}\r\n\r\n`;
-        clientSocket.write(forwardedHeaders);
+        const extraHeaders = {
+          ...(opts.sessionId ? { "X-Session-Id": opts.sessionId } : {}),
+          ...opts.responseHeaders,
+        };
+        const extraLines = Object.entries(extraHeaders).map(([name, value]) => `${name}: ${value}\r\n`).join("");
+        clientSocket.write(`${upgrade.forwarded}\r\n${extraLines}\r\n`);
         if (afterHeaders.length > 0) clientSocket.write(afterHeaders);
 
         if (opts.onBytes || opts.onMessage) {
@@ -178,4 +181,17 @@ function buildUpgradeRequest(
   emitted.push(`Connection: Upgrade`);
   emitted.push(`Upgrade: websocket`);
   return emitted.join("\r\n") + "\r\n\r\n";
+}
+
+function splitUpgradeResponse(raw: string): { headers: Record<string, string>; forwarded: string } {
+  const [statusLine = "", ...lines] = raw.split("\r\n");
+  const headers: Record<string, string> = {};
+  const kept = [statusLine];
+  for (const line of lines) {
+    const colon = line.indexOf(":");
+    const name = colon === -1 ? "" : line.slice(0, colon).trim().toLowerCase();
+    if (name) headers[name] = line.slice(colon + 1).trim();
+    if (name !== PROVIDER_RESUME_TOKEN_HEADER) kept.push(line);
+  }
+  return { headers, forwarded: kept.join("\r\n") };
 }

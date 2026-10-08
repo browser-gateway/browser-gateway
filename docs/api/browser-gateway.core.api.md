@@ -360,7 +360,7 @@ export class ReconnectRegistry {
     // (undocumented)
     has(sessionId: string): boolean;
     // (undocumented)
-    park(sessionId: string, providerId: string, providerUrl: string, connectedAt: number, messageCount: number): void;
+    park(sessionId: string, providerId: string, providerUrl: string, connectedAt: number, messageCount: number, resumeToken?: string): void;
     // (undocumented)
     startCleanup(): void;
     // (undocumented)
@@ -374,6 +374,7 @@ export interface RelayCallbacks {
     onMessage?: (dir: RelayDirection) => void;
     onUpgrade?: (info: {
         upstreamStatus: number;
+        responseHeaders?: Readonly<Record<string, string>>;
     }) => void;
 }
 
@@ -404,6 +405,7 @@ export interface RelayOptions extends RelayCallbacks {
     client: unknown;
     clientMeta?: unknown;
     connectionTimeoutMs?: number;
+    responseHeaders?: Record<string, string>;
     sessionId?: string;
     upstreamHeaders?: Record<string, string>;
     upstreamUrl: string;

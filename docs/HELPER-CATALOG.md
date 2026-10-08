@@ -294,7 +294,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/proxy/reconnect.ts`
 
 - **interface** `interface ParkedSession` (line 1)
-- **class** `class ReconnectRegistry` (line 10)
+- **class** `class ReconnectRegistry` (line 12)
 ### `src/core/proxy/session.ts`
 
 - **class** `class SessionTracker` (line 3)
@@ -327,10 +327,12 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type RelayCloseReason` (line 21) — Terminal state of a relay attempt.
 - **interface** `interface RelayCallbacks` (line 30) — Callbacks the caller can supply to observe the relay's lifetime.
 - **interface** `interface RelayOptions` (line 42) — Options passed to `RelayTransport.relay()`.
-- **interface** `interface RelayResult` (line 76) — Result of a `relay()` invocation.
-- **interface** `interface RelayTransport` (line 103) — Bidirectional WebSocket relay between an accepted client and an upstream URL.
-- **interface** `interface ResolvedOutbound` (line 109) — Headers a relay caller has already resolved from provider config + URL userinfo.
-- **fn** `resolveProviderOutbound(providerUrl: string, providerHeaders?: Record<string, string>) → ResolvedOutbound` (line 127) — Compose the upstream headers a bridge must send from provider-config `headers`
+- **interface** `interface RelayResult` (line 79) — Result of a `relay()` invocation.
+- **interface** `interface RelayTransport` (line 106) — Bidirectional WebSocket relay between an accepted client and an upstream URL.
+- **interface** `interface ResolvedOutbound` (line 112) — Headers a relay caller has already resolved from provider config + URL userinfo.
+- **fn** `resolveProviderOutbound(providerUrl: string, providerHeaders?: Record<string, string>) → ResolvedOutbound` (line 130) — Compose the upstream headers a bridge must send from provider-config `headers`
+- **const** `const PROVIDER_RESUME_TOKEN_HEADER` (line 152) — Upgrade response header (lowercase) carrying a provider token that reattaches a later connection to the same browser.
+- **fn** `withResumeToken(url: string, token: string) → string` (line 155) — Returns `url` with a provider resume token, so the connection reattaches to the browser the token names.
 ### `src/core/types.ts`
 
 - **const** `const ProviderConfigSchema` (line 4)
@@ -587,7 +589,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `printStartupBanner(opts: BannerOptions) → void` (line 70)
 ### `src/server/transport/node.ts`
 
-- **class** `class NodeTcpPipeTransport` (line 32) — Node-native WebSocket relay: raw TCP/TLS + `Duplex.pipe`.
+- **class** `class NodeTcpPipeTransport` (line 33) — Node-native WebSocket relay: raw TCP/TLS + `Duplex.pipe`.
 ### `src/server/util/origin.ts`
 
 - **fn** `isOriginAllowed(req: IncomingMessage, allowedOrigins: Set<string>) → boolean` (line 22) — Browser-CSRF guard. Rejects a request carrying a foreign browser `Origin`.

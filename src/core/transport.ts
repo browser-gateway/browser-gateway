@@ -29,7 +29,7 @@ export type RelayCloseReason =
 /** Callbacks the caller can supply to observe the relay's lifetime. */
 export interface RelayCallbacks {
   /** Called once the upstream 101 response is received and byte-piping is live. */
-  onUpgrade?: (info: { upstreamStatus: number }) => void;
+  onUpgrade?: (info: { upstreamStatus: number; responseHeaders?: Readonly<Record<string, string>> }) => void;
   /** Called for every byte chunk piped in either direction. Optional; may add overhead. */
   onBytes?: (dir: RelayDirection, bytes: number) => void;
   /** Called for every discrete message in either direction. Cheaper than onBytes. */
@@ -70,6 +70,9 @@ export interface RelayOptions extends RelayCallbacks {
    * every host produces the same header contract.
    */
   sessionId?: string;
+
+  /** Extra headers to add to the 101 response the client receives. */
+  responseHeaders?: Record<string, string>;
 }
 
 /** Result of a `relay()` invocation. */
@@ -143,4 +146,14 @@ export function resolveProviderOutbound(
     u.password = "";
   }
   return { upstreamUrl: u.toString(), upstreamHeaders: headers };
+}
+
+/** Upgrade response header (lowercase) carrying a provider token that reattaches a later connection to the same browser. */
+export const PROVIDER_RESUME_TOKEN_HEADER = "browserserve-resume-token";
+
+/** Returns `url` with a provider resume token, so the connection reattaches to the browser the token names. */
+export function withResumeToken(url: string, token: string): string {
+  const resumed = new URL(url);
+  resumed.searchParams.set("resume", token);
+  return resumed.toString();
 }

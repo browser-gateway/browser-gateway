@@ -6,7 +6,7 @@ import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import type { ProviderState } from "../../core/types.js";
 import type { RelayTransport, RelayCloseReason } from "../../core/transport.js";
-import { resolveProviderOutbound } from "../../core/transport.js";
+import { resolveProviderOutbound, withResumeToken, PROVIDER_RESUME_TOKEN_HEADER } from "../../core/transport.js";
 import type { ReconnectRegistry } from "../../core/proxy/reconnect.js";
 import { NodeTcpPipeTransport } from "../transport/node.js";
 import { isEligibleForProfile } from "../../core/router/selector.js";
@@ -336,9 +336,10 @@ export function createWebSocketHandler(
         } else {
           logger.info({ sessionId: reconnectSessionId, providerId: provider.id }, "session reconnecting to same provider");
 
+          const resumeToken = acquired ? undefined : parked.resumeToken;
           const connected = await pipeToProvider(
             gateway, logger, transport, socket, head, req, reconnectSessionId, provider, reconnectRegistry,
-            profileLifecycle, acquired,
+            profileLifecycle, acquired, resumeToken,
           );
 
           if (connected) {
@@ -347,7 +348,7 @@ export function createWebSocketHandler(
           }
 
           gateway.releaseSlot(reconnectSessionId, provider.id);
-          gateway.recordFailure(provider.id);
+          if (!resumeToken) gateway.recordFailure(provider.id);
           logger.warn({ sessionId: reconnectSessionId }, "session reconnect: failed to connect to provider");
         }
       }
@@ -519,6 +520,7 @@ async function pipeToProvider(
   reconnectRegistry?: ReconnectRegistry,
   profileLifecycle?: ProfileLifecycle,
   acquired?: AcquiredProfile | null,
+  resumeToken?: string,
 ): Promise<boolean> {
   let resolvedUrl: string;
   try {
@@ -536,6 +538,8 @@ async function pipeToProvider(
   // pick the captured profile up on close. External providers use CDP inject.
   const isBrowserserve = provider.detectedKind === "browserserve";
   let browserserveToken: string | null = null;
+  let issuedResumeToken: string | undefined;
+  if (resumeToken) resolvedUrl = withResumeToken(resolvedUrl, resumeToken);
 
   if (acquired && profileLifecycle) {
     if (isBrowserserve) {
@@ -584,12 +588,14 @@ async function pipeToProvider(
     gateway.recordSuccess(provider.id, durationMs);
 
     if (reconnectRegistry && session) {
+      const clientLeft = reason.kind === "client-closed" || reason.kind === "client-error";
       reconnectRegistry.park(
         sessionId,
         provider.id,
         provider.config.url,
         session.connectedAt,
         session.messageCount,
+        clientLeft && !acquired ? issuedResumeToken : undefined,
       );
       logger.info({ sessionId, providerId: provider.id, durationMs }, "session parked for reconnection");
     }
@@ -628,6 +634,7 @@ async function pipeToProvider(
   };
 
   const outbound = resolveProviderOutbound(resolvedUrl, provider.config.headers);
+  const responseHeaders: Record<string, string> = {};
   const relayResult = await transport.relay({
     client: clientSocket,
     clientMeta: { req, head },
@@ -635,7 +642,11 @@ async function pipeToProvider(
     upstreamHeaders: outbound.upstreamHeaders,
     sessionId,
     connectionTimeoutMs: gateway.config.gateway.connectionTimeout,
-    onUpgrade: () => {
+    responseHeaders,
+    onUpgrade: (info) => {
+      issuedResumeToken = info.responseHeaders?.[PROVIDER_RESUME_TOKEN_HEADER];
+      responseHeaders["X-Session-Resumable"] = issuedResumeToken && !acquired ? "true" : "false";
+      if (resumeToken) responseHeaders["X-Session-Resumed"] = "true";
       gateway.sessions.create(sessionId, provider.id, acquired?.profileId);
       gateway.sessions.setCloser(sessionId, () => clientSocket.destroy());
       gateway.emit("session.created", { sessionId, providerId: provider.id });
