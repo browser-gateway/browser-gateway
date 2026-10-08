@@ -16,6 +16,7 @@ const PAGE_HTML = `<!doctype html><html><head><title>CLI fixture</title></head><
 <input id="note" value="old note">
 <button id="save" type="button" onclick="document.getElementById('out').textContent = 'saved ' + document.getElementById('note').value">Save</button>
 <div id="out">nothing saved</div>
+<p>Notes are kept on this page until the browser session closes.</p>
 </body></html>`;
 
 const chromePath = (() => {

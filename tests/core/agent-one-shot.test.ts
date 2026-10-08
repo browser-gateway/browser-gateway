@@ -8,6 +8,8 @@ import {
   type AgentSession,
 } from "../../src/agent-tools/index.js";
 
+const REAL_TEXT = "A web browser is an application for accessing websites and other web content.";
+
 function fakeAgent(page: { url: string; title: string; text: string }, opts: { waitFails?: boolean } = {}) {
   const calls: string[] = [];
   const agent = {
@@ -49,8 +51,19 @@ describe("detectBlockedPage", () => {
     );
   });
 
+  it("flags an empty or nearly empty page instead of returning it as content", () => {
+    expect(detectBlockedPage({ url: "https://www.g2.com/p", title: "g2.com", text: "" })).toContain("no readable content");
+    expect(detectBlockedPage({ url: "https://a.com", title: "a", text: " \n \n " })).toContain("no readable content");
+    expect(detectBlockedPage({ url: "https://a.com", title: "a", text: "Loading..." })).toContain("no readable content");
+  });
+
+  it("accepts a short result when the read was scoped to one element, but not an empty one", () => {
+    expect(detectBlockedPage({ url: "https://a.com", title: "a", text: "$19.99" }, { scoped: true })).toBeUndefined();
+    expect(detectBlockedPage({ url: "https://a.com", title: "a", text: "" }, { scoped: true })).toContain("no readable content");
+  });
+
   it("leaves real pages alone, including forms that only mention a captcha provider", () => {
-    expect(detectBlockedPage({ url: "https://a.com", title: "Docs", text: "A long article about web browsers." })).toBeUndefined();
+    expect(detectBlockedPage({ url: "https://a.com", title: "Docs", text: REAL_TEXT })).toBeUndefined();
     expect(
       detectBlockedPage({ url: "https://a.com", title: "Contact", text: "This site is protected by reCAPTCHA and the Google Privacy Policy." }),
     ).toBeUndefined();
@@ -61,10 +74,10 @@ describe("detectBlockedPage", () => {
 
 describe("fetchPage", () => {
   it("loads, reads markdown with a generous default size, and reports no block on real content", async () => {
-    const { agent, calls } = fakeAgent({ url: "https://a.com/final", title: "A", text: "Hello world" });
+    const { agent, calls } = fakeAgent({ url: "https://a.com/final", title: "A", text: REAL_TEXT });
     const result = await fetchPage(agent, { url: "https://a.com" });
     expect(calls).toEqual(["goto https://a.com", "extract markdown 20000"]);
-    expect(result).toEqual({ url: "https://a.com/final", title: "A", format: "markdown", text: "Hello world", truncated: false });
+    expect(result).toEqual({ url: "https://a.com/final", title: "A", format: "markdown", text: REAL_TEXT, truncated: false });
   });
 
   it("waits for late text when asked and says so when it never came", async () => {
@@ -72,6 +85,13 @@ describe("fetchPage", () => {
     const result = await fetchPage(agent, { url: "https://a.com", waitForText: "Price", format: "text", maxChars: 50 });
     expect(calls).toEqual(["goto https://a.com", "wait", "extract text 50"]);
     expect(result.waitTimedOut).toBe(true);
+  });
+
+  it("flags an empty read, but not a short one scoped to a selector", async () => {
+    const empty = fakeAgent({ url: "https://www.g2.com/p", title: "g2.com", text: "" });
+    expect((await fetchPage(empty.agent, { url: "https://www.g2.com/p" })).blocked).toContain("no readable content");
+    const price = fakeAgent({ url: "https://a.com", title: "A", text: "$19.99" });
+    expect((await fetchPage(price.agent, { url: "https://a.com", selector: ".price" })).blocked).toBeUndefined();
   });
 
   it("returns a blocked hint with the content when the page is a bot check", async () => {

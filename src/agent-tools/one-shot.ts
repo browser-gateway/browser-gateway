@@ -39,6 +39,7 @@ export interface ScreenshotPageResult {
 const FETCH_PAGE_MAX_CHARS = 20_000;
 const BLOCK_PROBE_CHARS = 2_000;
 const SHORT_PAGE_CHARS = 300;
+const NEARLY_EMPTY_CHARS = 40;
 
 const BLOCK_SIGNS: ReadonlyArray<[RegExp, string]> = [
   [/just a moment|checking your browser|attention required/i, "a bot check page"],
@@ -49,7 +50,10 @@ const BLOCK_SIGNS: ReadonlyArray<[RegExp, string]> = [
 
 /** Names what a page that is not real content looks like, or returns undefined.
  *  A hint for the agent, never a decision: real pages can mention these words. */
-export function detectBlockedPage(page: { url: string; title: string; text: string }): string | undefined {
+export function detectBlockedPage(
+  page: { url: string; title: string; text: string },
+  opts: { scoped?: boolean } = {},
+): string | undefined {
   if (page.url.startsWith("chrome-error://")) return "the browser could not load the page";
   const head = `${page.title}\n${page.text.slice(0, BLOCK_PROBE_CHARS)}`;
   for (const [pattern, label] of BLOCK_SIGNS) {
@@ -57,6 +61,10 @@ export function detectBlockedPage(page: { url: string; title: string; text: stri
   }
   if (page.text.trim().length < SHORT_PAGE_CHARS && /enable javascript|javascript is (disabled|required)/i.test(head)) {
     return "the page asks for JavaScript and showed almost no content";
+  }
+  const visible = page.text.replace(/\s+/g, "").length;
+  if (visible === 0 || (!opts.scoped && visible < NEARLY_EMPTY_CHARS)) {
+    return "the page showed no readable content, which usually means a bot check, a block or a page that had not finished building";
   }
   return undefined;
 }
@@ -80,7 +88,10 @@ export async function fetchPage(agent: AgentSession, opts: FetchPageOptions): Pr
     selector: opts.selector,
     maxChars: opts.maxChars ?? FETCH_PAGE_MAX_CHARS,
   });
-  const blocked = detectBlockedPage({ url: page.url, title: page.title, text: content.text });
+  const blocked = detectBlockedPage(
+    { url: page.url, title: page.title, text: content.text },
+    { scoped: opts.selector !== undefined },
+  );
   return {
     url: page.url,
     title: page.title,
