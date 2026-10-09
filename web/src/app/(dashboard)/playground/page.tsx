@@ -67,6 +67,8 @@ export default function PlaygroundPage() {
   // middle of being typed — we sync it only when the server-reported URL
   // changes AND it doesn't match what the user has typed mid-edit.
   const lastServerUrlRef = useRef<string>("");
+  const urlInputRef = useRef(urlInput);
+  useEffect(() => { urlInputRef.current = urlInput; }, [urlInput]);
   // Last mouse position INSIDE the canvas (in model coords). Used for the
   // cursor overlay. null when the mouse is outside.
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
@@ -195,7 +197,7 @@ export default function PlaygroundPage() {
       onUrl: (url) => {
         // Sync the address bar with the actual page URL unless the user is
         // actively editing (input != the last URL we set).
-        if (urlInput === lastServerUrlRef.current || lastServerUrlRef.current === "") {
+        if (urlInputRef.current === lastServerUrlRef.current || lastServerUrlRef.current === "") {
           setUrlInput(url);
         }
         lastServerUrlRef.current = url;

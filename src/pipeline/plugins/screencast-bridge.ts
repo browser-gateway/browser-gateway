@@ -150,6 +150,7 @@ export class ScreencastBridgePlugin implements CdpPlugin {
     this.cdpSessionId = attached.sessionId;
 
     await state.sendInternal("Page.enable", {}, this.cdpSessionId);
+    await this.presentAsChrome(state);
 
     if (this.opts.clearCookiesOnStart) state.sendInternalOneWay("Storage.clearCookies", {});
     state.sendInternalOneWay(
@@ -317,6 +318,17 @@ export class ScreencastBridgePlugin implements CdpPlugin {
       this.inputCount = null;
       this.showRefreshNotice(false);
     }
+  }
+
+  private async presentAsChrome(state: SessionState): Promise<void> {
+    const version = await state.sendInternal<{ userAgent?: string }>("Browser.getVersion", {}).catch(() => undefined);
+    const userAgent = version?.userAgent;
+    if (!userAgent?.includes("HeadlessChrome")) return;
+    state.sendInternalOneWay(
+      "Network.setUserAgentOverride",
+      { userAgent: userAgent.replace("HeadlessChrome", "Chrome") },
+      this.cdpSessionId ?? undefined,
+    );
   }
 
   private async notifyBeforeNavigate(): Promise<void> {

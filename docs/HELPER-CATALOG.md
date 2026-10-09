@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-10-08
+Generated: 2026-10-09
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -410,8 +410,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
 ### `src/server/live/upgrade.ts`
 
-- **interface** `interface CreateLiveHandlerDeps` (line 38)
-- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 45)
+- **interface** `interface CreateLiveHandlerDeps` (line 39)
+- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 46)
 ### `src/server/mcp/config-defaults.ts`
 
 - **fn** `buildMcpGatewayConfig(port: number, providers: Record<string, ProviderConfig>) → GatewayConfig` (line 11)

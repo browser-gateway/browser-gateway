@@ -1,5 +1,8 @@
 import { z } from "zod";
 
+/** CDP accepts click counts up to a triple click; quicker repeats are sent as a triple click. */
+const MAX_CLICK_COUNT = 3;
+
 const MouseEventSchema = z.object({
   kind: z.enum(["press", "release", "move", "wheel"]),
   x: z.number().int().nonnegative(),
@@ -7,7 +10,7 @@ const MouseEventSchema = z.object({
   button: z.enum(["left", "right", "middle", "none"]).optional(),
   /** Bitmask: Alt=1, Ctrl=2, Meta=4, Shift=8. */
   modifiers: z.number().int().min(0).max(15).optional(),
-  clickCount: z.number().int().min(0).max(3).optional(),
+  clickCount: z.number().int().min(0).transform((n) => Math.min(n, MAX_CLICK_COUNT)).optional(),
   /** wheel only */
   deltaX: z.number().optional(),
   /** wheel only */

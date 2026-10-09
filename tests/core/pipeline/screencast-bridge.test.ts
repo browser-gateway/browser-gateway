@@ -326,3 +326,38 @@ describe("ScreencastBridgePlugin password warning recovery", () => {
     expect(cast?.params).toMatchObject({ everyNthFrame: 1 });
   });
 });
+
+describe("ScreencastBridgePlugin browser name", () => {
+  class NamedState extends FakeState {
+    readonly oneWay: Array<{ method: string; params?: Record<string, unknown>; sessionId?: string }> = [];
+    constructor(private readonly userAgent: string | undefined) { super(); }
+    override async sendInternal<T>(method: string): Promise<T> {
+      if (method === "Browser.getVersion") return { userAgent: this.userAgent } as T;
+      return super.sendInternal<T>(method);
+    }
+    override sendInternalOneWay(method: string, params?: Record<string, unknown>, sessionId?: string): void {
+      this.oneWay.push({ method, params, sessionId });
+    }
+  }
+
+  it("tells sites the viewer's page is plain Chrome when the browser runs headless", async () => {
+    const state = new NamedState("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36");
+    await new ScreencastBridgePlugin({ viewer: new FakeViewer() }).onSessionStart(state);
+    const override = state.oneWay.find((c) => c.method === "Network.setUserAgentOverride");
+    expect(override?.params?.userAgent).toBe("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36");
+    expect(override?.sessionId).toBe("s1");
+  });
+
+  it("leaves a browser that already calls itself Chrome alone", async () => {
+    const state = new NamedState("Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36");
+    await new ScreencastBridgePlugin({ viewer: new FakeViewer() }).onSessionStart(state);
+    expect(state.oneWay.some((c) => c.method === "Network.setUserAgentOverride")).toBe(false);
+  });
+
+  it("still starts when the browser does not report a name", async () => {
+    const state = new NamedState(undefined);
+    await new ScreencastBridgePlugin({ viewer: new FakeViewer() }).onSessionStart(state);
+    expect(state.oneWay.some((c) => c.method === "Network.setUserAgentOverride")).toBe(false);
+    expect(state.log).toContain("Page.startScreencast");
+  });
+});
