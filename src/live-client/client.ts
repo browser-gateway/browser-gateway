@@ -37,6 +37,8 @@ export interface LiveClientEvents {
   onExpired?: () => void;
   /** Fired when the server starts reloading the page in the background ("started"), and when it is usable again ("done"). */
   onRefresh?: (state: "started" | "done") => void;
+  /** Fired when a page could not be opened (blocked by the provider, unreachable). The session stays open. */
+  onNavError?: (url: string, reason?: string) => void;
 }
 
 export interface ConnectOpts {
@@ -184,6 +186,7 @@ export class LiveClient {
       message?: string;
       secondsRemaining?: number;
       state?: string;
+      reason?: string;
     };
     try {
       msg = JSON.parse(text);
@@ -217,6 +220,10 @@ export class LiveClient {
     }
     if (msg.type === "refresh" && (msg.state === "started" || msg.state === "done")) {
       this.listeners.onRefresh?.(msg.state);
+      return;
+    }
+    if (msg.type === "navError" && typeof msg.url === "string") {
+      this.listeners.onNavError?.(msg.url, typeof msg.reason === "string" ? msg.reason : undefined);
       return;
     }
     if (msg.type === "expired") {

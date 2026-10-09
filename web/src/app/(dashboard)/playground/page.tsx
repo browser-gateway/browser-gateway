@@ -17,10 +17,12 @@
  *   - No automatic reconnect — user clicks Reconnect manually
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Loader2, Maximize2, Minimize2, Pause, Play, RefreshCw } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Maximize2, Minimize2, Pause, Play, RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, type SelectOption } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { formatBytes } from "@/lib/format-bytes";
 import { canSaveToProfile, fetchProfiles, fetchProviders, routableProviders, type ProfileMetaItem, type ProviderConfigItem } from "@/lib/api";
 import { LiveClient, eventModifiers, mouseButton, type FrameMeta } from "@/lib/live-client";
 import { useAuthEnabled, useGatewayToken } from "@/components/token-autofill";
@@ -34,6 +36,17 @@ const KEEP_ALIVE_OPTIONS: SelectOption[] = Array.from({ length: 20 }, (_, i) => 
   return { value: String(min * 60), label: `${min} min` };
 });
 const DEFAULT_KEEP_ALIVE_SECONDS = 300;
+
+const SAVE_CHECK_INTERVAL_MS = 1500;
+const SAVE_CHECK_TIMEOUT_MS = 15_000;
+
+const PROVIDER_BLOCK_CODES = new Set(["ERR_BLOCKED_BY_ADMINISTRATOR", "ERR_BLOCKED_BY_CLIENT"]);
+
+function navErrorText(url: string, reason?: string): string {
+  const code = reason?.replace(/^net::/, "");
+  if (code && PROVIDER_BLOCK_CODES.has(code)) return `This provider blocks ${url} (${code}).`;
+  return `Could not open ${url}${code ? ` (${code})` : ""}.`;
+}
 
 function formatMinutesLeft(seconds: number): string {
   if (seconds <= 60) return "<1 min left";
@@ -67,10 +80,15 @@ export default function PlaygroundPage() {
   // middle of being typed — we sync it only when the server-reported URL
   // changes AND it doesn't match what the user has typed mid-edit.
   const lastServerUrlRef = useRef<string>("");
+  const urlInputRef = useRef(urlInput);
+  useEffect(() => { urlInputRef.current = urlInput; }, [urlInput]);
   // Last mouse position INSIDE the canvas (in model coords). Used for the
   // cursor overlay. null when the mouse is outside.
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [navNotice, setNavNotice] = useState<string | null>(null);
+  const [saveResult, setSaveResult] = useState<string | null>(null);
+  const saveWatchRef = useRef<{ profile: string; saving: boolean; before: string | null; live: boolean } | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement | null>(null);
@@ -163,6 +181,34 @@ export default function PlaygroundPage() {
     }
   }, []);
 
+  const reportSave = useCallback(() => {
+    const watch = saveWatchRef.current;
+    saveWatchRef.current = null;
+    if (!watch?.live) return;
+    if (!watch.saving) {
+      setSaveResult(`Not saved: the session used ${watch.profile} read-only.`);
+      return;
+    }
+    setSaveResult(`Saving to ${watch.profile}...`);
+    const deadline = Date.now() + SAVE_CHECK_TIMEOUT_MS;
+    const check = async (): Promise<void> => {
+      const saved = await fetchProfiles()
+        .then((r) => r.profiles.find((p) => p.id === watch.profile))
+        .catch(() => undefined);
+      if (saved && saved.updatedAt !== watch.before) {
+        setProfiles((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
+        setSaveResult(`Saved to ${watch.profile} (${formatBytes(saved.sizeBytes)}).`);
+        return;
+      }
+      if (Date.now() > deadline) {
+        setSaveResult(`No save recorded for ${watch.profile}.`);
+        return;
+      }
+      setTimeout(() => void check(), SAVE_CHECK_INTERVAL_MS);
+    };
+    void check();
+  }, []);
+
   const handleStart = useCallback(() => {
     if (!selectedProvider) return;
     if (clientRef.current) {
@@ -171,13 +217,25 @@ export default function PlaygroundPage() {
     }
     setStatus("connecting");
     setStatusMsg("");
+    setNavNotice(null);
+    setSaveResult(null);
     lastServerUrlRef.current = "";
+    saveWatchRef.current = selectedProfile
+      ? {
+          profile: selectedProfile,
+          saving: saveProfile && profileSavable,
+          before: profiles.find((p) => p.id === selectedProfile)?.updatedAt ?? null,
+          live: false,
+        }
+      : null;
 
     const client = new LiveClient({
       onOpen: () => setStatus("live"),
+      onNavError: (url, reason) => setNavNotice(navErrorText(url, reason)),
       onRefresh: (state) => setRefreshing(state === "started"),
       onClose: ({ code, reason }) => {
         setRefreshing(false);
+        reportSave();
         setStatus("closed");
         setStatusMsg(`connection closed (${code}${reason ? `: ${reason}` : ""})`);
       },
@@ -193,14 +251,16 @@ export default function PlaygroundPage() {
         setStatusMsg("Session ended after keep-alive limit.");
       },
       onUrl: (url) => {
+        setNavNotice(null);
         // Sync the address bar with the actual page URL unless the user is
         // actively editing (input != the last URL we set).
-        if (urlInput === lastServerUrlRef.current || lastServerUrlRef.current === "") {
+        if (urlInputRef.current === lastServerUrlRef.current || lastServerUrlRef.current === "") {
           setUrlInput(url);
         }
         lastServerUrlRef.current = url;
       },
       onFrame: (bitmap, frameMeta) => {
+        if (saveWatchRef.current) saveWatchRef.current.live = true;
         setMeta(frameMeta);
         const canvas = canvasRef.current;
         const ctx = ctxRef.current;
@@ -227,16 +287,18 @@ export default function PlaygroundPage() {
       keepAliveSeconds,
     });
     clientRef.current = client;
-  }, [selectedProvider, selectedProfile, saveProfile, profileSavable, authEnabled, realToken, urlInput, keepAliveSeconds]);
+  }, [selectedProvider, selectedProfile, saveProfile, profileSavable, profiles, reportSave, authEnabled, realToken, urlInput, keepAliveSeconds]);
 
   const handleStop = useCallback(() => {
     clientRef.current?.close();
     clientRef.current = null;
     setStatus("idle");
     setStatusMsg("");
+    setNavNotice(null);
     lastServerUrlRef.current = "";
     setCursorPos(null);
-  }, []);
+    reportSave();
+  }, [reportSave]);
 
   // Tear down on unmount. Also warn the user when they refresh / close the
   // tab while live — losing the session also means the page they're on
@@ -509,17 +571,14 @@ export default function PlaygroundPage() {
             )}
 
             {profilesEnabled && selectedProfile && (
-              <label
-              title={profileSavable ? undefined : "Pin this provider to the profile, or use browserserve, to save changes."}
-              className="flex items-center gap-2 text-[12px] text-muted-foreground select-none">
-                <input
-                  type="checkbox"
+              <label className="flex items-center gap-2 text-[12px] text-muted-foreground select-none">
+                <Switch
+                  size="sm"
                   checked={saveProfile && profileSavable}
-                  onChange={(e) => setSaveProfile(e.target.checked)}
+                  onCheckedChange={(checked) => setSaveProfile(checked)}
                   disabled={status === "live" || status === "connecting" || !profileSavable}
-                  className="size-3.5 accent-foreground rounded"
                 />
-                {profileSavable ? "Save changes to profile" : "Read-only on this provider"}
+                Save to profile
               </label>
             )}
 
@@ -556,6 +615,18 @@ export default function PlaygroundPage() {
               )}
             </div>
           </div>
+
+          {profilesEnabled && selectedProfile && !profileSavable && (
+            <p className="text-[12px] text-muted-foreground -mt-2">
+              {selectedProvider} can&apos;t save to {selectedProfile}. Pin it to this profile on{" "}
+              <a href="/web/providers/" className="text-foreground underline underline-offset-4 hover:text-foreground/80">Providers</a>
+              , or use a browserserve provider.
+            </p>
+          )}
+
+          {saveResult && status !== "live" && status !== "connecting" && (
+            <p className="text-[12px] text-muted-foreground -mt-2">{saveResult}</p>
+          )}
 
           {/* Address bar — visible whenever a session is open */}
           {(status === "live" || status === "connecting" || status === "closed") && (
@@ -610,6 +681,14 @@ export default function PlaygroundPage() {
               height={DEFAULT_VIEWPORT.height}
               className="absolute inset-0 w-full h-full pointer-events-none"
             />
+            {navNotice && (
+              <div className="absolute left-3 right-3 top-3 flex items-start gap-2 rounded-md border bg-background/95 px-3 py-2 text-[12px] text-foreground shadow-sm">
+                <span className="flex-1">{navNotice}</span>
+                <button type="button" onClick={() => setNavNotice(null)} className="text-muted-foreground hover:text-foreground" aria-label="Dismiss">
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            )}
             {refreshing && (
               <div className="absolute inset-0 flex items-center justify-center gap-2 bg-background/60 backdrop-blur-sm text-[13px] text-foreground">
                 <Loader2 className="size-4 animate-spin text-muted-foreground" />

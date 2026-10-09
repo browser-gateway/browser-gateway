@@ -14,6 +14,7 @@ import { isEligibleProviderForProfile } from "../../core/providers/effective.js"
 import { LifecycleError, isReadOnlyProfileRequest, type ProfileLifecycle, type AcquiredProfile } from "../profile/lifecycle.js";
 import { Pipeline, type PipelineSocket } from "../../pipeline/pipeline.js";
 import { ScreencastBridgePlugin } from "../../pipeline/plugins/screencast-bridge.js";
+import { bufferViewerMessages } from "../../pipeline/viewer-buffer.js";
 import { ProfileResidueError } from "../../pipeline/plugins/profile.js";
 import type { CdpPlugin } from "../../pipeline/types.js";
 import { openUpstream } from "../ws/upstream-open.js";
@@ -136,6 +137,7 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
     const keepAliveSeconds = keepAliveRaw === null ? 0 : clampInt(keepAliveRaw, 60, 1200, 300);
 
     wss.handleUpgrade(req, socket, head, async (viewer) => {
+      const liveViewer = bufferViewerMessages(viewer as unknown as PipelineSocket);
       logger.info(
         { providerId, profileId, format, quality, maxWidth, maxHeight, everyNthFrame, keepAliveSeconds },
         "live: viewer connected",
@@ -161,7 +163,7 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         )
         : null;
       const bridge = new ScreencastBridgePlugin({
-        viewer: viewer as unknown as PipelineSocket,
+        viewer: liveViewer,
         format,
         quality,
         viewportWidth: maxWidth,

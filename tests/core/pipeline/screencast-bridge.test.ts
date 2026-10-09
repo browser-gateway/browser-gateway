@@ -305,7 +305,7 @@ describe("ScreencastBridgePlugin password warning recovery", () => {
     const { viewer, state } = await start();
     viewer.receive({ type: "key", event: { kind: "down", key: "Enter", code: "Enter", keyCode: 13 } });
     await settle();
-    const evaluate = state.calls.find((c) => c.method === "Runtime.evaluate");
+    const evaluate = state.calls.find((c) => c.method === "Runtime.evaluate" && String(c.params?.expression).includes("activeElement"));
     expect(String(evaluate?.params?.expression)).toContain("activeElement");
     const key = state.calls.find((c) => c.method === "Input.dispatchKeyEvent");
     expect(key?.params).toMatchObject({ type: "keyDown", text: "\r" });
@@ -324,5 +324,143 @@ describe("ScreencastBridgePlugin password warning recovery", () => {
     const { state } = await start();
     const cast = state.calls.find((c) => c.method === "Page.startScreencast");
     expect(cast?.params).toMatchObject({ everyNthFrame: 1 });
+  });
+});
+
+describe("ScreencastBridgePlugin browser name", () => {
+  class NamedState extends FakeState {
+    readonly oneWay: Array<{ method: string; params?: Record<string, unknown>; sessionId?: string }> = [];
+    constructor(private readonly userAgent: string | undefined) { super(); }
+    override async sendInternal<T>(method: string): Promise<T> {
+      if (method === "Browser.getVersion") return { userAgent: this.userAgent } as T;
+      return super.sendInternal<T>(method);
+    }
+    override sendInternalOneWay(method: string, params?: Record<string, unknown>, sessionId?: string): void {
+      this.oneWay.push({ method, params, sessionId });
+    }
+  }
+
+  it("tells sites the viewer's page is plain Chrome when the browser runs headless", async () => {
+    const state = new NamedState("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36");
+    await new ScreencastBridgePlugin({ viewer: new FakeViewer() }).onSessionStart(state);
+    const override = state.oneWay.find((c) => c.method === "Network.setUserAgentOverride");
+    expect(override?.params?.userAgent).toBe("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36");
+    expect(override?.sessionId).toBe("s1");
+  });
+
+  it("leaves a browser that already calls itself Chrome alone", async () => {
+    const state = new NamedState("Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36");
+    await new ScreencastBridgePlugin({ viewer: new FakeViewer() }).onSessionStart(state);
+    expect(state.oneWay.some((c) => c.method === "Network.setUserAgentOverride")).toBe(false);
+  });
+
+  it("still starts when the browser does not report a name", async () => {
+    const state = new NamedState(undefined);
+    await new ScreencastBridgePlugin({ viewer: new FakeViewer() }).onSessionStart(state);
+    expect(state.oneWay.some((c) => c.method === "Network.setUserAgentOverride")).toBe(false);
+    expect(state.log).toContain("Page.startScreencast");
+  });
+});
+
+describe("ScreencastBridgePlugin page size", () => {
+  class SizeState extends FakeState {
+    override = false;
+    window = { width: 945, height: 1060 };
+    constructor(private readonly replacesOverride: boolean) { super(); }
+    override async sendInternal<T>(method: string, params?: Record<string, unknown>): Promise<T> {
+      if (method === "Page.setDeviceMetricsOverride") this.override = true;
+      if (method === "Page.clearDeviceMetricsOverride") this.override = false;
+      if (method === "Browser.getWindowForTarget") { this.log.push(method); return { windowId: 7 } as T; }
+      if (method === "Browser.setWindowBounds") {
+        const b = params?.bounds as { width: number; height: number };
+        this.window = { width: b.width, height: b.height };
+      }
+      if (method === "Runtime.evaluate") {
+        this.log.push(method);
+        const expr = String(params?.expression);
+        if (expr.includes("visualViewport")) {
+          if (this.override) return { result: { value: this.replacesOverride ? [1920, 960] : [1280, 720] } } as T;
+          return { result: { value: [this.window.width, this.window.height - 121] } } as T;
+        }
+        if (expr.startsWith("[outerWidth")) return { result: { value: [0, 121] } } as T;
+      }
+      return super.sendInternal<T>(method);
+    }
+  }
+
+  it("keeps the requested size when the browser honours it", async () => {
+    const state = new SizeState(false);
+    await new ScreencastBridgePlugin({ viewer: new FakeViewer() }).onSessionStart(state);
+    expect(state.log).not.toContain("Browser.setWindowBounds");
+    expect(state.log).not.toContain("Page.clearDeviceMetricsOverride");
+  });
+
+  it("resizes the window when the browser replaces the requested size", async () => {
+    const state = new SizeState(true);
+    await new ScreencastBridgePlugin({ viewer: new FakeViewer() }).onSessionStart(state);
+    expect(state.override).toBe(false);
+    expect(state.window).toEqual({ width: 1280, height: 841 });
+    expect(state.log.indexOf("Browser.setWindowBounds")).toBeLessThan(state.log.indexOf("Page.startScreencast"));
+  });
+
+  it("resizes the window directly on later viewer resizes", async () => {
+    const state = new SizeState(true);
+    const viewer = new FakeViewer();
+    await new ScreencastBridgePlugin({ viewer }).onSessionStart(state);
+    state.log.length = 0;
+    viewer.receive({ type: "setViewport", width: 900, height: 600 });
+    await settle(); await settle(); await settle();
+    expect(state.log).not.toContain("Page.setDeviceMetricsOverride");
+    expect(state.window).toEqual({ width: 900, height: 721 });
+  });
+});
+
+describe("ScreencastBridgePlugin navigation errors", () => {
+  class NavState extends FakeState {
+    override async sendInternal<T>(method: string): Promise<T> {
+      if (method === "Page.navigate") return { errorText: "net::ERR_BLOCKED_BY_ADMINISTRATOR" } as T;
+      return super.sendInternal<T>(method);
+    }
+  }
+  const controls = (viewer: FakeViewer) =>
+    viewer.sent.filter((d): d is string => typeof d === "string").map((d) => JSON.parse(d) as Record<string, unknown>);
+
+  it("tells the viewer when the address bar page is refused", async () => {
+    const viewer = new FakeViewer();
+    await new ScreencastBridgePlugin({ viewer }).onSessionStart(new NavState());
+    viewer.receive({ type: "navigate", url: "https://quotes.test/" });
+    await settle(); await settle();
+    expect(controls(viewer)).toContainEqual({ type: "navError", url: "https://quotes.test/", reason: "net::ERR_BLOCKED_BY_ADMINISTRATOR" });
+  });
+
+  it("shows the unreachable address instead of the browser error page", async () => {
+    const viewer = new FakeViewer();
+    const state = new FakeState();
+    const bridge = new ScreencastBridgePlugin({ viewer });
+    await bridge.onSessionStart(state);
+    bridge.onEvent({
+      method: "Page.frameNavigated",
+      sessionId: "s1",
+      params: { frame: { url: "chrome-error://chromewebdata/", unreachableUrl: "https://quotes.test/page/2/" } },
+    } as CdpMessage, state);
+    expect(controls(viewer)).toContainEqual({ type: "url", url: "https://quotes.test/page/2/" });
+    expect(controls(viewer)).toContainEqual({ type: "navError", url: "https://quotes.test/page/2/" });
+    expect(controls(viewer).some((m) => m.url === "chrome-error://chromewebdata/")).toBe(false);
+  });
+
+  it("keeps the reason when the error page follows a refused address bar navigation", async () => {
+    const viewer = new FakeViewer();
+    const state = new NavState();
+    const bridge = new ScreencastBridgePlugin({ viewer });
+    await bridge.onSessionStart(state);
+    viewer.receive({ type: "navigate", url: "https://quotes.test/" });
+    await settle(); await settle();
+    bridge.onEvent({
+      method: "Page.frameNavigated",
+      sessionId: "s1",
+      params: { frame: { url: "chrome-error://chromewebdata/", unreachableUrl: "https://quotes.test/" } },
+    } as CdpMessage, state);
+    const last = controls(viewer).filter((m) => m.type === "navError").at(-1);
+    expect(last).toEqual({ type: "navError", url: "https://quotes.test/", reason: "net::ERR_BLOCKED_BY_ADMINISTRATOR" });
   });
 });
