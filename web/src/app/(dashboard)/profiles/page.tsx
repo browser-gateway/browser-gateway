@@ -27,12 +27,7 @@ import { SetupEncryptionKeyDialog } from "@/components/setup-encryption-key-dial
 import { disableProfiles } from "@/lib/api";
 import { useGatewayToken, useAuthEnabled } from "@/components/token-autofill";
 import { buildConnectUrl } from "@/lib/connect-url";
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
+import { formatBytes } from "@/lib/format-bytes";
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);

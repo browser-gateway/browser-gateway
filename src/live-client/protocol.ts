@@ -91,7 +91,15 @@ export interface ServerRefreshMessage {
   state: "started" | "done";
 }
 
+/** Server→client notice that a page could not be opened (blocked, unreachable). The session stays open. */
+export interface ServerNavErrorMessage {
+  type: "navError";
+  url: string;
+  reason?: string;
+}
+
 export type ServerControlMessage =
+  | ServerNavErrorMessage
   | ServerRefreshMessage
   | ServerFrameMetaMessage
   | ServerUrlMessage

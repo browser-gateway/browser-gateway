@@ -22,6 +22,11 @@ const LOGIN_WATCH_WINDOW_MS = 6000;
 const LOGIN_WATCH_INTERVAL_MS = 100;
 const LOGIN_WATCH_MISSES = 2;
 
+// The visual viewport reflects a metrics override where some browsers leave innerWidth stale; the slack covers a scrollbar.
+const PAGE_SIZE_EXPRESSION =
+  "visualViewport?[Math.round(visualViewport.width),Math.round(visualViewport.height)]:[innerWidth,innerHeight]";
+const PAGE_SIZE_SLACK_PX = 24;
+
 const DEFAULTS = {
   format: "jpeg" as const,
   quality: 60,
@@ -106,6 +111,8 @@ export class ScreencastBridgePlugin implements CdpPlugin {
   private probeOffset = false;
   private inputCount: number | null = null;
   private refreshNoticeShown = false;
+  private sizeByWindow = false;
+  private lastNavError: { url: string; reason: string } | null = null;
   private readonly inputCounterKey = `__bg${Math.random().toString(36).slice(2)}`;
 
   constructor(opts: ScreencastBridgePluginOpts) {
@@ -159,17 +166,7 @@ export class ScreencastBridgePlugin implements CdpPlugin {
       this.cdpSessionId,
     );
 
-    // must run before Page.startScreencast — puppeteer/puppeteer#10527
-    await state.sendInternal(
-      "Page.setDeviceMetricsOverride",
-      {
-        width: this.opts.viewportWidth,
-        height: this.opts.viewportHeight,
-        deviceScaleFactor: this.opts.deviceScaleFactor,
-        mobile: false,
-      },
-      this.cdpSessionId,
-    );
+    await this.applyViewport(state, this.opts.viewportWidth, this.opts.viewportHeight, this.opts.deviceScaleFactor, false);
 
     await state.sendInternal(
       "Page.startScreencast",
@@ -200,9 +197,16 @@ export class ScreencastBridgePlugin implements CdpPlugin {
     }
 
     if (msg.method === "Page.frameNavigated" && msg.sessionId === this.cdpSessionId) {
-      const params = msg.params as { frame?: { url?: string; parentId?: string } } | undefined;
+      const params = msg.params as { frame?: { url?: string; parentId?: string; unreachableUrl?: string } } | undefined;
       if (params?.frame && !params.frame.parentId && params.frame.url) {
         if (this.recovering) return;
+        const unreachable = params.frame.unreachableUrl;
+        if (unreachable) {
+          const reason = this.lastNavError?.url === unreachable ? this.lastNavError.reason : undefined;
+          this.sendControl({ type: "url", url: unreachable });
+          this.sendControl({ type: "navError", url: unreachable, ...(reason ? { reason } : {}) });
+          return;
+        }
         this.lastTopUrl = params.frame.url;
         if (this.loginWatchUntil) {
           this.pageLoading = true;
@@ -290,6 +294,46 @@ export class ScreencastBridgePlugin implements CdpPlugin {
     if (show === this.refreshNoticeShown) return;
     this.refreshNoticeShown = show;
     this.sendControl({ type: "refresh", state: show ? "started" : "done" });
+  }
+
+  /** Sets the page size. Some providers replace the requested size with their own while the
+   *  captured picture keeps the real window size; then the window itself is resized instead. */
+  private async applyViewport(
+    state: SessionState,
+    width: number,
+    height: number,
+    deviceScaleFactor: number,
+    mobile: boolean,
+  ): Promise<void> {
+    const sessionId = this.cdpSessionId ?? undefined;
+    if (!this.sizeByWindow) {
+      // must run before Page.startScreencast — puppeteer/puppeteer#10527
+      await state.sendInternal("Page.setDeviceMetricsOverride", { width, height, deviceScaleFactor, mobile }, sessionId);
+      if (mobile) return;
+      const size = await this.pageSize(state);
+      if (sizeMatches(size, width, height)) return;
+      this.opts.logger?.("live: browser replaced the requested page size, resizing its window", { asked: [width, height], got: size });
+      this.sizeByWindow = true;
+      await state.sendInternal("Page.clearDeviceMetricsOverride", {}, sessionId);
+    }
+    await this.resizeWindow(state, width, height);
+  }
+
+  private async resizeWindow(state: SessionState, width: number, height: number): Promise<void> {
+    if (!this.targetId) return;
+    const { windowId } = await state.sendInternal<{ windowId: number }>("Browser.getWindowForTarget", { targetId: this.targetId });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const frame = await this.evaluate<number[]>(state, "[outerWidth-innerWidth,outerHeight-innerHeight]").catch(() => undefined);
+      await state.sendInternal("Browser.setWindowBounds", {
+        windowId,
+        bounds: { width: width + (frame?.[0] ?? 0), height: height + (frame?.[1] ?? 0), windowState: "normal" },
+      });
+      if (sizeMatches(await this.pageSize(state), width, height)) return;
+    }
+  }
+
+  private async pageSize(state: SessionState): Promise<number[] | undefined> {
+    return this.evaluate<number[]>(state, PAGE_SIZE_EXPRESSION).catch(() => undefined);
   }
 
   private async evaluate<T>(state: SessionState, expression: string): Promise<T | undefined> {
@@ -472,7 +516,11 @@ export class ScreencastBridgePlugin implements CdpPlugin {
         case "navigate":
           if (msg.url) {
             await this.notifyBeforeNavigate();
-            await state.sendInternal("Page.navigate", { url: msg.url }, this.cdpSessionId);
+            const nav = await state.sendInternal<{ errorText?: string }>("Page.navigate", { url: msg.url }, this.cdpSessionId);
+            if (nav?.errorText) {
+              this.lastNavError = { url: msg.url, reason: nav.errorText };
+              this.sendControl({ type: "navError", url: msg.url, reason: nav.errorText });
+            }
           } else if (msg.action === "reload") {
             await state.sendInternal("Page.reload", {}, this.cdpSessionId);
           } else if (msg.action === "back" || msg.action === "forward") {
@@ -490,16 +538,7 @@ export class ScreencastBridgePlugin implements CdpPlugin {
           }
           break;
         case "setViewport":
-          await state.sendInternal(
-            "Page.setDeviceMetricsOverride",
-            {
-              width: msg.width,
-              height: msg.height,
-              deviceScaleFactor: msg.deviceScaleFactor ?? 1,
-              mobile: msg.mobile ?? false,
-            },
-            this.cdpSessionId,
-          );
+          await this.applyViewport(state, msg.width, msg.height, msg.deviceScaleFactor ?? 1, msg.mobile ?? false);
           this.opts.viewportWidth = msg.width;
           this.opts.viewportHeight = msg.height;
           state.sendInternalOneWay("Page.stopScreencast", {}, this.cdpSessionId);
@@ -563,4 +602,9 @@ function extractText(evt: unknown): string | undefined {
   if (ArrayBuffer.isView(d)) return new TextDecoder().decode(d as ArrayBufferView);
   if (d && typeof (d as { toString?: () => string }).toString === "function") return String(d);
   return undefined;
+}
+
+function sizeMatches(size: number[] | undefined, width: number, height: number): boolean {
+  if (!size) return true;
+  return Math.abs(size[0] - width) <= PAGE_SIZE_SLACK_PX && Math.abs(size[1] - height) <= PAGE_SIZE_SLACK_PX;
 }
