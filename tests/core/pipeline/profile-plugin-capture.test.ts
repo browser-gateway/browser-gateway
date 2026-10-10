@@ -16,13 +16,26 @@ class FakeBrowser implements SessionState {
   cookies = [{ name: "sid", value: "1", domain: "a.test", path: "/" }];
   browserGone = false;
   hasForward = true;
+  pausesNewTabs: ((tabSessionId: string) => void) | null = null;
+  private pausedTabs = new Map<string, () => void>();
+  private tabsResumed = Promise.resolve();
 
   async sendInternal<T>(method: string, _params?: Record<string, unknown>, sessionId?: string): Promise<T> {
     this.log.push(`${method}${sessionId ? `@${sessionId}` : ""}`);
     await Promise.resolve();
-    if (method === "Target.createTarget") return { targetId: `helper-${++this.helpers}` } as T;
+    if (method === "Target.createTarget") {
+      const targetId = `helper-${++this.helpers}`;
+      if (this.pausesNewTabs) {
+        const tab = `tab-${targetId}`;
+        this.tabsResumed = new Promise((r) => this.pausedTabs.set(tab, r));
+        this.pausesNewTabs(tab);
+      }
+      return { targetId } as T;
+    }
+    if (method === "Runtime.runIfWaitingForDebugger" && sessionId) this.pausedTabs.get(sessionId)?.();
     if (method === "Target.attachToTarget") return { sessionId: `h-${(_params as { targetId: string }).targetId}` } as T;
     if (method === "Page.navigate" && sessionId?.startsWith("h-")) {
+      await this.tabsResumed;
       this.pageOrigin.set(sessionId, new URL((_params as { url: string }).url).origin);
       return {} as T;
     }
@@ -216,6 +229,23 @@ describe("ProfilePlugin when a page leaves by following a link", () => {
     plugin.onEvent({ method: "Page.frameRequestedNavigation", sessionId: "s1", params: { frameId: "f1", url: "https://b.test/" } });
     plugin.onEvent({ method: "Page.frameNavigated", sessionId: "s1", params: { frame: { id: "f1", url: "https://b.test/" } } });
     await plugin.onSessionEnd(b, "test");
+    expect(saves[0]!.storage["https://a.test"]?.localStorage).toEqual({ kept: "yes" });
+  });
+
+  it("resumes the helper tab a departed client library left paused, so the re-read completes", async () => {
+    const b = makeBrowser();
+    b.openPage("s1", "https://a.test/", { kept: "yes" });
+    b.originStorage.set("https://a.test", { kept: "yes" });
+    const { plugin, saves } = makePlugin();
+    b.pausesNewTabs = (tab) => plugin.onEvent({ method: "Target.attachedToTarget", params: { sessionId: tab, waitingForDebugger: true, targetInfo: { type: "tab" } } });
+    await plugin.onSessionStart(b);
+    plugin.onEvent({ method: "Page.frameNavigated", sessionId: "s1", params: { frame: { id: "f1", url: "https://a.test/" } } });
+    b.pageOrigin.set("s1", "https://b.test");
+    b.pageStorage.set("s1", {});
+    plugin.onEvent({ method: "Page.frameRequestedNavigation", sessionId: "s1", params: { frameId: "f1", url: "https://b.test/" } });
+    plugin.onEvent({ method: "Page.frameNavigated", sessionId: "s1", params: { frame: { id: "f1", url: "https://b.test/" } } });
+    await plugin.onSessionEnd(b, "test");
+    expect(b.log).toContain("Runtime.runIfWaitingForDebugger@tab-helper-1");
     expect(saves[0]!.storage["https://a.test"]?.localStorage).toEqual({ kept: "yes" });
   });
 
