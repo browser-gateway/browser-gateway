@@ -402,6 +402,7 @@ export function createWebSocketHandler(
         });
 
         let connected: boolean;
+        let heldByOtherProfile = false;
         if (plugins.length > 0) {
           const handOff = isBrowserserveProfile && profileLifecycle
             ? browserserveHandOffHooks(acquired!, profileLifecycle, logger)
@@ -414,6 +415,7 @@ export function createWebSocketHandler(
           });
           if (!relayResult.connected && relayResult.residue) {
             lastResidueError = relayResult.residue;
+            heldByOtherProfile = true;
           }
           connected = relayResult.connected;
         } else {
@@ -429,7 +431,7 @@ export function createWebSocketHandler(
         }
 
         gateway.releaseSlot(sessionId, provider.id);
-        gateway.recordFailure(provider.id);
+        if (!heldByOtherProfile) gateway.recordFailure(provider.id);
       }
 
       return false;
@@ -457,7 +459,7 @@ export function createWebSocketHandler(
         respondError(socket, 503, { error: `Provider '${targetProviderId}' unavailable (cooldown, saturated, or not eligible for profile)` });
       } else if (profileId !== null && !anyProviderEligibleForProfile(gateway, profileId)) {
         respondError(socket, 400, {
-          error: `No provider is configured to serve profile '${profileId}'. Pin a provider slot with 'profile: ${profileId}'.`,
+          error: `No provider serves profile '${profileId}': every enabled provider is set to a different profile.`,
         });
       } else {
         respondError(socket, 503, { error: "All providers unavailable" });

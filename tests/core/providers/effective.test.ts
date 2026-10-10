@@ -80,21 +80,18 @@ describe("isEligibleProviderForProfile", () => {
     expect(isEligibleProviderForProfile(provider({ profile: "alpha" }), "bravo")).toBe(false);
   });
 
-  it("stateless-only generic providers reject any profile request", () => {
-    expect(isEligibleProviderForProfile(provider({}), "alpha")).toBe(false);
+  it("unpinned generic providers serve any profile and sessions without one", () => {
+    expect(isEligibleProviderForProfile(provider({}), "alpha")).toBe(true);
+    expect(isEligibleProviderForProfile(provider({}), "bravo")).toBe(true);
     expect(isEligibleProviderForProfile(provider({}), null)).toBe(true);
   });
 
-  it("multiProfile:true on a non-browserserve provider is IGNORED", () => {
-    const p = provider({ multiProfile: true });
-    expect(isEligibleProviderForProfile(p, "bravo")).toBe(false);
-    expect(isEligibleProviderForProfile(p, "alpha")).toBe(false);
-    expect(isEligibleProviderForProfile(p, null)).toBe(true);
+  it("an unpinned provider is eligible while its probe is pending", () => {
+    expect(isEligibleProviderForProfile(provider({ detectedKind: null }), "alpha")).toBe(true);
   });
 
-  it("multiProfile:true is IGNORED while probe pending (detectedKind: null)", () => {
-    const p = provider({ multiProfile: true, detectedKind: null });
-    expect(isEligibleProviderForProfile(p, "alpha")).toBe(false);
+  it("pinned generic providers refuse sessions without a profile", () => {
+    expect(isEligibleProviderForProfile(provider({ profile: "alpha" }), null)).toBe(false);
   });
 
   it("pinned takes precedence when multiProfile is also set on non-browserserve", () => {

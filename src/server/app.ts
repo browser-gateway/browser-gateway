@@ -153,45 +153,12 @@ function persistConfigOrRollback(
   }
 }
 
-/**
- * Probes the upstream and returns an error body when `multiProfile: true` is
- * set on a provider that is not browserserve. External providers must pin a
- * single profile; sharing one upstream across profiles leaks browser state.
- */
-async function rejectInvalidMultiProfile(
-  config: ProviderConfig,
-): Promise<ProviderConfigError | null> {
-  if (config.multiProfile !== true) return null;
-  let providerKind: string | null;
-  try {
-    const caps = await probeProviderCapabilities(config.url, {
-      perStepTimeoutMs: 5_000,
-      totalTimeoutMs: 15_000,
-    });
-    providerKind = caps.providerKind;
-  } catch (err) {
-    return {
-      error: "Cannot verify multiProfile:true — the upstream did not answer the probe",
-      details: [err instanceof Error ? err.message : String(err)],
-    };
-  }
-  if (providerKind === "browserserve") return null;
-  return {
-    error: "multiProfile:true is only valid on browserserve providers",
-    details: [
-      "The probe reached this upstream but it did not identify as browserserve.",
-      "Remove `multiProfile: true` from this provider, or point at a browserserve instance.",
-      "External providers can only serve profile sessions with a `profile: \"<name>\"` pin (one slot per profile).",
-    ],
-  };
-}
-
 interface ProviderConfigError {
   error: string;
   details: string[];
 }
 
-/** Parses a provider create/update body and applies the multiProfile guard. */
+/** Parses a provider create/update body. */
 async function validateProviderBody(
   body: Record<string, unknown>,
   existing?: ProviderConfig,
@@ -200,8 +167,6 @@ async function validateProviderBody(
   if (parsed.errors) {
     return { error: { error: "Invalid provider config", details: parsed.errors } };
   }
-  const multiProfileError = await rejectInvalidMultiProfile(parsed.data);
-  if (multiProfileError) return { error: multiProfileError };
   return { data: parsed.data };
 }
 

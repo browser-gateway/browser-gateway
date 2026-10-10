@@ -101,7 +101,7 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       }
       if (!isReadOnlyProfileRequest(url) && !isEligibleProviderForProfile(provider, profileId)) {
         writeHttpError(socket, 400, {
-          error: `provider ${providerId} cannot save profile "${profileId}": pin it to the profile or use a browserserve provider, or open the profile read-only`,
+          error: `provider ${providerId} only serves profile "${provider.config.profile}": pick another provider or open "${profileId}" read-only`,
         });
         return;
       }

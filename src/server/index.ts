@@ -445,24 +445,6 @@ async function startServer() {
 
   const startTime = Date.now();
   gateway.start();
-  void gateway.registry.awaitInitialProbes({ maxWaitMs: 5_000 }).then(() => {
-    for (const provider of gateway.registry.getAll()) {
-      if (provider.config.multiProfile !== true) continue;
-      if (provider.detectedKind === "browserserve") continue;
-      provider.config.multiProfile = false;
-      const configured = config.providers[provider.id];
-      if (configured) configured.multiProfile = false;
-      logger.error(
-        {
-          providerId: provider.id,
-          detectedKind: provider.detectedKind,
-          hint: "multiProfile:true is only valid on browserserve providers. Remove the flag or replace the upstream. External providers must use `profile: \"<name>\"` pinning (one slot per profile).",
-        },
-        "invalid config: multiProfile:true rejected on non-browserserve provider",
-      );
-    }
-  });
-
   const bindHost = resolveHost();
   server.listen(config.gateway.port, bindHost, async () => {
     // Structured single-line log for log aggregators

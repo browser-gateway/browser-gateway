@@ -114,18 +114,6 @@ describe("GET /v1/providers credential redaction", () => {
   });
 });
 
-describe("multiProfile on external providers", () => {
-  it("rejects multiProfile:true on PUT", async () => {
-    const res = await build().request("/v1/providers/secret", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` },
-      body: JSON.stringify({ multiProfile: true }),
-    });
-    expect(res.status).toBe(400);
-    expect(gateway.config.providers.secret!.multiProfile).not.toBe(true);
-  }, 30000);
-});
-
 describe("dashboard session lifetime", () => {
   async function login(app: ReturnType<typeof build>): Promise<string> {
     const res = await app.request("/web/auth", {

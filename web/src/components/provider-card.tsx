@@ -107,12 +107,10 @@ export function ProviderCard({
 
               <dt className="text-muted-foreground">Serves</dt>
               <dd className="text-foreground">
-                {provider.multiProfile ? (
-                  "Any profile"
-                ) : provider.profile ? (
+                {provider.profile && !provider.multiProfile ? (
                   <>Only <span className="font-mono">{provider.profile}</span></>
                 ) : (
-                  "Sessions with no profile"
+                  "Any session"
                 )}
               </dd>
 
