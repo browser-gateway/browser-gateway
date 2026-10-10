@@ -9,6 +9,8 @@ class FakeBrowser implements SessionState {
   readonly pageOrigin = new Map<string, string>();
   readonly pageStorage = new Map<string, Record<string, string>>();
   readonly gonePages = new Set<string>();
+  readonly originStorage = new Map<string, Record<string, string>>();
+  private helpers = 0;
   readonly log: string[] = [];
   readonly forwarded: CdpMessage[] = [];
   cookies = [{ name: "sid", value: "1", domain: "a.test", path: "/" }];
@@ -18,6 +20,15 @@ class FakeBrowser implements SessionState {
   async sendInternal<T>(method: string, _params?: Record<string, unknown>, sessionId?: string): Promise<T> {
     this.log.push(`${method}${sessionId ? `@${sessionId}` : ""}`);
     await Promise.resolve();
+    if (method === "Target.createTarget") return { targetId: `helper-${++this.helpers}` } as T;
+    if (method === "Target.attachToTarget") return { sessionId: `h-${(_params as { targetId: string }).targetId}` } as T;
+    if (method === "Page.navigate" && sessionId?.startsWith("h-")) {
+      this.pageOrigin.set(sessionId, new URL((_params as { url: string }).url).origin);
+      return {} as T;
+    }
+    if (method === "Runtime.evaluate" && sessionId?.startsWith("h-")) {
+      return { result: { value: JSON.stringify(this.originStorage.get(this.pageOrigin.get(sessionId) ?? "") ?? {}) } } as T;
+    }
     if (method === "Runtime.evaluate" && sessionId) {
       if (this.browserGone || this.gonePages.has(sessionId)) throw new Error("target closed");
       const origin = this.pageOrigin.get(sessionId) ?? "about:blank";
@@ -189,5 +200,33 @@ describe("ProfilePlugin snapshot before an internal navigation", () => {
     await plugin.onSessionEnd(b, "test");
     expect(saves[0]!.storage["https://a.test"]?.localStorage).toEqual({ left: "behind" });
     expect(saves[0]!.storage["https://c.test"]?.localStorage).toEqual({ now: "here" });
+  });
+});
+
+describe("ProfilePlugin when a page leaves by following a link", () => {
+  it("re-reads the origin it left even when the snapshot on the way out missed it", async () => {
+    const b = makeBrowser();
+    b.openPage("s1", "https://a.test/", { kept: "yes" });
+    b.originStorage.set("https://a.test", { kept: "yes" });
+    const { plugin, saves } = makePlugin();
+    await plugin.onSessionStart(b);
+    plugin.onEvent({ method: "Page.frameNavigated", sessionId: "s1", params: { frame: { id: "f1", url: "https://a.test/" } } });
+    b.pageOrigin.set("s1", "https://b.test");
+    b.pageStorage.set("s1", {});
+    plugin.onEvent({ method: "Page.frameRequestedNavigation", sessionId: "s1", params: { frameId: "f1", url: "https://b.test/" } });
+    plugin.onEvent({ method: "Page.frameNavigated", sessionId: "s1", params: { frame: { id: "f1", url: "https://b.test/" } } });
+    await plugin.onSessionEnd(b, "test");
+    expect(saves[0]!.storage["https://a.test"]?.localStorage).toEqual({ kept: "yes" });
+  });
+
+  it("does not re-read origins left by a navigation it held", async () => {
+    const b = makeBrowser();
+    b.openPage("s1", "https://a.test/", { left: "behind" });
+    const { plugin } = makePlugin();
+    await plugin.onSessionStart(b);
+    await plugin.snapshotPageBeforeLeave("s1");
+    plugin.onEvent({ method: "Page.frameNavigated", sessionId: "s1", params: { frame: { id: "f1", url: "https://c.test/" } } });
+    await plugin.onSessionEnd(b, "test");
+    expect(b.log.some((l) => l.startsWith("Target.createTarget"))).toBe(false);
   });
 });
