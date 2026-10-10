@@ -182,6 +182,33 @@ describe("Pipeline", () => {
     expect(events).toEqual(["start", "end"]);
   });
 
+  it("onSessionReady runs once on every plugin, after all onSessionStart calls", async () => {
+    const events: string[] = [];
+    const upstream = new FakeSocket();
+    const plugin = (name: string): CdpPlugin => ({
+      name,
+      onSessionStart: async () => { await new Promise((r) => setTimeout(r, 2)); events.push(`start:${name}`); },
+      onSessionReady: () => { events.push(`ready:${name}`); },
+    });
+    const p = new Pipeline(upstream, "wss://test/", { plugins: [plugin("a"), plugin("b")], onSessionEndTimeoutMs: 100 });
+    expect((await p.start()).ok).toBe(true);
+    expect(events).toEqual(["start:a", "start:b", "ready:a", "ready:b"]);
+  });
+
+  it("onSessionReady does not run when a plugin fails to start", async () => {
+    const events: string[] = [];
+    const upstream = new FakeSocket();
+    const p = new Pipeline(upstream, "wss://test/", {
+      plugins: [
+        { name: "ok", onSessionStart: async () => {}, onSessionReady: () => { events.push("ready"); } },
+        { name: "bad", onSessionStart: async () => { throw new Error("no"); } },
+      ],
+      onSessionEndTimeoutMs: 100,
+    });
+    expect((await p.start()).ok).toBe(false);
+    expect(events).toEqual([]);
+  });
+
   it("a held client command forwarded later keeps its id and its response reaches the client", async () => {
     const client = new FakeSocket();
     const upstream = new FakeSocket();

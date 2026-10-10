@@ -1,34 +1,27 @@
 import type { ProviderConfig, ProviderState } from "../types.js";
 
 /**
- * Static config-shape check: does the provider's declared `profile` / `multiProfile`
- * config admit the requested profile? Optimistic — does not know whether the provider
- * can safely serve multi-profile at runtime. Use `isEligibleProviderForProfile`
- * for routing decisions.
+ * Config-shape check: does the provider's `profile` pin admit the requested profile?
+ * An unpinned provider serves every session; a pinned one only its own profile.
  */
 export function isEligibleForProfile(
   config: ProviderConfig,
   requestedProfile: string | null | undefined,
 ): boolean {
-  if (config.multiProfile) return true;
-  if (requestedProfile == null) return config.profile == null;
+  if (config.multiProfile || config.profile == null) return true;
   return config.profile === requestedProfile;
 }
 
 /**
- * Runtime profile-eligibility. A provider slot is eligible to serve the requested
- * profile when it is a detected browserserve instance (fresh Chrome per session)
- * or carries an explicit `profile: "X"` pin matching the request. `config.multiProfile`
- * is not trusted on non-browserserve providers because shared external browser
- * instances retain profile-A residue (HttpOnly cookies, disk storage, service workers)
- * that leaks into subsequent profile-B sessions.
+ * Runtime profile-eligibility. Any provider may load and save any profile unless it
+ * is pinned to a different one. Mixing profiles on a reused browser is caught at
+ * session start by the profile marker check, not here.
  */
 export function isEligibleProviderForProfile(
   provider: Pick<ProviderState, "detectedKind"> & { config: Pick<ProviderState["config"], "profile"> },
   requestedProfile: string | null | undefined,
 ): boolean {
-  if (provider.detectedKind === "browserserve") return true;
-  if (requestedProfile == null) return provider.config.profile == null;
+  if (provider.detectedKind === "browserserve" || provider.config.profile == null) return true;
   return provider.config.profile === requestedProfile;
 }
 

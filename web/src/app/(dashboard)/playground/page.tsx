@@ -618,9 +618,9 @@ export default function PlaygroundPage() {
 
           {profilesEnabled && selectedProfile && !profileSavable && (
             <p className="text-[12px] text-muted-foreground -mt-2">
-              {selectedProvider} can&apos;t save to {selectedProfile}. Pin it to this profile on{" "}
+              {selectedProvider} only serves profile {providers?.find((p) => p.id === selectedProvider)?.profile}. Change it on{" "}
               <a href="/web/providers/" className="text-foreground underline underline-offset-4 hover:text-foreground/80">Providers</a>
-              , or use a browserserve provider.
+              , or pick another provider.
             </p>
           )}
 

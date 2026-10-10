@@ -114,7 +114,9 @@ A web dashboard ships with every install. Open `http://localhost:9500/web` after
 
 ### Profiles — persistent browser state
 
-- **Survive across sessions** - cookies, `localStorage`, `sessionStorage`, and `IndexedDB` are captured on disconnect and replayed on the next connect with the same id
+- **Survive across sessions** - cookies and `localStorage` are captured as you leave each page and on disconnect, and replayed on the next connect with the same id (`IndexedDB` too on browserserve)
+- **Saved on any provider** - every provider can load and save any profile; pin a provider to one profile only to route that profile's sessions there
+- **Profiles never mix** - a browser that still holds a different profile is refused. Anything else already in a reused browser (from sessions without a profile) is saved with the profile
 - **One-line opt-in** - add `?profile=acme` to the WebSocket URL, the rest is automatic
 - **Encrypted at rest** - AES-256-GCM with envelope encryption, anti-swap binding, and a scrypt-derived KEK
 - **Provider-agnostic** - state is captured at the CDP level, so it replays against any provider
@@ -395,7 +397,7 @@ providers:
 Because the gateway controls that runtime, a browserserve provider is **auto-detected** and unlocks two things no external provider gets:
 
 - **Auto capacity.** You do not set `maxConcurrent`. browserserve measures its host (memory, thread, and CPU limits) and advertises a safe ceiling, which the gateway adopts. The dashboard shows it as `(auto)`.
-- **Multiple profiles from one slot.** A browserserve provider can serve any profile, switching safely because every session is a fresh browser with no shared state. External providers stay single-profile-pinned, since reusing a browser leaks cookies and storage between profiles.
+- **Complete profiles.** Every session is a fresh browser, and a saved profile carries the whole browser state, including IndexedDB and service workers. Other providers save cookies and site storage.
 
 A common shape: browserserve as the primary provider on your own hardware, with a cloud provider at a lower priority for failover.
 

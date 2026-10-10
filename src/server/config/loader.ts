@@ -102,21 +102,6 @@ function validateProfileEligibility(config: GatewayConfig): void {
   if (slots.length === 0) {
     throw new Error("profiles.enabled is true but no providers are configured.");
   }
-
-  const hasMultiProfile = slots.some((p) => p.multiProfile);
-  const hasPinned = slots.some((p) => p.profile != null);
-
-  // A browserserve provider is auto-detected at runtime and serves any profile,
-  // so a config need not statically declare profile capability. When none does,
-  // warn rather than fail: if no provider turns out to be browserserve, requests
-  // for a profile are rejected at connect time with an actionable message.
-  if (!hasMultiProfile && !hasPinned) {
-    console.warn(
-      "profiles.enabled is true but no provider statically declares profile capability.\n" +
-        "  A browserserve provider is auto-detected and can serve any profile.\n" +
-        "  Otherwise, pin each slot with `profile: <name>` (one slot per profile).",
-    );
-  }
 }
 
 function buildConfigFromEnv(): Record<string, unknown> {

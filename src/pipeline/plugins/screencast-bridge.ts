@@ -112,6 +112,8 @@ export class ScreencastBridgePlugin implements CdpPlugin {
   private inputCount: number | null = null;
   private refreshNoticeShown = false;
   private sizeByWindow = false;
+  private ready = false;
+  private readonly heldInput: string[] = [];
   private lastNavError: { url: string; reason: string } | null = null;
   private readonly inputCounterKey = `__bg${Math.random().toString(36).slice(2)}`;
 
@@ -215,6 +217,12 @@ export class ScreencastBridgePlugin implements CdpPlugin {
         this.sendControl({ type: "url", url: params.frame.url });
       }
     }
+  }
+
+  /** Viewer input waits for every plugin's setup (a profile load clears cookies the page set meanwhile). */
+  onSessionReady(state: SessionState): void {
+    this.ready = true;
+    for (const data of this.heldInput.splice(0)) this.handleViewerMessage(state, data);
   }
 
   async onSessionEnd(state: SessionState, _reason: string): Promise<void> {
@@ -438,7 +446,8 @@ export class ScreencastBridgePlugin implements CdpPlugin {
     listen(viewer, "message", (evt) => {
       const data = extractText(evt);
       if (data === undefined) return;
-      this.handleViewerMessage(state, data);
+      if (this.ready) this.handleViewerMessage(state, data);
+      else this.heldInput.push(data);
     });
     listen(viewer, "close", () => state.close("viewer-closed"));
     listen(viewer, "error", () => state.close("viewer-error"));

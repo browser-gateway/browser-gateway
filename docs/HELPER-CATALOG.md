@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-10-09
+Generated: 2026-10-10
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -272,10 +272,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `resolveWsUrl(providerUrl: string, timeoutMs: number = 3000, headers?: Record<string, string>) → Promise<string>` (line 80)
 ### `src/core/providers/effective.ts`
 
-- **fn** `isEligibleForProfile(config: ProviderConfig, requestedProfile: string | null | undefined) → boolean` (line 9) — Static config-shape check: does the provider's declared `profile` / `multiProfile`
-- **fn** `isEligibleProviderForProfile(provider: Pick<ProviderState, "detectedKind"> & { config: Pick<ProviderState["config"], "profile"> }, requestedProfile: string | null | undefined) → boolean` (line 26) — Runtime profile-eligibility. A provider slot is eligible to serve the requested
-- **fn** `effectiveMaxConcurrent(provider: ProviderState) → number | undefined` (line 40) — The concurrency ceiling actually enforced for a provider: explicit
-- **fn** `hasFreeSlot(provider: ProviderState) → boolean` (line 45) — True when the provider has a free slot under its effective ceiling.
+- **fn** `isEligibleForProfile(config: ProviderConfig, requestedProfile: string | null | undefined) → boolean` (line 7) — Config-shape check: does the provider's `profile` pin admit the requested profile?
+- **fn** `isEligibleProviderForProfile(provider: Pick<ProviderState, "detectedKind"> & { config: Pick<ProviderState["config"], "profile"> }, requestedProfile: string | null | undefined) → boolean` (line 20) — Runtime profile-eligibility. Any provider may load and save any profile unless it
+- **fn** `effectiveMaxConcurrent(provider: ProviderState) → number | undefined` (line 33) — The concurrency ceiling actually enforced for a provider: explicit
+- **fn** `hasFreeSlot(provider: ProviderState) → boolean` (line 38) — True when the provider has a free slot under its effective ceiling.
 ### `src/core/providers/health.ts`
 
 - **class** `class HealthChecker` (line 7)
@@ -355,7 +355,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/app.ts`
 
 - **interface** `interface ProfileAppDeps` (line 37)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 208)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 173)
 ### `src/server/browse/cli.ts`
 
 - **fn** `runBrowseCli(argv: string[]) → Promise<number>` (line 13)

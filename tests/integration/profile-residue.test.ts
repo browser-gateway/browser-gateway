@@ -492,4 +492,23 @@ describe("residue detection", () => {
     const attempt = await checkConnect("charlie-profile");
     expect(attempt.ok).toBe(true);
   }, 30_000);
+
+  it("R8: a refusal for another profile does not put the provider in cooldown", async () => {
+    state.reset();
+
+    const stamp = commitStamp("alpha-profile");
+    const ws1 = await openProfile("alpha-profile");
+    ws1.close();
+    await waitForCommitAfter("alpha-profile", stamp);
+
+    for (let i = 0; i < 3; i++) {
+      const attempt = await checkConnect("bravo-profile");
+      expect(attempt.status).toBe(409);
+    }
+    const status = (await fetch(`http://127.0.0.1:${gatewayPort}/v1/status`).then((r) => r.json())) as {
+      providers: { id: string; cooldownUntil: string | null }[];
+    };
+    const bravo = status.providers.find((p) => p.id === `pin-bravo-${RUN}`);
+    expect(bravo?.cooldownUntil).toBeNull();
+  }, 60_000);
 });

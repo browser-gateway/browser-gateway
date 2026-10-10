@@ -5,7 +5,7 @@
  *   2. Pinned slot refuses non-matching ?profile=<name>
  *   3. Pinned slot refuses stateless traffic (no ?profile=)
  *   4. Unpinned slot serves stateless traffic
- *   5. Unpinned slot refuses ?profile=<name>
+ *   5. Unpinned slot serves any ?profile=<name>
  *   6. Two slots pinned to different profiles both eligible for their own name
  *   7. multiProfile: true accepts any profile including stateless
  *   8. Explicit targetProviderId still enforces profile pin
@@ -48,7 +48,7 @@ beforeEach(() => {
 describe("profile-pin eligibility", () => {
   it("pinned slot serves matching profile", () => {
     const c = selector.getCandidates({ profileId: "acme" });
-    expect(c.map((p) => p.id).sort()).toEqual(["acme-slot", "runtime-slot"]);
+    expect(c.map((p) => p.id).sort()).toEqual(["acme-slot", "runtime-slot", "stateless-slot"]);
   });
 
   it("pinned slot refuses non-matching profile", () => {
@@ -67,9 +67,9 @@ describe("profile-pin eligibility", () => {
     expect(c.map((p) => p.id).sort()).toEqual(["runtime-slot", "stateless-slot"]);
   });
 
-  it("unpinned stateless-only slot refuses named profile", () => {
+  it("unpinned slot serves a named profile", () => {
     const c = selector.getCandidates({ profileId: "acme" });
-    expect(c.map((p) => p.id)).not.toContain("stateless-slot");
+    expect(c.map((p) => p.id)).toContain("stateless-slot");
   });
 
   it("two pinned slots each serve their own profile", () => {
@@ -95,9 +95,15 @@ describe("profile-pin eligibility", () => {
     expect(bad).toHaveLength(0);
   });
 
-  it("no eligible provider → empty candidates", () => {
+  it("a profile no slot is pinned to goes to the unpinned slots", () => {
     const c = selector.getCandidates({ profileId: "unknown-profile" });
-    expect(c.map((p) => p.id).sort()).toEqual(["runtime-slot"]);
+    expect(c.map((p) => p.id).sort()).toEqual(["runtime-slot", "stateless-slot"]);
+  });
+
+  it("only pinned slots for other profiles → empty candidates", () => {
+    registry.disable("stateless-slot", cfg().providers["stateless-slot"]);
+    registry.disable("runtime-slot", cfg().providers["runtime-slot"]);
+    expect(selector.getCandidates({ profileId: "unknown-profile" })).toHaveLength(0);
   });
 });
 
@@ -118,10 +124,10 @@ describe("isEligibleForProfile helper", () => {
     expect(isEligibleForProfile(p, null)).toBe(false);
   });
 
-  it("stateless-only accepts only unpinned traffic", () => {
+  it("unpinned accepts every session", () => {
     const p = { ...base, multiProfile: false };
     expect(isEligibleForProfile(p, null)).toBe(true);
     expect(isEligibleForProfile(p, undefined)).toBe(true);
-    expect(isEligibleForProfile(p, "acme")).toBe(false);
+    expect(isEligibleForProfile(p, "acme")).toBe(true);
   });
 });

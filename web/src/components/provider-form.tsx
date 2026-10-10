@@ -64,7 +64,7 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
   const [priority, setPriority] = React.useState<number>(initial?.priority ?? 100);
   const [weight, setWeight] = React.useState<number>(initial?.weight ?? 100);
   const [profile, setProfile] = React.useState<string>(
-    initial?.multiProfile ? "*" : (initial?.profile ?? ""),
+    initial?.multiProfile ? "" : (initial?.profile ?? ""),
   );
   const [headers, setHeaders] = React.useState<HeaderRow[]>(() =>
     recordToHeaderRows(initial?.headers),
@@ -167,14 +167,13 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
     if (!validate()) return;
     setSaving(true);
     try {
-      const servesAll = profile === "*";
       const payload = {
         url: url.trim(),
         priority,
         weight,
         maxConcurrent: maxConcurrent ? Number(maxConcurrent) : undefined,
-        profile: servesAll ? null : (profile.trim() ? profile.trim() : null),
-        multiProfile: servesAll,
+        profile: profile.trim() ? profile.trim() : null,
+        multiProfile: false,
         headers: headersToRecord(headers),
       };
       let result: { ok: boolean; error?: string; details?: string[] };
@@ -243,10 +242,9 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
 
   const profileOptions: SelectOption<string>[] = React.useMemo(() => {
     const base: SelectOption<string>[] = [
-      { value: "", label: COPY.profile.noneOption },
-      { value: "*", label: COPY.profile.anyOption },
+      { value: "", label: COPY.profile.anyOption },
     ];
-    if (profile && profile !== "*" && !availableProfiles.some((p) => p.id === profile)) {
+    if (profile && !availableProfiles.some((p) => p.id === profile)) {
       base.push({ value: profile, label: `Only ${profile} (not created yet)` });
     }
     for (const p of availableProfiles) {
