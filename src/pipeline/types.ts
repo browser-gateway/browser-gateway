@@ -60,6 +60,9 @@ export interface CdpPlugin {
    *  from storage, prime state, subscribe to a domain). The pipeline waits
    *  up to `PipelineOptions.onSessionStartTimeoutMs` per plugin. */
   onSessionStart?(state: SessionState): Promise<void>;
+  /** Called once, SYNC, after every plugin's `onSessionStart` has succeeded.
+   *  Accept outside input here that must not race another plugin's setup. */
+  onSessionReady?(state: SessionState): void;
   /** Called once before the pipeline disconnects. Await state persistence
    *  here (blob uploads, index writes, profile commits). The pipeline waits
    *  up to `PipelineOptions.onSessionEndTimeoutMs` per plugin. */

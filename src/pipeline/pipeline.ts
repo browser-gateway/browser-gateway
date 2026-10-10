@@ -143,6 +143,13 @@ export class Pipeline {
         return { ok: false, plugin: p.name, error: new Error("upstream closed during onSessionStart") };
       }
     }
+    for (const p of this.plugins) {
+      try {
+        p.onSessionReady?.(this.state);
+      } catch (err) {
+        this.logger({ kind: "plugin-error", data: { plugin: p.name, hook: "onSessionReady", err: errToString(err) } });
+      }
+    }
     this.logger({ kind: "connect", data: { plugins: this.plugins.map((p) => p.name) } });
     return { ok: true };
   }

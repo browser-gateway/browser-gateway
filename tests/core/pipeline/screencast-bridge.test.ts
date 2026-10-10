@@ -57,6 +57,7 @@ describe("ScreencastBridgePlugin onBeforeNavigate", () => {
       onBeforeNavigate: (sessionId) => { calls.push(sessionId); state.log.push("before-navigate"); },
     });
     await bridge.onSessionStart(state);
+    bridge.onSessionReady(state);
     return { viewer, state, calls, bridge };
   }
 
@@ -90,6 +91,7 @@ describe("ScreencastBridgePlugin onBeforeNavigate", () => {
       onBeforeNavigate: () => new Promise<void>((r) => { release = r; }),
     });
     await bridge.onSessionStart(state);
+    bridge.onSessionReady(state);
     viewer.receive({ type: "navigate", url: "https://b.test/" });
     await settle();
     expect(state.log).not.toContain("Page.navigate");
@@ -103,6 +105,7 @@ describe("ScreencastBridgePlugin onBeforeNavigate", () => {
     const state = new FakeState();
     const bridge = new ScreencastBridgePlugin({ viewer, onBeforeNavigate: () => { throw new Error("boom"); } });
     await bridge.onSessionStart(state);
+    bridge.onSessionReady(state);
     viewer.receive({ type: "navigate", url: "https://b.test/" });
     await settle();
     expect(state.log).toContain("Page.navigate");
@@ -154,6 +157,7 @@ describe("ScreencastBridgePlugin password warning recovery", () => {
     const order: string[] = [];
     const bridge = new ScreencastBridgePlugin({ viewer, onBeforeNavigate: () => { order.push("before-navigate"); } });
     await bridge.onSessionStart(state);
+    bridge.onSessionReady(state);
     bridge.onEvent(pageNav("https://site.test/login"), state);
     bridge.onEvent(loaded, state);
     return { viewer, state, bridge, order };
@@ -406,7 +410,9 @@ describe("ScreencastBridgePlugin page size", () => {
   it("resizes the window directly on later viewer resizes", async () => {
     const state = new SizeState(true);
     const viewer = new FakeViewer();
-    await new ScreencastBridgePlugin({ viewer }).onSessionStart(state);
+    const bridge = new ScreencastBridgePlugin({ viewer });
+    await bridge.onSessionStart(state);
+    bridge.onSessionReady(state);
     state.log.length = 0;
     viewer.receive({ type: "setViewport", width: 900, height: 600 });
     await settle(); await settle(); await settle();
@@ -427,7 +433,10 @@ describe("ScreencastBridgePlugin navigation errors", () => {
 
   it("tells the viewer when the address bar page is refused", async () => {
     const viewer = new FakeViewer();
-    await new ScreencastBridgePlugin({ viewer }).onSessionStart(new NavState());
+    const navState = new NavState();
+    const bridge = new ScreencastBridgePlugin({ viewer });
+    await bridge.onSessionStart(navState);
+    bridge.onSessionReady(navState);
     viewer.receive({ type: "navigate", url: "https://quotes.test/" });
     await settle(); await settle();
     expect(controls(viewer)).toContainEqual({ type: "navError", url: "https://quotes.test/", reason: "net::ERR_BLOCKED_BY_ADMINISTRATOR" });
@@ -438,6 +447,7 @@ describe("ScreencastBridgePlugin navigation errors", () => {
     const state = new FakeState();
     const bridge = new ScreencastBridgePlugin({ viewer });
     await bridge.onSessionStart(state);
+    bridge.onSessionReady(state);
     bridge.onEvent({
       method: "Page.frameNavigated",
       sessionId: "s1",
@@ -453,6 +463,7 @@ describe("ScreencastBridgePlugin navigation errors", () => {
     const state = new NavState();
     const bridge = new ScreencastBridgePlugin({ viewer });
     await bridge.onSessionStart(state);
+    bridge.onSessionReady(state);
     viewer.receive({ type: "navigate", url: "https://quotes.test/" });
     await settle(); await settle();
     bridge.onEvent({
@@ -462,5 +473,23 @@ describe("ScreencastBridgePlugin navigation errors", () => {
     } as CdpMessage, state);
     const last = controls(viewer).filter((m) => m.type === "navError").at(-1);
     expect(last).toEqual({ type: "navError", url: "https://quotes.test/", reason: "net::ERR_BLOCKED_BY_ADMINISTRATOR" });
+  });
+});
+
+describe("ScreencastBridgePlugin input before setup finishes", () => {
+  it("holds viewer input until every plugin has started, then replays it", async () => {
+    const viewer = new FakeViewer();
+    const state = new FakeState();
+    const bridge = new ScreencastBridgePlugin({ viewer });
+    await bridge.onSessionStart(state);
+    viewer.receive({ type: "navigate", url: "https://a.test/" });
+    viewer.receive({ type: "navigate", action: "reload" });
+    await settle();
+    expect(state.log).not.toContain("Page.navigate");
+    expect(state.log).not.toContain("Page.reload");
+    bridge.onSessionReady(state);
+    await settle(); await settle();
+    expect(state.log).toContain("Page.navigate");
+    expect(state.log).toContain("Page.reload");
   });
 });
