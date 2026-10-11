@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 import { formatBytes } from "@/lib/format-bytes";
 import { canSaveToProfile, fetchProfiles, fetchProviders, routableProviders, type ProfileMetaItem, type ProviderConfigItem } from "@/lib/api";
 import { LiveClient, eventModifiers, mouseButton, type FrameMeta } from "@/lib/live-client";
@@ -37,6 +38,7 @@ const KEEP_ALIVE_OPTIONS: SelectOption[] = Array.from({ length: 20 }, (_, i) => 
 });
 const DEFAULT_KEEP_ALIVE_SECONDS = 300;
 
+const SAVE_TOAST_ID = "profile-save";
 const SAVE_CHECK_INTERVAL_MS = 1500;
 const SAVE_CHECK_TIMEOUT_MS = 15_000;
 
@@ -87,7 +89,6 @@ export default function PlaygroundPage() {
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [navNotice, setNavNotice] = useState<string | null>(null);
-  const [saveResult, setSaveResult] = useState<string | null>(null);
   const saveWatchRef = useRef<{ profile: string; saving: boolean; before: string | null; live: boolean } | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -186,10 +187,10 @@ export default function PlaygroundPage() {
     saveWatchRef.current = null;
     if (!watch?.live) return;
     if (!watch.saving) {
-      setSaveResult(`Not saved: the session used ${watch.profile} read-only.`);
+      toast(`Not saved. ${watch.profile} was opened read-only.`, { id: SAVE_TOAST_ID });
       return;
     }
-    setSaveResult(`Saving to ${watch.profile}...`);
+    toast.loading(`Saving to ${watch.profile}...`, { id: SAVE_TOAST_ID });
     const deadline = Date.now() + SAVE_CHECK_TIMEOUT_MS;
     const check = async (): Promise<void> => {
       const saved = await fetchProfiles()
@@ -197,11 +198,11 @@ export default function PlaygroundPage() {
         .catch(() => undefined);
       if (saved && saved.updatedAt !== watch.before) {
         setProfiles((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
-        setSaveResult(`Saved to ${watch.profile} (${formatBytes(saved.sizeBytes)}).`);
+        toast.success(`Saved to ${watch.profile} (${formatBytes(saved.sizeBytes)}).`, { id: SAVE_TOAST_ID });
         return;
       }
       if (Date.now() > deadline) {
-        setSaveResult(`No save recorded for ${watch.profile}.`);
+        toast.error(`No save recorded for ${watch.profile}.`, { id: SAVE_TOAST_ID });
         return;
       }
       setTimeout(() => void check(), SAVE_CHECK_INTERVAL_MS);
@@ -218,7 +219,7 @@ export default function PlaygroundPage() {
     setStatus("connecting");
     setStatusMsg("");
     setNavNotice(null);
-    setSaveResult(null);
+    toast.dismiss(SAVE_TOAST_ID);
     lastServerUrlRef.current = "";
     saveWatchRef.current = selectedProfile
       ? {
@@ -622,10 +623,6 @@ export default function PlaygroundPage() {
               <a href="/web/providers/" className="text-foreground underline underline-offset-4 hover:text-foreground/80">Providers</a>
               , or pick another provider.
             </p>
-          )}
-
-          {saveResult && status !== "live" && status !== "connecting" && (
-            <p className="text-[12px] text-muted-foreground -mt-2">{saveResult}</p>
           )}
 
           {/* Address bar — visible whenever a session is open */}
