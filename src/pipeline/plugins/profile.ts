@@ -136,6 +136,7 @@ export class ProfilePlugin implements CdpPlugin {
 
   private readonly pages = new Map<string, PageState>();
   private readonly originsSnapshot = new Map<string, OriginStorage>();
+  private readonly leftByPageNavigation = new Set<string>();
   private readonly inflightSnapshots = new Set<Promise<void>>();
   private cookiesBeforeBrowserClose: Promise<CdpCookie[] | null> | null = null;
 
@@ -546,6 +547,7 @@ export class ProfilePlugin implements CdpPlugin {
         try { nextOrigin = new URL(p.url).origin; } catch { /* fall through */ }
       }
       if (nextOrigin === expectedOrigin) return;
+      this.leftByPageNavigation.add(expectedOrigin);
       void this.snapshotPage(sessionId);
     }
   }
@@ -623,6 +625,7 @@ export class ProfilePlugin implements CdpPlugin {
     for (const [origin, data] of this.originsSnapshot) {
       capturedStorage[origin] = data;
     }
+    Object.assign(capturedStorage, await this.rereadOriginsLeftByPageNavigation(client));
     // Belt-and-braces: even if some capture path snuck the marker origin in
     // (via a stray on-navigate snapshot), strip it before persistence.
     stripMarkerOrigin(capturedStorage);
@@ -640,13 +643,33 @@ export class ProfilePlugin implements CdpPlugin {
     });
   }
 
+  /** A page that follows a link or submits a form leaves without waiting, so the snapshot
+   *  taken on the way out can miss. Those origins are read again through helper pages. */
+  private async rereadOriginsLeftByPageNavigation(client: PluginCdpClient): Promise<Record<string, OriginStorage>> {
+    const active = new Set([...this.pages.values()].map((p) => p.activeOrigin));
+    const origins = [...this.leftByPageNavigation].filter((o) => !active.has(o));
+    if (origins.length === 0) return {};
+    try {
+      const fresh = await withPausedTabsResumed(client, () =>
+        captureFullStateOnClient(client, origins, { helperPages: 2, perOriginTimeoutMs: 4_000 }));
+      return fresh.storage;
+    } catch (err) {
+      this.opts.logger?.("profile: re-reading origins left by page navigation failed", {
+        profileId: this.opts.profileId,
+        origins: origins.length,
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return {};
+    }
+  }
+
   private async buildCapturedOnClose(): Promise<MergeAndPrepareResult> {
     const helperPages = this.opts.helperPages ?? 4;
-    const captureResult = await captureFullStateOnClient(
+    const captureResult = await withPausedTabsResumed(this.client!, () => captureFullStateOnClient(
       this.client!,
       Object.keys(this.loadedProfile!.storage),
       { helperPages, includeCookieDerivedOrigins: true },
-    );
+    ));
     stripMarkerOrigin(captureResult.storage);
     return mergeAndPrepareProfile({
       loadedStorage: this.loadedProfile!.storage,
@@ -684,6 +707,23 @@ export class ProfilePlugin implements CdpPlugin {
   /** Test/introspection hook. */
   wasExisting(): boolean {
     return this.isExisting;
+  }
+}
+
+// Client libraries ask the browser to pause every new tab until they resume it; after the
+// client leaves, that setting stays on the shared connection and would freeze our helper tabs.
+async function withPausedTabsResumed<T>(client: PluginCdpClient, run: () => Promise<T>): Promise<T> {
+  const resume = (params: unknown): void => {
+    const p = params as { sessionId?: string; waitingForDebugger?: boolean };
+    if (p.waitingForDebugger && p.sessionId) {
+      client.sendOn("Runtime.runIfWaitingForDebugger", {}, p.sessionId).catch(() => undefined);
+    }
+  };
+  client.on("Target.attachedToTarget", resume);
+  try {
+    return await run();
+  } finally {
+    client.off("Target.attachedToTarget", resume);
   }
 }
 
