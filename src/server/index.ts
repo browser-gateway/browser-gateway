@@ -82,7 +82,7 @@ if (command === "version" || args.includes("--version") || args.includes("-v")) 
 
 if (command === "help" || args.includes("--help") || args.includes("-h")) {
   console.log(`
-browser-gateway - OpenRouter for browsers.
+browser-gateway - The open router for cloud browsers.
 
 Usage:
   browser-gateway serve [options]    Start the gateway server
