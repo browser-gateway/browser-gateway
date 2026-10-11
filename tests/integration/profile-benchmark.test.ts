@@ -3,7 +3,7 @@
  * state sizes. Per CLAUDE.md rule #11, infra-grade work ships with numbers,
  * not estimates.
  *
- * Plan gates (from planning/research/v0.3.0-PROFILE-AT-ROUTER-PLAN.md §7):
+ * Gates:
  *   - capture overhead p95 < 500ms on typical session (5-10 origins)
  *   - inject overhead p95 < 800ms on typical session
  *

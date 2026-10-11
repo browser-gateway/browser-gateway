@@ -15,8 +15,7 @@
  *      puppeteer#11627 (devtools-protocol#43) mean localStorage keys survive
  *      `disposeBrowserContext` and reappear in the next context. Cookie-only
  *      detection misses this, which is exactly the class of leak we're
- *      preventing. Cross-ref: `planning/research/v0.4-ISOLATION-RUNTIME-AUTOSCALE.md`
- *      §"Question 1" and `planning/project/SILENT-LEAK-LEDGER.md`.
+ *      preventing.
  *
  * Both surfaces are filtered out of the captured profile blob so they never
  * get persisted or replayed to users' real browsers.

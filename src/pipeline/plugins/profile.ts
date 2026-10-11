@@ -352,8 +352,7 @@ export class ProfilePlugin implements CdpPlugin {
    *  This works where raw `DOMStorage.setDOMStorageItem` does not, because Chromium
    *  requires a frame to have loaded an origin before storage APIs address it —
    *  the fake HTML shell (via Fetch.fulfillRequest) gives us that frame without
-   *  a real network hit. See planning/research/v0.3.0-PROFILE-INJECT-OPTIMIZATION.md
-   *  §"Candidate 4" for the pattern's provenance. */
+   *  a real network hit. */
   private async probeStorageMarker(): Promise<ProviderMarker | null> {
     const client = this.client;
     if (!client) return null;

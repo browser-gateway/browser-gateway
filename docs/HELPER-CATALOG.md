@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-10-10
+Generated: 2026-10-11
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -194,19 +194,19 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `enforceProfileLimits(profile: CapturedProfile, limits: ProfileLimits = {}) → EnforceResult` (line 34) — Enforces size and origin-count caps on a profile. Returns a new profile; input untouched.
 ### `src/core/profile/marker.ts`
 
-- **const** `const MARKER_DOMAIN` (line 25) — Provider residue marker: a small sentinel planted at profile-inject time on
-- **const** `const MARKER_ORIGIN` (line 26)
-- **const** `const MARKER_NAME` (line 27)
-- **const** `const MARKER_STORAGE_KEY` (line 28)
-- **interface** `interface ProviderMarker` (line 30)
-- **interface** `interface MarkerCookieLike` (line 36)
-- **fn** `isMarkerCookie(cookie: MarkerCookieLike) → boolean` (line 42) — True when a cookie is a gateway-planted residue marker (should never be captured).
-- **fn** `encodeMarker(m: ProviderMarker) → string` (line 49) — base64-encode marker payload; isomorphic (btoa is available in Node 16+, Workers, browsers).
-- **fn** `decodeMarker(value: string) → ProviderMarker | null` (line 58) — Reverse of encodeMarker. Returns null when the cookie value isn't a well-formed marker.
-- **fn** `filterMarkerCookies(cookies: T[]) → T[]` (line 79) — Filters gateway-planted marker cookies out of a cookie array before profile capture.
-- **fn** `isMarkerOrigin(origin: string) → boolean` (line 84) — True when an origin is the synthetic marker origin (with or without trailing slash).
-- **fn** `stripMarkerFromStorage(localStorageMap: Record<string, string>) → Record<string, string>` (line 90) — Removes the marker localStorage entry from an origin's storage snapshot in place.
-- **fn** `stripMarkerOrigin(storage: Record<string, T>) → Record<string, T>` (line 99) — Removes the whole marker origin entry from a captured `storage` map. Used on the
+- **const** `const MARKER_DOMAIN` (line 24) — Provider residue marker: a small sentinel planted at profile-inject time on
+- **const** `const MARKER_ORIGIN` (line 25)
+- **const** `const MARKER_NAME` (line 26)
+- **const** `const MARKER_STORAGE_KEY` (line 27)
+- **interface** `interface ProviderMarker` (line 29)
+- **interface** `interface MarkerCookieLike` (line 35)
+- **fn** `isMarkerCookie(cookie: MarkerCookieLike) → boolean` (line 41) — True when a cookie is a gateway-planted residue marker (should never be captured).
+- **fn** `encodeMarker(m: ProviderMarker) → string` (line 48) — base64-encode marker payload; isomorphic (btoa is available in Node 16+, Workers, browsers).
+- **fn** `decodeMarker(value: string) → ProviderMarker | null` (line 57) — Reverse of encodeMarker. Returns null when the cookie value isn't a well-formed marker.
+- **fn** `filterMarkerCookies(cookies: T[]) → T[]` (line 78) — Filters gateway-planted marker cookies out of a cookie array before profile capture.
+- **fn** `isMarkerOrigin(origin: string) → boolean` (line 83) — True when an origin is the synthetic marker origin (with or without trailing slash).
+- **fn** `stripMarkerFromStorage(localStorageMap: Record<string, string>) → Record<string, string>` (line 89) — Removes the marker localStorage entry from an origin's storage snapshot in place.
+- **fn** `stripMarkerOrigin(storage: Record<string, T>) → Record<string, T>` (line 98) — Removes the whole marker origin entry from a captured `storage` map. Used on the
 ### `src/core/profile/playwright-format.ts`
 
 - **const** `const PlaywrightCookieSchema` (line 10) — Matches Playwright's `context.addCookies` contract: only `name` and `value`

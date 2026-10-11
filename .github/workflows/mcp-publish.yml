@@ -12,8 +12,6 @@ name: Publish to MCP Registry
 # The version comes from package.json on the default branch — no input
 # needed. The optional `version` input is only for backfill / explicit
 # override when you want to publish something other than what's on main.
-#
-# Background: planning/infrastructure/mcp-registry.md
 
 on:
   workflow_dispatch:

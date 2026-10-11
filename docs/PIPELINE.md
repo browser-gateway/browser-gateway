@@ -239,7 +239,7 @@ Bugs seen in the wild, encoded here so we don't repeat them:
 
 - **Tier-1 unit** — `browser-gateway/tests/pipeline/*.test.ts` and `browser-gateway/tests/core/profile/*` cover the Pipeline mux, InternalIdSpace, SessionState, and each plugin's isolated behaviour with mock upstream + client.
 - **Tier-2 integration** — `browser-gateway/tests/integration/profile-*.test.ts`, `browser-gateway/tests/integration/replay-*.test.ts` cover the real Chrome + real WebSocket paths inside CI.
-- **Tier-3 infrastructure** — `tests/oss-pipeline-0.4.8/golden.mjs` (12/12 PASS as of 2026-08-04) runs six real-user scenarios against Railway browserless + browserserve. The upcoming durable E2E workflow suite (`planning/testing/e2e-workflow-suite-2026-08-04.md`) replaces this per-release tier-3 with a stable, user-perspective suite.
+- **Real-browser end-to-end** — every release is checked against real browser providers with user-level scenarios (connect, profiles, recording, live view) before it ships.
 
 ## Adding a plugin to the catalog
 
