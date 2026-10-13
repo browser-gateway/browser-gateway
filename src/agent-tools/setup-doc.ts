@@ -10,6 +10,17 @@ export interface McpSetupDocOptions {
   maxIdleMinutes?: number;
   /** One sentence on what a session costs, when it costs anything. */
   costNote?: string;
+  /** CDP connect address for agents that drive a browser with their own code, using the same key. */
+  cdpUrl?: string;
+}
+
+function ownCodeSection(cdpUrl: string | undefined): string {
+  if (!cdpUrl) return "";
+  return `
+## Your own scripts (optional)
+
+To run your own Puppeteer or Playwright code or a test pipeline, connect it to \`${cdpUrl}?token=<the key from Step 1>\`. Only the key works here; a link-only setup cannot. Each connection is its own browser, separate from the MCP tools' browser, and is billed like any other session.
+`;
 }
 
 /** Setup instructions an agent fetches to configure itself against this server.
@@ -201,6 +212,8 @@ Tools: ${AGENT_TOOL_NAMES.join(", ")}.
 
 Read a page with \`browser_navigate\` then \`browser_snapshot\`. The snapshot lists only the parts you can interact with, each tagged \`e1\`, \`e2\` and so on. Pass those tags to \`browser_act\` to click or type. Use \`browser_extract\` when you want the content rather than the controls, and \`browser_screenshot\` only when the task is visual.
 
+To run the same script on many pages, save it once with \`browser_evaluate\` \`saveAs\`, then pass \`script\` to \`browser_navigate\` with \`snapshot: false\` to get only its result. Set the window size when opening with \`width\` and \`height\`; the result says what the page got. Screenshots take \`format: "png"\` for lossless images.
+${ownCodeSection(opts.cdpUrl)}
 ## Rules to respect
 
 One session per task. Reuse it across steps rather than opening a new one per page, and close it when the task ends.

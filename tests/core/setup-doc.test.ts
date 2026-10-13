@@ -19,3 +19,19 @@ describe("mcpSetupDoc key handling", () => {
     expect(doc).not.toContain(".mcp.json");
   });
 });
+
+describe("mcpSetupDoc own scripts", () => {
+  it("shows the CDP address for the agent's own code only when the server gives one", () => {
+    expect(doc).not.toContain("## Your own scripts");
+    const withCdp = mcpSetupDoc({ mcpUrl: "https://gw.example.com/mcp", keySource: "k", cdpUrl: "wss://gw.example.com/v1/connect" });
+    expect(withCdp).toContain("## Your own scripts");
+    expect(withCdp).toContain("wss://gw.example.com/v1/connect?token=<the key from Step 1>");
+    expect(withCdp).toMatch(/link-only setup cannot/);
+  });
+
+  it("mentions saved scripts, window size and png so agents find them", () => {
+    expect(doc).toMatch(/saveAs/);
+    expect(doc).toMatch(/width.*height/);
+    expect(doc).toMatch(/format: "png"/);
+  });
+});

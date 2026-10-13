@@ -19,12 +19,16 @@ export interface FetchPageResult {
   waitTimedOut?: boolean;
   /** Set when the page looks like a block, bot check, login wall or error page instead of real content. */
   blocked?: string;
+  /** Set when the response was not a web page (JSON, plain text, XML); `text` is then the raw body. */
+  contentType?: string;
 }
 
 export interface ScreenshotPageOptions {
   url: string;
   fullPage?: boolean;
   quality?: number;
+  /** Default jpeg. png is lossless and larger. */
+  format?: "jpeg" | "png";
   waitForText?: string;
 }
 
@@ -80,9 +84,31 @@ async function load(agent: AgentSession, url: string, waitForText?: string) {
   }
 }
 
+const RAW_BODY_EXPRESSION = "document.body ? document.body.innerText : (document.documentElement ? document.documentElement.textContent : '')";
+
+/** Responses that are data, not a page: their body is returned as is and never judged as blocked. */
+function isDataResponse(contentType: string | undefined): contentType is string {
+  return typeof contentType === "string" && contentType !== "" && !/html/i.test(contentType);
+}
+
 /** Loads a url in an open session and returns its content in one step. */
 export async function fetchPage(agent: AgentSession, opts: FetchPageOptions): Promise<FetchPageResult> {
   const page = await load(agent, opts.url, opts.waitForText);
+  const contentType = await agent.evaluate<string>("document.contentType").catch(() => undefined);
+  if (isDataResponse(contentType) && !opts.selector) {
+    const maxChars = opts.maxChars ?? FETCH_PAGE_MAX_CHARS;
+    const raw = (await agent.evaluate<string>(RAW_BODY_EXPRESSION).catch(() => "")) ?? "";
+    return {
+      url: page.url,
+      title: page.title,
+      format: "text",
+      text: raw.slice(0, maxChars),
+      truncated: raw.length > maxChars,
+      contentType,
+      ...(page.waitTimedOut ? { waitTimedOut: true } : {}),
+      ...(page.url.startsWith("chrome-error://") ? { blocked: "the browser could not load the page" } : {}),
+    };
+  }
   const content = await agent.extract({
     format: opts.format ?? "markdown",
     selector: opts.selector,
@@ -106,7 +132,7 @@ export async function fetchPage(agent: AgentSession, opts: FetchPageOptions): Pr
 /** Loads a url in an open session and screenshots it in one step. */
 export async function screenshotPage(agent: AgentSession, opts: ScreenshotPageOptions): Promise<ScreenshotPageResult> {
   const page = await load(agent, opts.url, opts.waitForText);
-  const image = await agent.screenshot({ fullPage: opts.fullPage, quality: opts.quality });
+  const image = await agent.screenshot({ fullPage: opts.fullPage, quality: opts.quality, format: opts.format });
   const probe = await agent.extract({ format: "text", maxChars: BLOCK_PROBE_CHARS });
   const blocked = detectBlockedPage({ url: page.url, title: page.title, text: probe.text });
   return {

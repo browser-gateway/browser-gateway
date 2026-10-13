@@ -24,6 +24,11 @@ const waitForText = {
   type: "string",
   description: "Wait for this text to appear before reading, for pages that load their content late.",
 };
+const imageFormat = {
+  type: "string",
+  enum: ["jpeg", "png"],
+  description: "Default jpeg. png is lossless and larger, for evidence or exact pixels.",
+};
 const reads = (title: string): AgentToolAnnotations => ({ title, readOnlyHint: true, openWorldHint: true });
 const acts = (title: string): AgentToolAnnotations => ({ title, readOnlyHint: false, openWorldHint: true });
 
@@ -33,7 +38,7 @@ export const AGENT_TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [
   {
     name: "fetch_page",
     description:
-      "Read a web page with a real browser and get clean markdown, in one call. Use when a built-in web fetch failed (403, 402, 429, captcha, empty or JavaScript-only page) or the page needs JavaScript or a saved login. For ordinary static pages, try the built-in web fetch first. Opens a browser, loads the page, reads it and closes it. Returns `blocked` when the page looks like a bot check, error or login wall.",
+      "Read a web page with a real browser and get clean markdown, in one call. Use when a built-in web fetch failed (403, 402, 429, captcha, empty or JavaScript-only page) or the page needs JavaScript or a saved login. For ordinary static pages, try the built-in web fetch first. Opens a browser, reads the page and closes it. Returns `blocked` for a bot check, error or login wall. JSON and plain text come back raw, with `contentType`.",
     inputSchema: {
       type: "object",
       properties: {
@@ -57,6 +62,7 @@ export const AGENT_TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [
         url: pageUrl,
         fullPage: { type: "boolean", description: "Capture the whole page, not just the first screen." },
         quality: { type: "number", minimum: 1, maximum: 100 },
+        format: imageFormat,
         waitForText,
       },
       required: ["url"],
@@ -81,6 +87,12 @@ export const AGENT_TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [
             "Close the browser after this long with no action. Defaults to the router's own idle setting. Hosted servers cap this lower and reject anything above their cap.",
         },
         pageConsole: { type: "boolean", description: "Also capture the page's own console output." },
+        width: {
+          type: "number",
+          description:
+            "Window width in CSS pixels when opening, with height. The result's `window` says what the page got; some providers keep their own size.",
+        },
+        height: { type: "number", description: "Window height in CSS pixels when opening, with width." },
       },
       required: ["action"],
     },
@@ -89,10 +101,18 @@ export const AGENT_TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [
   {
     name: "browser_navigate",
     description:
-      "Go to a url in the open browser session and list the page's clickable and typeable elements, labelled e1, e2.",
+      "Go to a url in the open browser session and list the page's clickable and typeable elements, labelled e1, e2. To run your own script on each page, pass it in evaluate (or a saved one by script) and set snapshot false to get only its result.",
     inputSchema: {
       type: "object",
-      properties: { url: { type: "string" }, sessionId, tabId },
+      properties: {
+        url: { type: "string" },
+        snapshot: { type: "boolean", description: "Default true. false skips the element list." },
+        evaluate: { type: "string", description: "JavaScript to run once the page has loaded; its value comes back as value." },
+        script: { type: "string", description: "Name of a script saved earlier in this session to run once the page has loaded." },
+        saveAs: { type: "string", description: "Save evaluate under this name for later calls in this session." },
+        sessionId,
+        tabId,
+      },
       required: ["url"],
     },
     annotations: acts("Go to url"),
@@ -175,6 +195,7 @@ export const AGENT_TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [
         ref: { type: "string", description: "Screenshot one element instead of the page." },
         fullPage: { type: "boolean" },
         quality: { type: "number", minimum: 1, maximum: 100 },
+        format: imageFormat,
         skipIfUnchanged: { type: "boolean" },
         sessionId,
         tabId,
@@ -217,11 +238,17 @@ export const AGENT_TOOL_DEFINITIONS: readonly AgentToolDefinition[] = [
   },
   {
     name: "browser_evaluate",
-    description: "Run a JavaScript expression in the page and return its value.",
+    description:
+      "Run JavaScript in the page and return its value. Save a long script once with saveAs, then run it by name with script on later pages instead of sending it again. Saved scripts last as long as this browser.",
     inputSchema: {
       type: "object",
-      properties: { expression: { type: "string" }, sessionId, tabId },
-      required: ["expression"],
+      properties: {
+        expression: { type: "string" },
+        saveAs: { type: "string", description: "Also save expression under this name (letters, digits, - and _)." },
+        script: { type: "string", description: "Run a script saved earlier in this session instead of an expression." },
+        sessionId,
+        tabId,
+      },
     },
     annotations: acts("Run JavaScript"),
   },

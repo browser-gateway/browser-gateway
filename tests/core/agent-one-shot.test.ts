@@ -22,6 +22,7 @@ function fakeAgent(page: { url: string; title: string; text: string }, opts: { w
       if (opts.waitFails) throw new Error("timed out");
       return { met: true, waitedMs: 5 };
     }),
+    evaluate: vi.fn(async (expression: string) => (expression === "document.contentType" ? "text/html" : undefined)),
     extract: vi.fn(async (o: { format?: string; maxChars?: number }) => {
       calls.push(`extract ${o.format} ${o.maxChars}`);
       return { format: o.format ?? "markdown", text: page.text, truncated: false };

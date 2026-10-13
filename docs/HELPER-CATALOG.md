@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-10-12
+Generated: 2026-10-13
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -435,7 +435,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class McpSessionManager` (line 33) — Owns one {@link AgentSession} per MCP browser session, routed through the
 ### `src/server/mcp/tools.ts`
 
-- **fn** `registerTools(mcp: McpServer, gateway: Gateway, sessions: McpSessionManager, logger: Logger) → void` (line 82)
+- **fn** `registerTools(mcp: McpServer, gateway: Gateway, sessions: McpSessionManager, logger: Logger) → void` (line 85)
 ### `src/server/mcp/ws-transport.ts`
 
 - **class** `class NodeCdpTransport` (line 5) — Node WebSocket transport for the isomorphic CDP client.

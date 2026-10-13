@@ -4,7 +4,9 @@ import type { Logger } from "pino";
 import type { Gateway } from "../../core/index.js";
 import {
   agentToolDefinition,
+  applyOpenOptions,
   fetchPage,
+  runAgentTool,
   screenshotPage,
   type ActionStep,
   type ActionType,
@@ -35,6 +37,7 @@ const stepSchema = z.object({
 
 const sessionIdArg = z.string().optional().describe("Session id. Omit when only one session is open.");
 const tabIdArg = z.string().optional().describe("Tab id. Omit for the active tab.");
+const imageFormatArg = z.enum(["jpeg", "png"]).optional().describe("Default jpeg. png is lossless.");
 
 function text(payload: unknown): { content: Array<{ type: "text"; text: string }> } {
   return { content: [{ type: "text", text: typeof payload === "string" ? payload : JSON.stringify(payload, null, 2) }] };
@@ -141,6 +144,7 @@ export function registerTools(
         url: z.string().url(),
         fullPage: z.boolean().optional(),
         quality: z.number().min(1).max(100).optional(),
+        format: imageFormatArg,
         waitForText: z.string().optional(),
       },
     },
@@ -169,9 +173,11 @@ export function registerTools(
       sessionId: sessionIdArg,
       idleMinutes: z.number().min(1).max(30).optional().describe("Close after this long with no action. Default 5."),
       pageConsole: z.boolean().optional().describe("Also capture the page's own console output."),
+      width: z.number().optional().describe("Window width in CSS pixels when opening, with height."),
+      height: z.number().optional().describe("Window height in CSS pixels when opening, with width."),
     },
     annotate("browser_session"),
-    async ({ action, sessionId, idleMinutes, pageConsole }) => {
+    async ({ action, sessionId, idleMinutes, pageConsole, width, height }) => {
       await sessions.reapExpired();
       if (action === "open") {
         const created = await sessions.createSession({
@@ -179,7 +185,12 @@ export function registerTools(
           pageConsole,
         });
         if (!created) return failed(new Error("no provider available right now. Try again shortly."));
-        return text({ ...sessionSummary(created), opened: true });
+        try {
+          const applied = await applyOpenOptions(created.agent, { width, height });
+          return text({ ...sessionSummary(created), opened: true, ...applied });
+        } catch (err) {
+          return text({ ...sessionSummary(created), opened: true, windowError: (err as Error).message });
+        }
       }
       if (action === "close") {
         try {
@@ -198,20 +209,18 @@ export function registerTools(
   mcp.tool(
     "browser_navigate",
     describeTool("browser_navigate"),
-    { url: z.string().url(), sessionId: sessionIdArg, tabId: tabIdArg },
+    {
+      url: z.string().url(),
+      snapshot: z.boolean().optional().describe("Default true. false skips the element list."),
+      evaluate: z.string().optional().describe("JavaScript to run once the page has loaded."),
+      script: z.string().optional().describe("Name of a script saved earlier in this session."),
+      saveAs: z.string().optional().describe("Save evaluate under this name."),
+      sessionId: sessionIdArg,
+      tabId: tabIdArg,
+    },
     annotate("browser_navigate"),
-    async ({ url, sessionId, tabId }) =>
-      use(sessionId, async (session) => {
-        const result = await session.agent.navigate(url, tabId);
-        return {
-          url: result.url,
-          title: result.title,
-          tabId: result.tabId,
-          snapshot: result.snapshot.text,
-          session: result.session,
-          warning: result.warning,
-        };
-      }),
+    async ({ sessionId, ...args }) =>
+      use(sessionId, async (session) => runAgentTool(session.agent, "browser_navigate", args)),
   );
 
   mcp.tool(
@@ -272,6 +281,7 @@ export function registerTools(
       ref: z.string().optional().describe("Screenshot one element instead of the page."),
       fullPage: z.boolean().optional(),
       quality: z.number().min(1).max(100).optional(),
+      format: imageFormatArg,
       skipIfUnchanged: z.boolean().optional(),
       sessionId: sessionIdArg,
       tabId: tabIdArg,
@@ -284,7 +294,7 @@ export function registerTools(
         const shot = await session.agent.screenshot(opts, tabId);
         if (shot.unchanged || !shot.base64) return text({ unchanged: true });
         return {
-          content: [{ type: "image" as const, data: shot.base64, mimeType: "image/jpeg" }],
+          content: [{ type: "image" as const, data: shot.base64, mimeType: `image/${shot.format}` }],
         };
       } catch (err) {
         return failed(err);
@@ -343,10 +353,16 @@ export function registerTools(
   mcp.tool(
     "browser_evaluate",
     describeTool("browser_evaluate"),
-    { expression: z.string(), sessionId: sessionIdArg, tabId: tabIdArg },
+    {
+      expression: z.string().optional(),
+      saveAs: z.string().optional().describe("Also save expression under this name."),
+      script: z.string().optional().describe("Run a script saved earlier in this session."),
+      sessionId: sessionIdArg,
+      tabId: tabIdArg,
+    },
     annotate("browser_evaluate"),
-    async ({ expression, sessionId, tabId }) =>
-      use(sessionId, async (session) => ({ value: await session.agent.evaluate(expression, tabId) })),
+    async ({ sessionId, ...args }) =>
+      use(sessionId, async (session) => runAgentTool(session.agent, "browser_evaluate", args)),
   );
 
   mcp.tool(

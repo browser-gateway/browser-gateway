@@ -1,4 +1,5 @@
 export { AgentSession } from "./session.js";
+export type { WindowSizeResult } from "./session.js";
 export { NotActionableError, StaleRefError } from "./actions.js";
 export type {
   ActOptions,
@@ -49,6 +50,7 @@ export type { Chord, KeySpec, ModifierKey } from "./keys.js";
 export { InputState } from "./input.js";
 export type { ClickOptions, MouseButton } from "./input.js";
 export { detectBlockedPage, fetchPage, screenshotPage } from "./one-shot.js";
+export { applyOpenOptions, requestedWindowSize, runAgentTool } from "./run-tool.js";
 export type { FetchPageOptions, FetchPageResult, ScreenshotPageOptions, ScreenshotPageResult } from "./one-shot.js";
 export { agentInstructions } from "./instructions.js";
 export type { InstructionsOptions } from "./instructions.js";

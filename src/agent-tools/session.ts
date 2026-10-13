@@ -139,6 +139,20 @@ const WAIT_REPLY_GRACE_MS = 5_000;
 const READ_PAGE_DEFAULT_DEPTH = 15;
 const READ_PAGE_MAX_CHARS = 50_000;
 const FIND_LIMIT = 20;
+const MAX_SAVED_SCRIPTS = 20;
+const MAX_SCRIPT_CHARS = 100_000;
+const SCRIPT_NAME = /^[A-Za-z0-9_-]{1,40}$/;
+const WINDOW_MIN = { width: 320, height: 240 };
+const WINDOW_MAX = { width: 3840, height: 2160 };
+const WINDOW_SLACK_PX = 2;
+
+export interface WindowSizeResult {
+  requested: { width: number; height: number };
+  applied: { width: number; height: number };
+  matched: boolean;
+  /** Set when the provider kept another size, so the agent knows it was not its mistake. */
+  note?: string;
+}
 
 /** One agent session bound to a browser-level CDP connection. Owns its tabs and
  *  their element reference tables; nothing is shared between sessions. */
@@ -156,6 +170,7 @@ export class AgentSession {
   private readonly adoptions = new Set<Promise<void>>();
   private readonly popupsAwaitingUrl = new Set<string>();
   private readonly tabGoneWaiters = new Map<string, Set<() => void>>();
+  private readonly scripts = new Map<string, string>();
 
   constructor(
     private readonly cdp: CdpProtocolClient,
@@ -532,6 +547,47 @@ export class AgentSession {
       throw new Error(res.exceptionDetails.exception?.description ?? res.exceptionDetails.text ?? "evaluate failed");
     }
     return res.result?.value as T | undefined;
+  }
+
+  /** Keeps a script for this session only, so later calls run it by name instead of resending it. */
+  saveScript(name: string, source: string): void {
+    if (!SCRIPT_NAME.test(name)) throw new Error("script names use letters, digits, - and _, up to 40 characters");
+    if (source.length > MAX_SCRIPT_CHARS) throw new Error(`a saved script can be at most ${MAX_SCRIPT_CHARS} characters`);
+    if (!this.scripts.has(name) && this.scripts.size >= MAX_SAVED_SCRIPTS) {
+      throw new Error(`this session already keeps ${MAX_SAVED_SCRIPTS} scripts. Reuse a name to replace one.`);
+    }
+    this.scripts.set(name, source);
+  }
+
+  /** A saved script's source. Throws with the saved names when there is none by that name. */
+  savedScript(name: string): string {
+    const source = this.scripts.get(name);
+    if (source !== undefined) return source;
+    const saved = [...this.scripts.keys()];
+    throw new Error(
+      `no saved script named "${name}" in this session.${saved.length ? ` Saved: ${saved.join(", ")}.` : " Save one first with browser_evaluate saveAs."} Scripts last only as long as this browser.`,
+    );
+  }
+
+  /** Asks for a window size, then reads back what the page got. Providers that
+   *  fix their own window size keep it; the result says so. */
+  async resizeWindow(size: { width: number; height: number }, tabId?: string): Promise<WindowSizeResult> {
+    const requested = {
+      width: Math.round(Math.min(WINDOW_MAX.width, Math.max(WINDOW_MIN.width, size.width))),
+      height: Math.round(Math.min(WINDOW_MAX.height, Math.max(WINDOW_MIN.height, size.height))),
+    };
+    await this.setViewport(requested, tabId);
+    const got = await this.viewport(tabId);
+    const applied = { width: Math.round(got.width), height: Math.round(got.height) };
+    const matched =
+      Math.abs(applied.width - requested.width) <= WINDOW_SLACK_PX && Math.abs(applied.height - requested.height) <= WINDOW_SLACK_PX;
+    if (matched) return { requested, applied, matched };
+    return {
+      requested,
+      applied,
+      matched,
+      note: `The browser provider kept its own window size (${applied.width}x${applied.height}) instead of ${requested.width}x${requested.height}. That is a limit of this provider, not a problem with your request. Plan for ${applied.width}x${applied.height}, or use a provider that allows resizing.`,
+    };
   }
 
   /** Console output, failed requests, downloads, dialogs and popup tabs seen so far. */
