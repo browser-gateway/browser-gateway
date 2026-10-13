@@ -102,6 +102,8 @@ export class ScreencastCapturePlugin implements CdpPlugin {
   private truncationReason: string | null = null;
   private stopSignalListener: (() => void) | null = null;
   private started = false;
+  private ending = false;
+  private readonly failedChunks = new Set<number>();
   private chunkIndex = 0;
   private chunkBuffer: Uint8Array[] = [];
   private chunkBufferBytes = 0;
@@ -186,6 +188,7 @@ export class ScreencastCapturePlugin implements CdpPlugin {
 
   onEvent(msg: CdpMessage, state: SessionState): void | null {
     if (!this.started || this.capStopped) return;
+    if (this.ending) return msg.method === "Page.screencastFrame" ? null : undefined;
 
     if (msg.method === "Target.attachedToTarget") {
       const params = msg.params as
@@ -230,19 +233,21 @@ export class ScreencastCapturePlugin implements CdpPlugin {
         state.sendInternalOneWay("Page.stopScreencast", {}, t.cdpSessionId);
       }
     }
+    this.ending = true;
     this.flushChunk();
     await Promise.allSettled(Array.from(this.pendingWrites));
+    const frames = this.frames.filter((f) => !this.failedChunks.has(f.chunkIndex));
     const manifest: ReplayManifest = {
       sessionId: this.opts.sessionId,
       format: this.opts.format,
       targets: Array.from(this.targets.values()).map((t) => t.targetId),
-      frames: this.frames,
+      frames,
       truncated: this.truncationReason,
     };
     await this.opts.storage.finalize(this.opts.sessionId, manifest, {
       endedAt: Date.now(),
-      frameCount: this.frames.length,
-      sizeBytes: this.totalBytes,
+      frameCount: frames.length,
+      sizeBytes: frames.reduce((sum, f) => sum + f.length, 0),
       droppedFrames: this.droppedFrames,
       duplicatesSkipped: this.duplicatesSkipped,
       truncated: this.truncationReason,
@@ -403,6 +408,7 @@ export class ScreencastCapturePlugin implements CdpPlugin {
     const write = this.opts.storage
       .writeChunk(this.opts.sessionId, chunkIndex, data)
       .catch((err) => {
+        this.failedChunks.add(chunkIndex);
         this.opts.logger?.("replay: writeChunk failed", {
           sessionId: this.opts.sessionId,
           chunkIndex,

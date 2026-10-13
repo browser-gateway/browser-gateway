@@ -586,4 +586,69 @@ describe("ScreencastCapturePlugin", () => {
     expect(storage.finalSummary?.frameCount).toBe(1);
   });
 
+
+  it("never lists frames that arrive after the session ends in a chunk it does not write", async () => {
+    const storage = new FakeStorage();
+    storage.writeChunkDelayMs = 50;
+    const { upstream, client, done } = await driveScreencast({ storage });
+
+    const gt = parseSent(upstream).find((m) => m.method === "Target.getTargets");
+    upstream.receive(jsonMsg({ id: gt!.id, result: { targetInfos: [] } }));
+    upstream.receive(jsonMsg({
+      method: "Target.attachedToTarget",
+      params: { sessionId: "S1", targetInfo: { targetId: "T1", type: "page" } },
+    }));
+    upstream.receive(jsonMsg({
+      sessionId: "S1", method: "Page.screencastFrame",
+      params: { data: FRAME_JPEG_1, sessionId: 1, metadata: {} },
+    }));
+    await new Promise((r) => setTimeout(r, 5));
+
+    client.close();
+    await new Promise((r) => setTimeout(r, 10));
+    upstream.receive(jsonMsg({
+      sessionId: "S1", method: "Page.screencastFrame",
+      params: { data: FRAME_JPEG_2, sessionId: 2, metadata: {} },
+    }));
+    await done;
+
+    const written = new Set(storage.chunks.map((c) => c.chunkIndex));
+    const listed = storage.finalManifest?.frames ?? [];
+    expect(listed.length).toBe(1);
+    for (const f of listed) expect(written.has(f.chunkIndex)).toBe(true);
+    expect(storage.finalSummary?.frameCount).toBe(1);
+  });
+
+  it("leaves frames of a chunk that failed to write out of the manifest", async () => {
+    const storage = new FakeStorage();
+    const realWrite = storage.writeChunk.bind(storage);
+    storage.writeChunk = async (sessionId, chunkIndex, data) => {
+      if (chunkIndex === 0) throw new Error("storage down");
+      return realWrite(sessionId, chunkIndex, data);
+    };
+    const { upstream, client, done } = await driveScreencast({ storage, chunkMaxBytes: 20 });
+
+    const gt = parseSent(upstream).find((m) => m.method === "Target.getTargets");
+    upstream.receive(jsonMsg({ id: gt!.id, result: { targetInfos: [] } }));
+    upstream.receive(jsonMsg({
+      method: "Target.attachedToTarget",
+      params: { sessionId: "S1", targetInfo: { targetId: "T1", type: "page" } },
+    }));
+    upstream.receive(jsonMsg({
+      sessionId: "S1", method: "Page.screencastFrame",
+      params: { data: FRAME_JPEG_1, sessionId: 1, metadata: {} },
+    }));
+    upstream.receive(jsonMsg({
+      sessionId: "S1", method: "Page.screencastFrame",
+      params: { data: FRAME_JPEG_2, sessionId: 2, metadata: {} },
+    }));
+    await new Promise((r) => setTimeout(r, 5));
+    client.close();
+    await done;
+
+    const listed = storage.finalManifest?.frames ?? [];
+    expect(listed.map((f) => f.chunkIndex)).toEqual([1]);
+    expect(storage.finalSummary?.frameCount).toBe(1);
+    expect(storage.finalSummary?.sizeBytes).toBe(8);
+  });
 });
