@@ -24,3 +24,14 @@ export function inputCounterExpression(key: string): string {
     "Object.defineProperty(window,k,{value:{n:0},enumerable:false});addEventListener('mousemove',()=>{window[k].n++;},true);}" +
     "return window[k].n;})()";
 }
+
+const EMBEDDED_SELECTOR = "iframe,frame,embed,object";
+
+/** Page expression: a viewport point, (x, y) when clear, whose topmost element belongs to this document rather than an embedded frame; null when none is clear. */
+export function probePointExpression(x: number, y: number): string {
+  return `(()=>{const X=${Math.round(x)},Y=${Math.round(y)};` +
+    `const clear=(px,py)=>{const el=document.elementFromPoint(px,py);return !!el&&!el.matches(${JSON.stringify(EMBEDDED_SELECTOR)});};` +
+    "if(clear(X,Y))return{x:X,y:Y};const w=innerWidth,h=innerHeight;" +
+    "for(const fy of [0.05,0.5,0.95])for(const fx of [0.05,0.5,0.95]){const px=Math.round(w*fx),py=Math.round(h*fy);if(clear(px,py)&&clear(px+1,py))return{x:px,y:py};}" +
+    "return null;})()";
+}

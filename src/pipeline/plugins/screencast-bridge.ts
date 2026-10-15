@@ -7,7 +7,7 @@ import type { PipelineSocket } from "../pipeline.js";
 import type { CdpMessage, CdpPlugin, SessionState } from "../types.js";
 import { base64ToBytes, listen } from "../socket-io.js";
 import { KEY_SPECS, MODIFIER_BITS } from "../../agent-tools/keys.js";
-import { LOGIN_ENTER_EXPRESSION, inputCounterExpression, loginClickExpression } from "./login-detector.js";
+import { LOGIN_ENTER_EXPRESSION, inputCounterExpression, loginClickExpression, probePointExpression } from "./login-detector.js";
 
 /** Same-tab hijack: forces `target=_blank` links, `window.open`, and forms
  *  submitted with `target=_blank` to stay in the viewer's tab. Without this
@@ -280,12 +280,14 @@ export class ScreencastBridgePlugin implements CdpPlugin {
   private async pageReceivesInput(state: SessionState): Promise<boolean> {
     if (!this.cdpSessionId) return true;
     try {
+      const point = await this.evaluate<{ x: number; y: number } | null>(state, probePointExpression(this.pointer.x, this.pointer.y));
+      if (!point || typeof point.x !== "number" || typeof point.y !== "number") return true;
       const counter = inputCounterExpression(this.inputCounterKey);
       if (this.inputCount === null) this.inputCount = (await this.evaluate<number>(state, counter)) ?? null;
       this.probeOffset = !this.probeOffset;
       await state.sendInternal(
         "Input.dispatchMouseEvent",
-        { type: "mouseMoved", x: this.pointer.x + (this.probeOffset ? 1 : 0), y: this.pointer.y, button: "none", buttons: 0, modifiers: 0 },
+        { type: "mouseMoved", x: point.x + (this.probeOffset ? 1 : 0), y: point.y, button: "none", buttons: 0, modifiers: 0 },
         this.cdpSessionId,
       );
       const before = this.inputCount;

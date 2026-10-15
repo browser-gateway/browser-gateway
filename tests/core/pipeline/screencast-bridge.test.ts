@@ -124,12 +124,15 @@ class RecordingState extends FakeState {
   loginCheck = false;
   stuck = false;
   skipNextMoves = 0;
+  probePoint: { x: number; y: number } | null | undefined = undefined;
   private moves = 0;
   override async sendInternal<T>(method: string, params?: Record<string, unknown>): Promise<T> {
     this.calls.push({ method, params });
     if (method === "Runtime.evaluate") {
       const expression = String(params?.expression ?? "");
       if (expression.includes("defineProperty")) return { result: { value: this.moves } } as T;
+      const probe = /^\(\(\)=>\{const X=(\d+),Y=(\d+);/.exec(expression);
+      if (probe) return { result: { value: this.probePoint === undefined ? { x: Number(probe[1]), y: Number(probe[2]) } : this.probePoint } } as T;
       return { result: { value: this.loginCheck } } as T;
     }
     if (method === "Input.dispatchMouseEvent" && params?.type === "mouseMoved") {
@@ -279,6 +282,30 @@ describe("ScreencastBridgePlugin password warning recovery", () => {
     state.stuck = true;
     await vi.advanceTimersByTimeAsync(1000);
     expect(state.navigations()).toEqual(["about:blank", "https://site.test/login"]);
+  });
+
+  it("never reloads when every spot on the page is covered by an embedded frame", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    await login(viewer, state, bridge);
+    state.probePoint = null;
+    state.stuck = true;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(state.navigations()).toEqual([]);
+    expect(state.probes()).toEqual([]);
+    expect(refreshNotices(viewer)).toEqual([]);
+  });
+
+  it("checks at the clear spot the page reports instead of the pointer", async () => {
+    vi.useFakeTimers();
+    const { viewer, state, bridge } = await start();
+    await login(viewer, state, bridge);
+    state.probePoint = { x: 40, y: 20 };
+    await vi.advanceTimersByTimeAsync(1000);
+    for (const p of state.probes().slice(-4)) {
+      expect(p.y).toBe(20);
+      expect([40, 41]).toContain(p.x);
+    }
   });
 
   it("does nothing for a click that is not a login", async () => {
