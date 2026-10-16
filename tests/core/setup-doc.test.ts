@@ -16,7 +16,22 @@ describe("mcpSetupDoc key handling", () => {
 
   it("adds Claude Code at user scope so the key stays out of project files", () => {
     expect(doc).toContain("claude mcp add --transport http --scope user browser-gateway https://gateway.example.com/mcp");
-    expect(doc).not.toContain(".mcp.json");
+    expect(doc).not.toMatch(/^`?\.(vscode\/)?mcp\.json`?:/m);
+  });
+
+  it("says where the key goes: each agent's user-level settings file, never a project file or shell profile", () => {
+    expect(doc).toContain("### Where the key goes");
+    for (const file of ["~/.claude.json", "~/.codex/config.toml", "~/.gemini/settings.json", "~/.cursor/mcp.json", "~/.config/opencode/opencode.json"]) {
+      expect(doc).toContain(file);
+    }
+    expect(doc).toMatch(/Do not put the key in:/);
+    expect(doc).toMatch(/shell profile/);
+  });
+
+  it("adds Gemini CLI natively at user scope and VS Code through the user config", () => {
+    expect(doc).toContain('gemini mcp add --transport http --scope user --header "Authorization: Bearer <key>" browser-gateway https://gateway.example.com/mcp');
+    expect(doc).toContain("MCP: Open User Configuration");
+    expect(doc).not.toMatch(/Gemini CLI need a local bridge/);
   });
 });
 

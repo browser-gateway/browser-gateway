@@ -60,11 +60,35 @@ ${keySource}
 
 Do not continue without it. Do not invent one.
 
-Store the key the way your tool normally stores an MCP server's credentials: through
-its own add-server command, its settings screen, or its user-level config file. Do
-not ask the user to set an environment variable or run \`export\`; that differs by
-operating system and fails on Windows. Do not put the key in a file inside a project
-folder that could be committed; use the user-level config instead.
+### Where the key goes
+
+Store the key in your tool's user-level MCP settings: the private file in the user's
+home folder that your own add-server command or settings screen writes to. It belongs
+to the user's account and sits outside every project, so it never ends up in git.
+Every major agent keeps MCP header values there:
+
+| Agent | User-level settings file |
+|---|---|
+| Claude Code | \`~/.claude.json\` (what \`claude mcp add --scope user\` writes) |
+| Codex | \`~/.codex/config.toml\` |
+| Gemini CLI | \`~/.gemini/settings.json\` (what \`gemini mcp add --scope user\` writes) |
+| Cursor | \`~/.cursor/mcp.json\` |
+| VS Code | user \`mcp.json\` (run **MCP: Open User Configuration**) |
+| Windsurf | \`~/.codeium/windsurf/mcp_config.json\` |
+| Devin Desktop | \`~/.config/devin/mcp_config.json\` |
+| OpenCode | \`~/.config/opencode/opencode.json\` |
+| Goose | \`~/.config/goose/config.yaml\` |
+
+Do not put the key in:
+
+- a project file that can be shared or committed, such as \`.mcp.json\`,
+  \`.vscode/mcp.json\`, \`.cursor/mcp.json\` inside a repo, or a \`.env\` file
+- a shell profile (\`.zshrc\`, \`.bashrc\`) or an environment variable. That still
+  leaves the key in plain text, exposes it to every program on the machine, and
+  desktop apps that do not start from a shell never see it
+- any other file, note or message
+
+Do not ask the user to run \`export\`.
 
 ## Step 2: write the config for the agent you are
 
@@ -88,7 +112,7 @@ claude mcp add --transport http --scope user browser-gateway ${mcpUrl} --header 
 
 ### Codex
 
-Add to \`~/.codex/config.toml\` (the Codex CLI, IDE extension and desktop app share it):
+Add to \`~/.codex/config.toml\`, \`%USERPROFILE%\\.codex\\config.toml\` on Windows (the Codex CLI, IDE extension and desktop app share it):
 
 \`\`\`toml
 [mcp_servers.browser-gateway]
@@ -111,21 +135,26 @@ choose Streamable HTTP and add the same url and header.
 
 ### VS Code and Copilot
 
-\`.vscode/mcp.json\`:
+Your user \`mcp.json\` (run **MCP: Open User Configuration**), not \`.vscode/mcp.json\`
+inside a project:
 
 \`\`\`json
-{
-  "inputs": [ { "type": "promptString", "id": "bg-key",
-                "description": "browser-gateway router key", "password": true } ],
-  "servers": { "browser-gateway": {
-    "type": "http", "url": "${mcpUrl}",
-    "headers": { "Authorization": "Bearer \${input:bg-key}" } } }
-}
+{ "servers": { "browser-gateway": {
+  "type": "http", "url": "${mcpUrl}",
+  "headers": { "Authorization": "Bearer <key>" } } } }
 \`\`\`
 
-### Windsurf
+### Gemini CLI
 
-\`~/.codeium/windsurf/mcp_config.json\`. Note the key is \`serverUrl\`:
+\`\`\`bash
+gemini mcp add --transport http --scope user --header "Authorization: Bearer <key>" browser-gateway ${mcpUrl}
+\`\`\`
+
+### Windsurf and Devin Desktop
+
+\`~/.codeium/windsurf/mcp_config.json\` (Windsurf) or \`~/.config/devin/mcp_config.json\`
+(Devin Desktop, \`%APPDATA%\\devin\\mcp_config.json\` on Windows). Note the key is
+\`serverUrl\`:
 
 \`\`\`json
 { "mcpServers": { "browser-gateway": {
@@ -180,7 +209,10 @@ extensions:
 
 ### Clients without native remote support
 
-Claude Desktop, JetBrains AI Assistant and Gemini CLI need a local bridge. Keep the colon unspaced, it is required:
+Claude Desktop's config file and JetBrains AI Assistant need a local bridge. (In
+Claude Desktop and on claude.ai you can instead add a custom connector from the
+Connectors screen.) The \`env\` block below belongs to this one server entry, not to
+the user's shell. Keep the colon unspaced, it is required:
 
 \`\`\`json
 { "mcpServers": { "browser-gateway": {
