@@ -68,6 +68,24 @@ describe("Pipeline", () => {
     expect(result.counters.messageCount).toBe(2);
   });
 
+  it("plugin onResponse returning a message rewrites what the client receives; returning nothing passes the original bytes", async () => {
+    const client = new FakeSocket();
+    const upstream = new FakeSocket();
+    const plugin: CdpPlugin = {
+      name: "rewriter",
+      onResponse: (msg) => (msg.id === 2 ? { ...msg, result: { rewritten: true } } : undefined),
+    };
+    const done = runPipeline(client, upstream, [plugin]);
+    await new Promise((r) => setTimeout(r, 5));
+    const original = '{"id":1,"result":{"a":1}}';
+    upstream.receive(original);
+    upstream.receive(jsonMsg({ id: 2, result: { a: 2 } }));
+    expect(client.sent[0]).toBe(original);
+    expect(parseSent(client)[1]).toEqual({ id: 2, result: { rewritten: true } });
+    client.close();
+    await done;
+  });
+
   it("plugin onCommand returning null drops the message", async () => {
     const client = new FakeSocket();
     const upstream = new FakeSocket();

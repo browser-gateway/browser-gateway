@@ -59,6 +59,14 @@ const BaseFields = {
     .string()
     .regex(/^[a-zA-Z0-9_-]+$/, { message: "provider id must be alphanumeric with hyphens or underscores" })
     .optional(),
+  /**
+   * Name of a saved proxy to load the page through, or `none` to skip the
+   * gateway's default proxy. Only providers that apply proxies can serve it.
+   */
+  proxy: z
+    .string()
+    .regex(/^[a-zA-Z0-9_-]{1,64}$/, { message: "proxy must be the name of a saved proxy or none" })
+    .optional(),
 };
 
 export const ScreenshotRequestSchema = z.object({

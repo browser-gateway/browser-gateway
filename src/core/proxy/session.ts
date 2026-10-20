@@ -4,11 +4,12 @@ export class SessionTracker {
   private sessions: Map<string, Session> = new Map();
   private closers: Map<string, () => void> = new Map();
 
-  create(id: string, providerId: string, profileId?: string): Session {
+  create(id: string, providerId: string, profileId?: string, proxyName?: string): Session {
     const session: Session = {
       id,
       providerId,
       profileId,
+      proxyName,
       connectedAt: Date.now(),
       lastActivity: Date.now(),
       messageCount: 0,

@@ -61,4 +61,13 @@ describe("isPrivateAddress", () => {
       expect(isPrivateAddress(host), host).toBe(true);
     }
   });
+
+  it("classifies IPv4-mapped addresses in the hex form URL parsing produces as private", () => {
+    for (const url of ["http://[::ffff:169.254.169.254]/", "http://[::ffff:127.0.0.1]:8080/", "http://[::ffff:10.0.0.5]/"]) {
+      const host = new URL(url).hostname;
+      expect(isPrivateAddress(host), host).toBe(true);
+      expect(checkTargetUrl(url).ok, url).toBe(false);
+    }
+    expect(isPrivateAddress(new URL("http://[::ffff:8.8.8.8]/").hostname)).toBe(false);
+  });
 });

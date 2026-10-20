@@ -34,11 +34,19 @@ export function isPrivateAddress(host: string): boolean {
   if (hostname.includes(":")) {
     if (hostname === "::" || hostname === "::1") return true;
     if (hostname.startsWith("fe80") || hostname.startsWith("fc") || hostname.startsWith("fd")) return true;
-    if (hostname.startsWith("::ffff:")) return isPrivateAddress(hostname.slice(7));
+    if (hostname.startsWith("::ffff:")) return isPrivateAddress(mappedIpv4(hostname.slice(7)));
     return false;
   }
 
   return false;
+}
+
+function mappedIpv4(tail: string): string {
+  const hex = /^([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(tail);
+  if (!hex) return tail;
+  const hi = parseInt(hex[1]!, 16);
+  const lo = parseInt(hex[2]!, 16);
+  return `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
 }
 
 export interface TargetUrlPolicy {

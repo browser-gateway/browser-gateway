@@ -133,6 +133,7 @@ export const GatewayConfigSchema: z.ZodObject<{
         multiProfile: z.ZodDefault<z.ZodBoolean>;
         headers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
         enabled: z.ZodOptional<z.ZodBoolean>;
+        injectProxy: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strip>>;
     pool: z.ZodDefault<z.ZodObject<{
         minSessions: z.ZodDefault<z.ZodNumber>;
@@ -194,6 +195,16 @@ export const GatewayConfigSchema: z.ZodObject<{
     rest: z.ZodDefault<z.ZodObject<{
         allowedPrivateHosts: z.ZodDefault<z.ZodArray<z.ZodString>>;
     }, z.core.$strip>>;
+    proxies: z.ZodDefault<z.ZodRecord<z.ZodString, z.ZodObject<{
+        url: z.ZodString;
+        bypass: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    }, z.core.$strip>>>;
+    sessionDefaults: z.ZodDefault<z.ZodObject<{
+        record: z.ZodDefault<z.ZodBoolean>;
+        profile: z.ZodDefault<z.ZodNullable<z.ZodString>>;
+        saveProfile: z.ZodDefault<z.ZodBoolean>;
+        proxy: z.ZodDefault<z.ZodNullable<z.ZodString>>;
+    }, z.core.$strip>>;
 }, z.core.$strip>;
 
 // @public (undocumented)
@@ -203,6 +214,14 @@ export class HealthChecker {
     start(): void;
     // (undocumented)
     stop(): void;
+}
+
+// @public (undocumented)
+export interface OneShotOptions {
+    profile?: string;
+    proxy?: string;
+    // (undocumented)
+    targetProviderId?: string;
 }
 
 // @public (undocumented)
@@ -270,6 +289,7 @@ export const ProviderConfigSchema: z.ZodObject<{
     multiProfile: z.ZodDefault<z.ZodBoolean>;
     headers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
     enabled: z.ZodOptional<z.ZodBoolean>;
+    injectProxy: z.ZodOptional<z.ZodBoolean>;
 }, z.core.$strip>;
 
 // Warning: (ae-forgotten-export) The symbol "ProviderStore" needs to be exported by the entry point index.d.ts
@@ -448,14 +468,14 @@ export interface Session {
     profileId?: string;
     // (undocumented)
     providerId: string;
+    // (undocumented)
+    proxyName?: string;
 }
 
 // @public (undocumented)
 export class SessionPool {
     constructor(gatewayPort: number, logger: Logger, config: PoolConfig, token?: string | undefined);
-    acquirePage(opts?: {
-        targetProviderId?: string;
-    }): Promise<PageHandle>;
+    acquirePage(opts?: OneShotOptions): Promise<PageHandle>;
     // (undocumented)
     getStatus(): PoolStatus;
     // (undocumented)
@@ -472,7 +492,7 @@ export class SessionTracker {
     // (undocumented)
     count(): number;
     // (undocumented)
-    create(id: string, providerId: string, profileId?: string): Session;
+    create(id: string, providerId: string, profileId?: string, proxyName?: string): Session;
     // (undocumented)
     get(id: string): Session | undefined;
     // (undocumented)

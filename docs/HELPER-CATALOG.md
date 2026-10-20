@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-10-15
+Generated: 2026-10-20
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -58,7 +58,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class WebhookNotifier` (line 10)
 ### `src/core/pool/session-pool.ts`
 
-- **class** `class SessionPool` (line 16)
+- **interface** `interface OneShotOptions` (line 15)
+- **class** `class SessionPool` (line 28)
 ### `src/core/pool/types.ts`
 
 - **const** `const PoolConfigSchema` (line 4)
@@ -272,10 +273,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `resolveWsUrl(providerUrl: string, timeoutMs: number = 3000, headers?: Record<string, string>) → Promise<string>` (line 80)
 ### `src/core/providers/effective.ts`
 
-- **fn** `isEligibleForProfile(config: ProviderConfig, requestedProfile: string | null | undefined) → boolean` (line 7) — Config-shape check: does the provider's `profile` pin admit the requested profile?
-- **fn** `isEligibleProviderForProfile(provider: Pick<ProviderState, "detectedKind"> & { config: Pick<ProviderState["config"], "profile"> }, requestedProfile: string | null | undefined) → boolean` (line 20) — Runtime profile-eligibility. Any provider may load and save any profile unless it
-- **fn** `effectiveMaxConcurrent(provider: ProviderState) → number | undefined` (line 33) — The concurrency ceiling actually enforced for a provider: explicit
-- **fn** `hasFreeSlot(provider: ProviderState) → boolean` (line 38) — True when the provider has a free slot under its effective ceiling.
+- **fn** `isEligibleForProfile(config: ProviderConfig, requestedProfile: string | null | undefined) → boolean` (line 8) — Config-shape check: does the provider's `profile` pin admit the requested profile?
+- **fn** `isEligibleProviderForProfile(provider: Pick<ProviderState, "detectedKind"> & { config: Pick<ProviderState["config"], "profile"> }, requestedProfile: string | null | undefined) → boolean` (line 21) — Runtime profile-eligibility. Any provider may load and save any profile unless it
+- **fn** `isEligibleProviderForProxy(config: Pick<ProviderConfig, "injectProxy">, proxy: ParsedProxy | null) → boolean` (line 34) — Can this provider apply the requested proxy? No proxy requested always passes. A proxy
+- **fn** `effectiveMaxConcurrent(provider: ProviderState) → number | undefined` (line 47) — The concurrency ceiling actually enforced for a provider: explicit
+- **fn** `hasFreeSlot(provider: ProviderState) → boolean` (line 52) — True when the provider has a free slot under its effective ceiling.
 ### `src/core/providers/health.ts`
 
 - **class** `class HealthChecker` (line 7)
@@ -291,6 +293,23 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface TestConnectionClient` (line 6) — Isomorphic provider-connection probe. Callers supply a pre-connected CDP client;
 - **interface** `interface TestConnectionResult` (line 15)
 - **fn** `testConnectionWithClient(client: TestConnectionClient, timeoutMs = 5_000) → Promise<TestConnectionResult>` (line 23) — Runs one CDP command (`Browser.getVersion`) against an already-connected client.
+### `src/core/proxy-config.ts`
+
+- **const** `const PROXY_SCHEMES` (line 4)
+- **type** `type ProxyScheme` (line 5)
+- **interface** `interface ParsedProxy` (line 11)
+- **interface** `interface ProxyParseOptions` (line 21)
+- **type** `type ProxyParseResult` (line 26)
+- **fn** `parseProxyUrl(raw: string, opts: ProxyParseOptions = {}) → ProxyParseResult` (line 29) — Parses and validates a proxy URL. Never echoes the input in the reason, so it is safe to log or return.
+- **fn** `isDirectBrowserProxy(proxy: ParsedProxy) → boolean` (line 58) — True when a browser can use the proxy directly through its proxy setting, with no relay in between.
+- **const** `const ProxyConfigSchema` (line 62)
+- **type** `type ProxyConfig` (line 72)
+- **const** `const RESERVED_NONE_NAME` (line 75) — Value of `?proxy=` and `?profile=` that means "none for this connection"; never usable as a name.
+- **fn** `isAllowedResourceName(name: string) → boolean` (line 78) — True when `name` can be used for a saved proxy or profile.
+- **interface** `interface ProxyInput` (line 83) — Proxy fields as a form sends them. An empty username or password keeps the saved one.
+- **fn** `buildProxyConfig(input: ProxyInput, existing?: ProxyConfig) → { ok: true; config: ProxyConfig } | { ok: false; reason: string }` (line 99) — Builds a stored proxy entry from form fields, keeping the saved credentials of `existing` unless replaced or cleared.
+- **interface** `interface ProxySummary` (line 117) — A configured proxy as the dashboard and REST API show it: never carries credentials.
+- **fn** `describeProxies(proxies: Record<string, ProxyConfig>) → ProxySummary[]` (line 130) — Describes each configured proxy for display, without its credentials.
 ### `src/core/proxy/reconnect.ts`
 
 - **interface** `interface ParkedSession` (line 1)
@@ -308,13 +327,18 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **type** `type Strategy` (line 8)
 - **interface** `interface SelectOptions` (line 15)
 - **class** `class ProviderSelector` (line 42)
+### `src/core/session-defaults.ts`
+
+- **const** `const SessionDefaultsSchema` (line 4)
+- **type** `type SessionDefaults` (line 11)
+- **fn** `applySessionDefaults(url: URL, defaults: SessionDefaults) → URL` (line 21) — Fills the gateway's session defaults into a connection url wherever the url
 ### `src/core/target-url.ts`
 
 - **fn** `isPrivateAddress(host: string) → boolean` (line 14) — True when the literal address is loopback, link-local, or in a private range.
-- **interface** `interface TargetUrlPolicy` (line 44)
-- **interface** `interface TargetUrlVerdict` (line 49)
-- **fn** `checkTargetUrl(url: string, policy: TargetUrlPolicy = {}) → TargetUrlVerdict` (line 60) — Validates a user-supplied navigation target. Allows `http:` and `https:` only,
-- **fn** `isHostExempt(hostname: string, policy: TargetUrlPolicy) → boolean` (line 80) — True when the policy explicitly permits this hostname to be private.
+- **interface** `interface TargetUrlPolicy` (line 52)
+- **interface** `interface TargetUrlVerdict` (line 57)
+- **fn** `checkTargetUrl(url: string, policy: TargetUrlPolicy = {}) → TargetUrlVerdict` (line 68) — Validates a user-supplied navigation target. Allows `http:` and `https:` only,
+- **fn** `isHostExempt(hostname: string, policy: TargetUrlPolicy) → boolean` (line 88) — True when the policy explicitly permits this hostname to be private.
 ### `src/core/tracking/concurrency.ts`
 
 - **class** `class ConcurrencyTracker` (line 4)
@@ -336,26 +360,26 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `isClientSessionKey(value: string | null | undefined) → value is string` (line 164) — True for a well-formed `sessionKey` a client chose itself: 8 to 64 letters, digits, `_` or `-`.
 ### `src/core/types.ts`
 
-- **const** `const ProviderConfigSchema` (line 4)
-- **const** `const WebhookSchema` (line 77)
-- **const** `const ProfilesConfigSchema` (line 90)
-- **type** `type ProfilesConfig` (line 106)
-- **const** `const ReplayConfigSchema` (line 118)
-- **type** `type ReplayConfig` (line 126)
-- **const** `const RestConfigSchema` (line 128)
-- **type** `type RestConfig` (line 136)
-- **const** `const GatewayConfigSchema` (line 138)
-- **type** `type ProviderConfig` (line 151)
-- **type** `type GatewayConfig` (line 152)
-- **interface** `interface ProviderState` (line 154)
-- **interface** `interface Session` (line 171)
+- **const** `const ProviderConfigSchema` (line 6)
+- **const** `const WebhookSchema` (line 81)
+- **const** `const ProfilesConfigSchema` (line 94)
+- **type** `type ProfilesConfig` (line 110)
+- **const** `const ReplayConfigSchema` (line 122)
+- **type** `type ReplayConfig` (line 130)
+- **const** `const RestConfigSchema` (line 132)
+- **type** `type RestConfig` (line 140)
+- **const** `const GatewayConfigSchema` (line 142)
+- **type** `type ProviderConfig` (line 160)
+- **type** `type GatewayConfig` (line 161)
+- **interface** `interface ProviderState` (line 163)
+- **interface** `interface Session` (line 180)
 
 ## Server layer (src/server/)
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 37)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 173)
+- **interface** `interface ProfileAppDeps` (line 40)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 176)
 ### `src/server/browse/cli.ts`
 
 - **fn** `runBrowseCli(argv: string[]) → Promise<number>` (line 13)
@@ -401,20 +425,27 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **fn** `renderSkillMarkdown() → string` (line 29) — SKILL.md content. Body renders {@link agentInstructions} so the CLI, the MCP
 - **const** `const skillFrontmatter` (line 74)
+### `src/server/config/env-templates.ts`
+
+- **interface** `interface EnvTemplates` (line 7) — What the loaded config held as placeholders, keyed by JSON path, plus each long resolved value.
+- **fn** `emptyEnvTemplates() → EnvTemplates` (line 12)
+- **fn** `interpolateConfig(raw: unknown) → { value: unknown; templates: EnvTemplates }` (line 39) — Resolves every placeholder in a parsed config and records where each one was.
+- **fn** `restoreEnvPlaceholders(output: unknown, templates: EnvTemplates) → unknown` (line 59) — Returns a copy of `output` with unchanged values put back as their placeholders and any resolved secret masked by its placeholder.
 ### `src/server/config/loader.ts`
 
-- **const** `const loadedConfigPath: string | null` (line 27)
-- **fn** `loadConfig(configPath?: string) → GatewayConfig` (line 40)
+- **const** `const loadedConfigPath: string | null` (line 8)
+- **const** `const loadedEnvTemplates: EnvTemplates` (line 9)
+- **fn** `loadConfig(configPath?: string) → GatewayConfig` (line 22)
 ### `src/server/config/writer.ts`
 
-- **fn** `writeConfig(config: GatewayConfig, configPath?: string) → void` (line 6)
+- **fn** `writeConfig(config: GatewayConfig, configPath?: string, templates: EnvTemplates = loadedEnvTemplates) → void` (line 8)
 ### `src/server/live/upgrade.ts`
 
-- **interface** `interface CreateLiveHandlerDeps` (line 39)
-- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 46)
+- **interface** `interface CreateLiveHandlerDeps` (line 42)
+- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 49)
 ### `src/server/mcp/config-defaults.ts`
 
-- **fn** `buildMcpGatewayConfig(port: number, providers: Record<string, ProviderConfig>) → GatewayConfig` (line 11)
+- **fn** `buildMcpGatewayConfig(port: number, providers: Record<string, ProviderConfig>) → GatewayConfig` (line 12)
 ### `src/server/mcp/local-chrome.ts`
 
 - **fn** `setupLocalChrome(stderrLog?: (msg: string) => void, options?: { headless?: boolean }) → Promise<GatewayConfig>` (line 18)
@@ -493,7 +524,15 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class NodeProfileStorage` (line 17) — Node-side {@link ProfileStorage} adapter. Wraps the existing
 ### `src/server/profile/preloaded-profile-plugin.ts`
 
-- **fn** `makeProfilePluginFromAcquired(acquired: AcquiredProfile, profileLifecycle: ProfileLifecycle, logger: Logger, opts: { providerId?: string; skipResidueCheck?: boolean } = {}) → ProfilePlugin` (line 9) — Wraps an already-acquired profile as a preloaded {@link ProfilePlugin}.
+- **fn** `makeProfilePluginFromAcquired(acquired: AcquiredProfile, profileLifecycle: ProfileLifecycle, logger: Logger, opts: { providerId?: string; skipResidueCheck?: boolean; browserContextId?: () => string | null } = {}) → ProfilePlugin` (line 9) — Wraps an already-acquired profile as a preloaded {@link ProfilePlugin}.
+### `src/server/proxy-check.ts`
+
+- **const** `const PROXY_CHECK_URL` (line 5)
+- **const** `const PROXY_CHECK_TIMEOUT_MS` (line 6)
+- **interface** `interface ProxyExit` (line 10) — What sites see when a request leaves through the proxy.
+- **type** `type ProxyCheckResult` (line 20)
+- **fn** `parseExitJson(body: Record<string, unknown>) → ProxyExit` (line 88) — Reads an IP echo service's JSON reply.
+- **fn** `checkProxyExit(proxy: ParsedProxy, opts: { checkUrl?: string; timeoutMs?: number } = {}) → Promise<ProxyCheckResult>` (line 102) — Connects through the proxy to an IP echo service and reports the address and country sites see. Never includes credentials in errors.
 ### `src/server/replay/constants.ts`
 
 - **const** `const SESSION_ID_REGEX` (line 1)
@@ -524,14 +563,14 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 18)
 ### `src/server/rest/dispatch.ts`
 
-- **interface** `interface DispatchDeps` (line 22)
-- **fn** `dispatchPageAction(deps: DispatchDeps, profileId: string | undefined, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 35) — If `profileId` is set, route through the profile-pinned executor; otherwise
+- **interface** `interface DispatchDeps` (line 24)
+- **fn** `dispatchPageAction(deps: DispatchDeps, profileId: string | undefined, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 37) — If `profileId` is set, route through the profile-pinned executor; otherwise
 ### `src/server/rest/executor.ts`
 
 - **interface** `interface PageOptions` (line 7)
-- **interface** `interface PageResult` (line 27)
-- **fn** `withBrowserPage(pool: SessionPool, logger: Logger, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 52)
-- **fn** `scrollThroughPage(page: Page) → Promise<void>` (line 144)
+- **interface** `interface PageResult` (line 31)
+- **fn** `withBrowserPage(pool: SessionPool, logger: Logger, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 62)
+- **fn** `scrollThroughPage(page: Page) → Promise<void>` (line 155)
 ### `src/server/rest/page-runner.ts`
 
 - **interface** `interface PageRunResult` (line 18)
@@ -542,10 +581,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `withProfilePage(deps: WithProfilePageDeps, profileId: string, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 42)
 ### `src/server/rest/profiles.ts`
 
-- **interface** `interface ProfileRestDeps` (line 22)
-- **interface** `interface DisabledProfileDeps` (line 29)
-- **fn** `createDisabledProfileRoutes(deps: DisabledProfileDeps = {}) → Hono` (line 53) — Profile routes that respond gracefully when the profiles feature is OFF.
-- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 121) — Profile management REST routes.
+- **interface** `interface ProfileRestDeps` (line 23)
+- **interface** `interface DisabledProfileDeps` (line 30)
+- **fn** `createDisabledProfileRoutes(deps: DisabledProfileDeps = {}) → Hono` (line 54) — Profile routes that respond gracefully when the profiles feature is OFF.
+- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 123) — Profile management REST routes.
 ### `src/server/rest/replays.ts`
 
 - **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 26)
@@ -566,6 +605,11 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **type** `type ToggleFlow` (line 6)
 - **fn** `makeToggleHandler(getConfig: () => GatewayConfig | undefined, flow: ToggleFlow<R>, missingConfigError: string, failureLabel: string) → unknown` (line 8)
+### `src/server/settings-body.ts`
+
+- **fn** `parseSessionDefaultsBody(body: Record<string, unknown>, config: GatewayConfig) → Parsed<SessionDefaults>` (line 10) — Validates a full session-defaults body against what this gateway can apply.
+- **type** `type AdvancedSettings` (line 52)
+- **fn** `parseAdvancedSettingsBody(body: Record<string, unknown>) → Parsed<AdvancedSettings>` (line 61) — Validates a partial advanced-settings body; every field is optional and bounded.
 ### `src/server/setup/data-dir.ts`
 
 - **fn** `resolveDataDir() → string` (line 15) — Resolve `BG_DATA_DIR` to an absolute path. Chain (highest precedence first):
@@ -609,24 +653,29 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 16) — Format a Zod error into a human-readable list of "path: message" strings.
 - **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 49) — Parse a provider config body (from POST or PUT /v1/providers/...).
-- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 88) — Validate a webhook request body against {@link WebhookSchema}.
+- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 90) — Validate a webhook request body against {@link WebhookSchema}.
 - **fn** `parseYamlGatewayConfig(yaml: string) → Promise<
   | { kind: "parse-error"; message: string }
   | { kind: "validation-error"; errors: string[] }
   | { kind: "ok"; data: GatewayConfig }
->` (line 106) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
+>` (line 108) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/pipeline-relay.ts`
 
 - **interface** `interface PipelineRelayOpts` (line 15)
-- **type** `type PipelineRelayResult` (line 32)
-- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<PipelineRelayResult>` (line 43) — Two-phase pipeline handoff for `/v1/connect`:
+- **type** `type PipelineRelayResult` (line 35)
+- **fn** `handlePipelineRelay(opts: PipelineRelayOpts) → Promise<PipelineRelayResult>` (line 46) — Two-phase pipeline handoff for `/v1/connect`:
 ### `src/server/ws/probe.ts`
 
 - **fn** `probeWebSocket(url: string, timeoutMs = 5_000, headers?: Record<string, string>) → Promise<void>` (line 8) — Probe a WebSocket URL: resolves on `open` (then immediately closes), rejects
+### `src/server/ws/proxy-request.ts`
+
+- **interface** `interface RequestedProxy` (line 5)
+- **type** `type ProxyRequestResult` (line 11)
+- **fn** `resolveRequestedProxy(gateway: Gateway, url: URL, context: { targetProviderId?: string }) → ProxyRequestResult` (line 16) — Resolves `?proxy=<name>` against the configured proxies; refuses anything the gateway cannot apply.
 ### `src/server/ws/upgrade.ts`
 
-- **interface** `interface PipelineReplayContext` (line 183)
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 188)
+- **interface** `interface PipelineReplayContext` (line 196)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 201)
 ### `src/server/ws/upstream-open.ts`
 
 - **fn** `openUpstream(url: string, timeoutMs: number, headers?: Record<string, string>) → Promise<{ ok: true; ws: WebSocket } | { ok: false; err: string }>` (line 7) — Open a Node `ws` upstream and race it against a timeout. Resolves once

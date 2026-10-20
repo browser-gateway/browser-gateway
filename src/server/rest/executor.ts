@@ -22,6 +22,10 @@ export interface PageOptions {
    * `dispatchPageAction`.
    */
   provider?: string;
+  /** Saved proxy to load the page through; `none` skips the default proxy. */
+  proxy?: string;
+  /** Profile loaded and saved by a proxied one-shot session. */
+  profile?: string;
 }
 
 export interface PageResult<T> {
@@ -44,6 +48,12 @@ const NON_RETRYABLE_ERRORS = [
   "Invalid URL",
   "Protocol error",
 ];
+
+/** The gateway's own error text when it refused the connection, e.g. a proxy relay the browser could not reach. */
+function gatewayRefusal(err: unknown): string | undefined {
+  const message = err instanceof Error ? err.message : String(err);
+  return /"error":"((?:[^"\\]|\\.)*)"/.exec(message)?.[1];
+}
 
 function isRetryable(error: string): boolean {
   return !NON_RETRYABLE_ERRORS.some((pattern) => error.includes(pattern));
@@ -69,14 +79,15 @@ export async function withBrowserPage<T>(
     let handle;
 
     try {
-      handle = await pool.acquirePage({ targetProviderId: options.provider });
-    } catch {
-      if (attempt < maxAttempts && !options.signal?.aborted) {
+      handle = await pool.acquirePage({ targetProviderId: options.provider, proxy: options.proxy, profile: options.profile });
+    } catch (err) {
+      const refusal = gatewayRefusal(err);
+      if (attempt < maxAttempts && !options.signal?.aborted && !refusal) {
         logger.info({ attempt, maxAttempts }, "rest: pool acquire failed, retrying");
         await new Promise((r) => setTimeout(r, 500 * attempt));
         continue;
       }
-      throw new RestApiError(503, "No browser sessions available");
+      throw new RestApiError(503, refusal ? `No browser session: ${refusal}` : "No browser sessions available");
     }
 
     try {

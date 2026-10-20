@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { PoolConfigSchema } from "./pool/types.js";
+import { ProxyConfigSchema, RESERVED_NONE_NAME } from "./proxy-config.js";
+import { SessionDefaultsSchema } from "./session-defaults.js";
 
 export const ProviderConfigSchema = z
   .object({
@@ -31,6 +33,8 @@ export const ProviderConfigSchema = z
     headers: z.record(z.string(), z.string()).optional(),
     /** `false` keeps the provider configured but never routes to, probes, or health-checks it. Omitted means enabled. */
     enabled: z.boolean().optional(),
+    /** Browser you run yourself: the gateway may apply a connection's `?proxy=` by opening a proxied browser context in it. */
+    injectProxy: z.boolean().optional(),
   })
   .refine((c) => !(c.profile && c.multiProfile), {
     message: "provider.profile and provider.multiProfile are mutually exclusive",
@@ -146,6 +150,11 @@ export const GatewayConfigSchema = z.object({
   profiles: ProfilesConfigSchema.default(() => ProfilesConfigSchema.parse({})),
   replay: ReplayConfigSchema.default(() => ReplayConfigSchema.parse({})),
   rest: RestConfigSchema.default(() => RestConfigSchema.parse({})),
+  proxies: z.record(
+    z.string().min(1).refine((n) => n.toLowerCase() !== RESERVED_NONE_NAME, { message: `"${RESERVED_NONE_NAME}" is reserved and cannot name a proxy` }),
+    ProxyConfigSchema,
+  ).default({}),
+  sessionDefaults: SessionDefaultsSchema.default(() => SessionDefaultsSchema.parse({})),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
@@ -172,6 +181,7 @@ export interface Session {
   id: string;
   providerId: string;
   profileId?: string;
+  proxyName?: string;
   connectedAt: number;
   lastActivity: number;
   messageCount: number;

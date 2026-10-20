@@ -21,6 +21,9 @@ export interface PipelineRelayOpts {
   provider: ProviderState;
   sessionId: string;
   plugins: CdpPlugin[];
+  /** Shown on the session in `/v1/sessions`. */
+  profileId?: string;
+  proxyName?: string;
   reconnectRegistry?: ReconnectRegistry;
   /** Rewrites the resolved upstream url before connecting (e.g. a profile
    *  hand-off token). A throw skips this provider. */
@@ -127,7 +130,7 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<Pipe
   });
 
   const startTime = Date.now();
-  gateway.sessions.create(sessionId, provider.id);
+  gateway.sessions.create(sessionId, provider.id, opts.profileId, opts.proxyName);
   gateway.emit("session.created", { sessionId, providerId: provider.id });
   logger.info({ sessionId, providerId: provider.id }, "session established");
 

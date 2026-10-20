@@ -20,8 +20,8 @@ import { Button } from "@/components/ui/button";
 import { IntegrationTabs } from "@/components/integration-tabs";
 import { useGatewayToken, useAuthEnabled } from "@/components/token-autofill";
 import { buildConnectUrl, maskUrlToken } from "@/lib/connect-url";
-import type { GatewayStatus } from "@/lib/api";
-import { fetchStatus } from "@/lib/api";
+import type { GatewayStatus, SessionDefaults } from "@/lib/api";
+import { fetchSettings, fetchStatus } from "@/lib/api";
 
 export default function OverviewPage() {
   const [status, setStatus] = useState<GatewayStatus | null>(null);
@@ -148,6 +148,8 @@ export default function OverviewPage() {
 
       <ConnectionEndpoint />
 
+      <SettingsSummary />
+
       <Card>
         <CardContent className="px-5 py-4 space-y-3 min-w-0">
           <div>
@@ -168,6 +170,36 @@ export default function OverviewPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function describeDefaults(d: SessionDefaults): string {
+  const parts = [
+    d.record ? "recording on" : "recording off",
+    d.profile ? `profile ${d.profile} (${d.saveProfile ? "saves changes" : "read-only"})` : "no default profile",
+    d.proxy ? `proxy ${d.proxy}` : "no default proxy",
+  ];
+  const text = parts.join(", ");
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
+function SettingsSummary() {
+  const [defaults, setDefaults] = useState<SessionDefaults | null>(null);
+  useEffect(() => {
+    fetchSettings().then((s) => setDefaults(s.sessionDefaults), () => setDefaults(null));
+  }, []);
+  return (
+    <Card>
+      <CardContent className="px-5 py-4 flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-xs uppercase tracking-wider text-muted-foreground">Session defaults</p>
+          <p className="text-sm mt-1">{defaults ? describeDefaults(defaults) : "Loading..."}</p>
+        </div>
+        <a href="/web/settings/" className="text-sm text-foreground underline underline-offset-4 hover:text-foreground/80 shrink-0">
+          Settings
+        </a>
+      </CardContent>
+    </Card>
   );
 }
 

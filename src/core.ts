@@ -63,3 +63,18 @@ export {
 export { PROFILE_VERSION, PROFILE_ID_REGEX } from "./core/profile/index.js";
 export { mergeAndPrepareProfile } from "./core/profile/save.js";
 export { redactConnectionUrl, redactHeaders, redactConnectionUrlsInText } from "./core/redact.js";
+export {
+  parseProxyUrl,
+  isDirectBrowserProxy,
+  buildProxyConfig,
+  isAllowedResourceName,
+  RESERVED_NONE_NAME,
+  ProxyConfigSchema,
+  PROXY_SCHEMES,
+  type ParsedProxy,
+  type ProxyConfig,
+  type ProxyInput,
+  type ProxyParseOptions,
+  type ProxyParseResult,
+  type ProxyScheme,
+} from "./core/proxy-config.js";

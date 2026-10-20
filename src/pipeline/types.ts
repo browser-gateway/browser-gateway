@@ -71,9 +71,9 @@ export interface CdpPlugin {
    *  rewrite, or `undefined` (implicit) to forward as-is. MUST NOT return
    *  a Promise — enforced by type. Fire async work via `void asyncFn()`. */
   onCommand?(msg: CdpMessage, state: SessionState): CdpMessage | null | undefined | void;
-  /** Upstream → client response to a client command. Passive observation
-   *  only in v0.1. SYNC. */
-  onResponse?(msg: CdpMessage, state: SessionState): void;
+  /** Upstream → client response to a client command. Return a `CdpMessage`
+   *  to rewrite it, or `undefined` (implicit) to forward as-is. SYNC. */
+  onResponse?(msg: CdpMessage, state: SessionState): CdpMessage | undefined | void;
   /** Upstream → client event. Return `null` to drop, `void`/`undefined`
    *  to forward. SYNC. */
   onEvent?(msg: CdpMessage, state: SessionState): void | null | undefined;

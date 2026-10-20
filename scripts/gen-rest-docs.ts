@@ -69,6 +69,11 @@ const RESOURCE_HELP: Record<string, { title: string; description: string; overvi
     description: "Read, validate, and update gateway.yml over HTTP.",
     overview: "Read the running configuration, validate a proposed YAML, or replace the whole config file. All writes are fsync'd and backed up.",
   },
+  proxies: {
+    title: "Proxies",
+    description: "Proxies sessions can be sent through.",
+    overview: "Add, update, delete and test the proxies a session can use with `?proxy=<name>` or as the default proxy. Only providers with Apply proxies on can use them. Passwords are write-only.",
+  },
   profiles: {
     title: "Profiles",
     description: "Create, export, import, delete stored browser profiles.",
@@ -116,15 +121,17 @@ function extractRoutes(file: string, variable: string, mountPrefix: string): Rou
   if (!existsSync(abs)) return [];
   const source = readFileSync(abs, "utf8");
   const lines = source.split("\n");
-  const rx = new RegExp(String.raw`^\s*${variable}\.(get|post|put|delete|patch)\("([^"]+)"`);
+  const rx = new RegExp(String.raw`^\s*${variable}\.(get|post|put|delete|patch)\(("([^"]+)"|\s*$)`);
   const out: RouteEntry[] = [];
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(rx);
     if (!m) continue;
+    const path = m[3] ?? lines[i + 1]?.match(/^\s*"([^"]+)"/)?.[1];
+    if (!path) continue;
     const jsdoc = extractJsdocAbove(lines, i);
     out.push({
       method: m[1].toUpperCase(),
-      path: mountPrefix + m[2],
+      path: mountPrefix + path,
       file,
       line: i + 1,
       jsdoc,
@@ -138,6 +145,8 @@ function extractJsdocAbove(lines: string[], routeLine: number): string | null {
   let i = routeLine - 1;
   while (i >= 0 && lines[i].trim() === "") i--;
   if (i < 0 || !lines[i].trim().endsWith("*/")) return null;
+  const single = lines[i].trim().match(/^\/\*\*\s*(.*?)\s*\*\/$/);
+  if (single) return single[1] ? scrubDashes(single[1]) : null;
   const endLine = i;
   let startLine = i;
   while (startLine >= 0 && !lines[startLine].trim().startsWith("/**")) startLine--;
@@ -148,10 +157,12 @@ function extractJsdocAbove(lines: string[], routeLine: number): string | null {
     .filter((l) => l.length > 0)
     .join(" ");
   if (!raw) return null;
-  // Scrub em-dashes so source-code stylistic choices don't leak into public docs.
-  return raw
-    .replace(/ — /g, ". ")
-    .replace(/—/g, ".");
+  return scrubDashes(raw);
+}
+
+// Scrub em-dashes so source-code stylistic choices don't leak into public docs.
+function scrubDashes(text: string): string {
+  return text.replace(/ — /g, ". ").replace(/—/g, ".");
 }
 
 function resourceKey(path: string): string {
@@ -208,6 +219,14 @@ function renderResource(key: string, routes: RouteEntry[]): string {
   return lines.join("\n");
 }
 
+// Served outside the Hono app, so the route scan cannot see them.
+const MCP_ROWS = [
+  { method: "POST", path: "/mcp" },
+  { method: "GET", path: "/mcp" },
+  { method: "DELETE", path: "/mcp" },
+  { method: "GET", path: "/mcp/setup.md" },
+];
+
 function renderOverview(all: Record<string, RouteEntry[]>): string {
   const lines: string[] = [
     "---",
@@ -220,10 +239,11 @@ function renderOverview(all: Record<string, RouteEntry[]>): string {
     "The gateway exposes three categories of HTTP endpoints:",
     "",
     "- **Action endpoints** (`/v1/screenshot`, `/v1/content`, `/v1/scrape`): one-shot browser actions, no client code needed.",
-    "- **Control endpoints** (`/v1/providers`, `/v1/config`, `/v1/profiles`, `/v1/replays`, `/v1/sessions`, `/v1/status`): manage the gateway itself.",
+    "- **Control endpoints** (`/v1/providers`, `/v1/proxies`, `/v1/config`, `/v1/profiles`, `/v1/replays`, `/v1/sessions`, `/v1/status`): manage the gateway itself.",
     "- **Compat + dashboard** (`/health`, `/json/version`, `/web/*`): Chrome-compat endpoints and the dashboard.",
+    "- **MCP** (`/mcp`, `/mcp/setup.md`): the MCP server for AI agents over HTTP. See [MCP](/mcp).",
     "",
-    "When `BG_TOKEN` is set, every `/v1/*` endpoint on this page requires either an `Authorization: Bearer <BG_TOKEN>` header or the dashboard's session cookie. A `?token=` query parameter is not accepted here, because query strings end up in the access logs of any proxy in front of the gateway. The WebSocket endpoint `/v1/connect` still takes `?token=`, since CDP clients cannot set headers on a WebSocket handshake. `/health` and `/json/version` are always public.",
+    "When `BG_TOKEN` is set, every `/v1/*` endpoint on this page requires either an `Authorization: Bearer <BG_TOKEN>` header or the dashboard's session cookie. A `?token=` query parameter is not accepted here, because query strings end up in the access logs of any proxy in front of the gateway. The WebSocket endpoint `/v1/connect` still takes `?token=`, since CDP clients cannot set headers on a WebSocket handshake. `/health` and `/json/version` are always public. `/mcp` accepts the token only as an `Authorization: Bearer` header. `/mcp/setup.md` needs no token, so an agent can read the setup steps before it has one; both are refused from a foreign browser `Origin`, and, when `BG_TOKEN` is unset, from any non-loopback `Host` not listed in `BG_ALLOWED_HOSTS`.",
     "",
     "Requests that change something (`POST`, `PUT`, `PATCH`, `DELETE`) must send `Content-Type: application/json` when they carry a body, or the gateway answers `415`. A request arriving with a `Sec-Fetch-Site: cross-site` header, which browsers add when one site calls another, is answered `403`.",
     "",
@@ -233,7 +253,11 @@ function renderOverview(all: Record<string, RouteEntry[]>): string {
     "|---|---|---|",
   ];
   const sortedKeys = Object.keys(all).sort();
-  for (const key of sortedKeys) {
+  for (const key of [...sortedKeys, "mcp"].sort()) {
+    if (key === "mcp") {
+      for (const r of MCP_ROWS) lines.push(`| \`${r.method}\` | [\`${r.path}\`](/mcp) | MCP |`);
+      continue;
+    }
     const help = RESOURCE_HELP[key];
     const title = help?.title ?? key;
     for (const r of all[key]) {

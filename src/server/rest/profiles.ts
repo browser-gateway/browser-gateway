@@ -18,6 +18,7 @@ import { loadedConfigPath } from "../config/loader.js";
 import { enableProfilesFlow, disableProfilesFlow } from "../setup/profiles-setup.js";
 import { makeToggleHandler } from "./toggle-handler.js";
 import type { GatewayConfig } from "../../core/types.js";
+import { RESERVED_NONE_NAME } from "../../core/proxy-config.js";
 
 export interface ProfileRestDeps {
   store: FilesystemProfileStore;
@@ -92,6 +93,7 @@ export function createDisabledProfileRoutes(deps: DisabledProfileDeps = {}): Hon
     }
   });
 
+  /** Turns profiles off in gateway.yml. Saved profiles stay on disk. Restart required. */
   app.post(
     "/profiles/disable",
     makeToggleHandler(
@@ -146,6 +148,9 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
     if (!PROFILE_ID_REGEX.test(body.id)) {
       return c.json({ error: "Invalid profile id (letters, numbers, dots, dashes, underscores; 1–128 chars)" }, 400);
     }
+    if (body.id.toLowerCase() === RESERVED_NONE_NAME) {
+      return c.json({ error: `"${RESERVED_NONE_NAME}" is reserved: profile=${RESERVED_NONE_NAME} on a connection means no profile` }, 400);
+    }
 
     const all = await store.list();
     if (all.find((p) => p.id === body.id)) {
@@ -197,6 +202,9 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
     const id = c.req.param("id");
     if (!PROFILE_ID_REGEX.test(id)) {
       return c.json({ error: "Invalid profile id" }, 400);
+    }
+    if (deps.config?.sessionDefaults.profile === id) {
+      return c.json({ error: "Profile is the default profile in Settings. Change the default first." }, 409);
     }
     // Refuse delete if the profile is currently locked by an active session.
     const token = await store.lock(id, 5_000);
@@ -400,16 +408,6 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
       await store.unlock(profileId, token);
     }
   });
-
-  app.post(
-    "/profiles/disable",
-    makeToggleHandler(
-      () => deps.config,
-      disableProfilesFlow,
-      "Cannot toggle profiles without a loaded config",
-      "Disable failed",
-    ),
-  );
 
   return app;
 }

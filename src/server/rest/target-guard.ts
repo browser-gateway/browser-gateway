@@ -20,8 +20,9 @@ export async function rejectUnsafeTargetUrl(
   try {
     addresses = await lookup(hostname, { all: true });
   } catch {
-    return null;
+    return `url host '${hostname}' could not be resolved`;
   }
+  if (addresses.length === 0) return `url host '${hostname}' could not be resolved`;
   for (const { address } of addresses) {
     if (isPrivateAddress(address)) {
       return `url host '${hostname}' resolves to the private address ${address}; add it to rest.allowedPrivateHosts to allow it`;

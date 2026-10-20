@@ -1,4 +1,5 @@
 import type { ProviderConfig, ProviderState } from "../types.js";
+import { isDirectBrowserProxy, type ParsedProxy } from "../proxy-config.js";
 
 /**
  * Config-shape check: does the provider's `profile` pin admit the requested profile?
@@ -23,6 +24,19 @@ export function isEligibleProviderForProfile(
 ): boolean {
   if (provider.detectedKind === "browserserve" || provider.config.profile == null) return true;
   return provider.config.profile === requestedProfile;
+}
+
+/**
+ * Can this provider apply the requested proxy? No proxy requested always passes. A proxy
+ * is applied only to browsers marked `injectProxy`, and only when the browser can use it
+ * directly (no password, not `https`).
+ */
+export function isEligibleProviderForProxy(
+  config: Pick<ProviderConfig, "injectProxy">,
+  proxy: ParsedProxy | null,
+): boolean {
+  if (proxy === null) return true;
+  return config.injectProxy === true && isDirectBrowserProxy(proxy);
 }
 
 /**

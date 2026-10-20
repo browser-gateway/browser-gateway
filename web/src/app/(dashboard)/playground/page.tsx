@@ -24,7 +24,8 @@ import { Select, type SelectOption } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { formatBytes } from "@/lib/format-bytes";
-import { canSaveToProfile, fetchProfiles, fetchProviders, routableProviders, type ProfileMetaItem, type ProviderConfigItem } from "@/lib/api";
+import { proxyPickerOptions } from "@/lib/proxy-options";
+import { canSaveToProfile, fetchProfiles, fetchProviders, fetchProxies, fetchSettings, routableProviders, type ProfileMetaItem, type ProviderConfigItem, type ProxySummary } from "@/lib/api";
 import { LiveClient, eventModifiers, mouseButton, type FrameMeta } from "@/lib/live-client";
 import { useAuthEnabled, useGatewayToken } from "@/components/token-autofill";
 import { NavGuard } from "@/components/nav-guard";
@@ -63,6 +64,8 @@ export default function PlaygroundPage() {
   const [selectedProvider, setSelectedProvider] = useState<string>("");
   const [selectedProfile, setSelectedProfile] = useState<string>("");
   const [saveProfile, setSaveProfile] = useState<boolean>(true);
+  const [proxies, setProxies] = useState<ProxySummary[]>([]);
+  const [selectedProxy, setSelectedProxy] = useState<string>("");
   const profileSavable = useMemo(() => {
     const provider = providers?.find((p) => p.id === selectedProvider);
     return !selectedProfile || !provider || canSaveToProfile(provider, selectedProfile);
@@ -172,6 +175,18 @@ export default function PlaygroundPage() {
       .catch(() => {
         setProfilesEnabled(false);
       });
+    fetchProxies()
+      .then((r) => setProxies(r.proxies))
+      .catch(() => setProxies([]));
+    fetchSettings()
+      .then(({ sessionDefaults }) => {
+        if (sessionDefaults.profile) {
+          setSelectedProfile(sessionDefaults.profile);
+          setSaveProfile(sessionDefaults.saveProfile);
+        }
+        if (sessionDefaults.proxy) setSelectedProxy(sessionDefaults.proxy);
+      })
+      .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -280,15 +295,16 @@ export default function PlaygroundPage() {
 
     client.connect({
       provider: selectedProvider,
-      profile: selectedProfile || undefined,
+      profile: selectedProfile || "none",
       readOnly: selectedProfile ? !(saveProfile && profileSavable) : undefined,
+      proxy: selectedProxy || "none",
       token: authEnabled ? realToken : null,
       maxWidth: DEFAULT_VIEWPORT.width,
       maxHeight: DEFAULT_VIEWPORT.height,
       keepAliveSeconds,
     });
     clientRef.current = client;
-  }, [selectedProvider, selectedProfile, saveProfile, profileSavable, profiles, reportSave, authEnabled, realToken, urlInput, keepAliveSeconds]);
+  }, [selectedProvider, selectedProfile, saveProfile, profileSavable, profiles, reportSave, authEnabled, realToken, urlInput, keepAliveSeconds, selectedProxy]);
 
   const handleStop = useCallback(() => {
     clientRef.current?.close();
@@ -528,6 +544,12 @@ export default function PlaygroundPage() {
     [profileOptions],
   );
 
+  const proxySelectOptions = useMemo<SelectOption[]>(
+    () => [{ value: "", label: "(no proxy)", hint: proxies.length === 0 ? "No proxies saved. Add one in Proxies." : undefined }, ...proxyPickerOptions(proxies)],
+    [proxies],
+  );
+  const providerAppliesProxy = providers?.find((p) => p.id === selectedProvider)?.injectProxy === true;
+
   const rootClass = isFullscreen
     ? "fixed inset-0 z-50 bg-background flex flex-col p-4 gap-4"
     : "flex flex-col h-[calc(100dvh-6rem)] min-h-[28rem] gap-6";
@@ -584,6 +606,14 @@ export default function PlaygroundPage() {
             )}
 
             <Select
+              label="Proxy"
+              value={selectedProxy}
+              options={proxySelectOptions}
+              onChange={setSelectedProxy}
+              disabled={status === "live" || status === "connecting"}
+            />
+
+            <Select
               label="Duration"
               value={String(keepAliveSeconds)}
               options={KEEP_ALIVE_OPTIONS}
@@ -620,6 +650,14 @@ export default function PlaygroundPage() {
           {profilesEnabled && selectedProfile && !profileSavable && (
             <p className="text-[12px] text-muted-foreground -mt-2">
               {selectedProvider} only serves profile {providers?.find((p) => p.id === selectedProvider)?.profile}. Change it on{" "}
+              <a href="/web/providers/" className="text-foreground underline underline-offset-4 hover:text-foreground/80">Providers</a>
+              , or pick another provider.
+            </p>
+          )}
+
+          {selectedProxy && !providerAppliesProxy && (
+            <p className="text-[12px] text-muted-foreground -mt-2">
+              {selectedProvider} does not apply proxies. Turn on Apply proxies on{" "}
               <a href="/web/providers/" className="text-foreground underline underline-offset-4 hover:text-foreground/80">Providers</a>
               , or pick another provider.
             </p>

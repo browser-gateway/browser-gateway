@@ -17,15 +17,20 @@ import { Select } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CodeBlock } from "@/components/code-block";
 import { EndpointReference } from "@/components/endpoint-reference";
-import { fetchProfiles, type ProfileMetaItem, fetchProviders, routableProviders } from "@/lib/api";
+import { fetchProfiles, type ProfileMetaItem, fetchProviders, fetchProxies, fetchSettings, routableProviders, type ProxySummary } from "@/lib/api";
+import { proxyPickerOptions } from "@/lib/proxy-options";
 import { contentDoc, scrapeDoc, screenshotDoc } from "./docs";
 
 export default function ApiPage() {
   const [profiles, setProfiles] = useState<ProfileMetaItem[] | null>(null);
   const [profilesEnabled, setProfilesEnabled] = useState<boolean>(false);
   const [providers, setProviders] = useState<{ id: string }[]>([]);
+  const [proxies, setProxies] = useState<ProxySummary[]>([]);
+  const [defaultProxy, setDefaultProxy] = useState<string | null>(null);
 
   useEffect(() => {
+    fetchProxies().then((r) => setProxies(r.proxies)).catch(() => setProxies([]));
+    fetchSettings().then((r) => setDefaultProxy(r.sessionDefaults.proxy)).catch(() => setDefaultProxy(null));
     fetchProfiles()
       .then((r) => {
         setProfilesEnabled(r.enabled);
@@ -63,7 +68,7 @@ export default function ApiPage() {
             method="POST"
             path="/v1/screenshot"
             doc={screenshotDoc}
-            actionPanel={<ScreenshotForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} />}
+            actionPanel={<ScreenshotForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} proxies={proxies} defaultProxy={defaultProxy} />}
           />
         </TabsContent>
 
@@ -74,7 +79,7 @@ export default function ApiPage() {
             method="POST"
             path="/v1/content"
             doc={contentDoc}
-            actionPanel={<ContentForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} />}
+            actionPanel={<ContentForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} proxies={proxies} defaultProxy={defaultProxy} />}
           />
         </TabsContent>
 
@@ -85,7 +90,7 @@ export default function ApiPage() {
             method="POST"
             path="/v1/scrape"
             doc={scrapeDoc}
-            actionPanel={<ScrapeForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} />}
+            actionPanel={<ScrapeForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} proxies={proxies} defaultProxy={defaultProxy} />}
           />
         </TabsContent>
       </Tabs>
@@ -166,14 +171,17 @@ interface FormSectionProps {
   profiles: ProfileMetaItem[];
   profilesEnabled: boolean;
   providers: { id: string }[];
+  proxies: ProxySummary[];
+  defaultProxy: string | null;
 }
 
-function ScreenshotForm({ profiles, profilesEnabled, providers }: FormSectionProps) {
+function ScreenshotForm({ profiles, profilesEnabled, providers, proxies, defaultProxy }: FormSectionProps) {
   const [url, setUrl] = useState("https://example.com");
   const [format, setFormat] = useState<"png" | "jpeg">("png");
   const [fullPage, setFullPage] = useState(false);
   const [profile, setProfile] = useState("");
   const [provider, setProvider] = useState("");
+  const [proxy, setProxy] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -190,6 +198,7 @@ function ScreenshotForm({ profiles, profilesEnabled, providers }: FormSectionPro
       const body: Record<string, unknown> = { url, format, fullPage };
       if (profile) body.profile = profile;
       if (provider) body.provider = provider;
+      if (proxy) body.proxy = proxy;
       const res = await fetch("/v1/screenshot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -234,6 +243,7 @@ function ScreenshotForm({ profiles, profilesEnabled, providers }: FormSectionPro
       </FormRow>
       <ProfileDropdown profiles={profiles} profilesEnabled={profilesEnabled} value={profile} onChange={setProfile} />
       <ProviderDropdown providers={providers} value={provider} onChange={setProvider} />
+      <ProxyDropdown proxies={proxies} defaultProxy={defaultProxy} value={proxy} onChange={setProxy} />
 
       <RunButton loading={loading} onClick={handleRun} label="Run screenshot" />
       {error && <ErrorBlock message={error} />}
@@ -257,11 +267,12 @@ function ScreenshotForm({ profiles, profilesEnabled, providers }: FormSectionPro
   );
 }
 
-function ContentForm({ profiles, profilesEnabled, providers }: FormSectionProps) {
+function ContentForm({ profiles, profilesEnabled, providers, proxies, defaultProxy }: FormSectionProps) {
   const [url, setUrl] = useState("https://example.com");
   const [formats, setFormats] = useState<string[]>(["markdown"]);
   const [profile, setProfile] = useState("");
   const [provider, setProvider] = useState("");
+  const [proxy, setProxy] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ content: Record<string, string> } | null>(null);
@@ -276,6 +287,7 @@ function ContentForm({ profiles, profilesEnabled, providers }: FormSectionProps)
       const body: Record<string, unknown> = { url, formats };
       if (profile) body.profile = profile;
       if (provider) body.provider = provider;
+      if (proxy) body.proxy = proxy;
       const res = await fetch("/v1/content", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -318,6 +330,7 @@ function ContentForm({ profiles, profilesEnabled, providers }: FormSectionProps)
       </FormRow>
       <ProfileDropdown profiles={profiles} profilesEnabled={profilesEnabled} value={profile} onChange={setProfile} />
       <ProviderDropdown providers={providers} value={provider} onChange={setProvider} />
+      <ProxyDropdown proxies={proxies} defaultProxy={defaultProxy} value={proxy} onChange={setProxy} />
 
       <RunButton loading={loading} onClick={handleRun} label="Run content" />
       {error && <ErrorBlock message={error} />}
@@ -351,13 +364,14 @@ function ContentForm({ profiles, profilesEnabled, providers }: FormSectionProps)
   );
 }
 
-function ScrapeForm({ profiles, profilesEnabled, providers }: FormSectionProps) {
+function ScrapeForm({ profiles, profilesEnabled, providers, proxies, defaultProxy }: FormSectionProps) {
   const [url, setUrl] = useState("https://example.com");
   const [selectors, setSelectors] = useState<{ name: string; selector: string }[]>([
     { name: "title", selector: "h1" },
   ]);
   const [profile, setProfile] = useState("");
   const [provider, setProvider] = useState("");
+  const [proxy, setProxy] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(null);
@@ -384,6 +398,7 @@ function ScrapeForm({ profiles, profilesEnabled, providers }: FormSectionProps) 
       const body: Record<string, unknown> = { url, selectors: cleaned };
       if (profile) body.profile = profile;
       if (provider) body.provider = provider;
+      if (proxy) body.proxy = proxy;
       const res = await fetch("/v1/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -437,6 +452,7 @@ function ScrapeForm({ profiles, profilesEnabled, providers }: FormSectionProps) 
       </FormRow>
       <ProfileDropdown profiles={profiles} profilesEnabled={profilesEnabled} value={profile} onChange={setProfile} />
       <ProviderDropdown providers={providers} value={provider} onChange={setProvider} />
+      <ProxyDropdown proxies={proxies} defaultProxy={defaultProxy} value={proxy} onChange={setProxy} />
 
       <RunButton loading={loading} onClick={handleRun} label="Run scrape" />
       {error && <ErrorBlock message={error} />}
@@ -501,6 +517,30 @@ function ProviderDropdown(props: {
         />
         <p className="text-[11px] text-muted-foreground">
           Optional. Pin this request to one backend. No failover when pinned.
+        </p>
+      </div>
+    </FormRow>
+  );
+}
+
+function ProxyDropdown(props: {
+  proxies: ProxySummary[];
+  defaultProxy: string | null;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  if (props.proxies.length === 0) return null;
+  const options = [
+    { value: "", label: props.defaultProxy ? `Default (${props.defaultProxy})` : "Default (no proxy)" },
+    ...(props.defaultProxy ? [{ value: "none", label: "(no proxy)" }] : []),
+    ...proxyPickerOptions(props.proxies),
+  ];
+  return (
+    <FormRow label="Proxy">
+      <div className="space-y-1">
+        <Select value={props.value} options={options} onChange={props.onChange} fullWidth />
+        <p className="text-[11px] text-muted-foreground">
+          Optional. Loads the page through this proxy, on a provider with Apply proxies on.
         </p>
       </div>
     </FormRow>

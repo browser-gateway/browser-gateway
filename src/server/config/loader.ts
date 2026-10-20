@@ -3,28 +3,10 @@ import { parse } from "yaml";
 import { GatewayConfigSchema, type GatewayConfig } from "../../core/types.js";
 import { resolveDataDir } from "../setup/data-dir.js";
 import { resolvePort } from "../setup/port.js";
-
-function interpolateEnvVars(value: string): string {
-  return value.replace(/\$\{([^}]+)\}/g, (_, envVar) => {
-    const [varName, defaultValue] = envVar.split(":-");
-    return process.env[varName.trim()] ?? defaultValue?.trim() ?? "";
-  });
-}
-
-function deepInterpolate(obj: unknown): unknown {
-  if (typeof obj === "string") return interpolateEnvVars(obj);
-  if (Array.isArray(obj)) return obj.map(deepInterpolate);
-  if (obj !== null && typeof obj === "object") {
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(obj)) {
-      result[key] = deepInterpolate(value);
-    }
-    return result;
-  }
-  return obj;
-}
+import { emptyEnvTemplates, interpolateConfig, type EnvTemplates } from "./env-templates.js";
 
 export let loadedConfigPath: string | null = null;
+export let loadedEnvTemplates: EnvTemplates = emptyEnvTemplates();
 
 /**
  * The dashboard's config editor and the add-provider flow both read and
@@ -80,7 +62,8 @@ export function loadConfig(configPath?: string): GatewayConfig {
     }
   }
 
-  const interpolated = deepInterpolate(raw) as Record<string, unknown>;
+  const { value: interpolated, templates } = interpolateConfig(raw);
+  loadedEnvTemplates = templates;
   const result = GatewayConfigSchema.safeParse(interpolated);
 
   if (!result.success) {

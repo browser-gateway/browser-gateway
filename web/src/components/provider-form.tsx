@@ -15,6 +15,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, type SelectOption } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   addProvider,
@@ -66,6 +67,7 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
   const [profile, setProfile] = React.useState<string>(
     initial?.multiProfile ? "" : (initial?.profile ?? ""),
   );
+  const [injectProxy, setInjectProxy] = React.useState<boolean>(initial?.injectProxy ?? false);
   const [headers, setHeaders] = React.useState<HeaderRow[]>(() =>
     recordToHeaderRows(initial?.headers),
   );
@@ -174,6 +176,7 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
         maxConcurrent: maxConcurrent ? Number(maxConcurrent) : undefined,
         profile: profile.trim() ? profile.trim() : null,
         multiProfile: false,
+        injectProxy,
         headers: headersToRecord(headers),
       };
       let result: { ok: boolean; error?: string; details?: string[] };
@@ -354,6 +357,21 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
               <p className="text-xs text-muted-foreground mt-1.5">{profileHint}</p>
             </div>
           )}
+
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <label className="text-sm font-medium block" htmlFor="prov-inject-proxy">
+                {COPY.injectProxy.label}
+              </label>
+              <p className="text-xs text-muted-foreground mt-1.5">{COPY.injectProxy.hint}</p>
+            </div>
+            <Switch
+              id="prov-inject-proxy"
+              checked={injectProxy}
+              onCheckedChange={(next) => setInjectProxy(next)}
+              className="mt-0.5"
+            />
+          </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
             <div>

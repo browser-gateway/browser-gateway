@@ -5,6 +5,7 @@ import {
 } from "../../live-client/protocol.js";
 import type { PipelineSocket } from "../pipeline.js";
 import type { CdpMessage, CdpPlugin, SessionState } from "../types.js";
+import { scopeToBrowserContext } from "./proxy-context.js";
 import { base64ToBytes, listen } from "../socket-io.js";
 import { KEY_SPECS, MODIFIER_BITS } from "../../agent-tools/keys.js";
 import { LOGIN_ENTER_EXPRESSION, inputCounterExpression, loginClickExpression, probePointExpression } from "./login-detector.js";
@@ -60,6 +61,8 @@ export interface ScreencastBridgePluginOpts {
    *  the current document is still alive (e.g. to snapshot its storage). The
    *  navigation waits for a returned promise. */
   onBeforeNavigate?: (sessionId: string) => void | Promise<void>;
+  /** Browser context to open the viewed page in, read at session start. Default: the browser's default context. */
+  browserContextId?: () => string | null;
   logger?: (msg: string, data?: Record<string, unknown>) => void;
 }
 
@@ -87,9 +90,10 @@ interface FrameParams {
 export class ScreencastBridgePlugin implements CdpPlugin {
   readonly name = "screencast-bridge";
 
-  private readonly opts: Required<Omit<ScreencastBridgePluginOpts, "logger" | "viewer" | "onBeforeNavigate">> & {
+  private readonly opts: Required<Omit<ScreencastBridgePluginOpts, "logger" | "viewer" | "onBeforeNavigate" | "browserContextId">> & {
     logger?: (msg: string, data?: Record<string, unknown>) => void;
     onBeforeNavigate?: (sessionId: string) => void | Promise<void>;
+    browserContextId?: () => string | null;
     viewer: PipelineSocket;
   };
   private cdpSessionId: string | null = null;
@@ -131,6 +135,7 @@ export class ScreencastBridgePlugin implements CdpPlugin {
       clearCookiesOnStart: opts.clearCookiesOnStart ?? DEFAULTS.clearCookiesOnStart,
       logger: opts.logger,
       onBeforeNavigate: opts.onBeforeNavigate,
+      browserContextId: opts.browserContextId,
     };
   }
 
@@ -146,10 +151,12 @@ export class ScreencastBridgePlugin implements CdpPlugin {
 
   async onSessionStart(state: SessionState): Promise<void> {
     this.stateRef = state;
+    const contextId = this.opts.browserContextId?.() ?? null;
 
-    const created = await state.sendInternal<{ targetId: string }>("Target.createTarget", {
-      url: "about:blank",
-    });
+    const created = await state.sendInternal<{ targetId: string }>(
+      "Target.createTarget",
+      scopeToBrowserContext("Target.createTarget", { url: "about:blank" }, contextId),
+    );
     this.targetId = created.targetId;
 
     const attached = await state.sendInternal<{ sessionId: string }>("Target.attachToTarget", {
@@ -161,7 +168,9 @@ export class ScreencastBridgePlugin implements CdpPlugin {
     await state.sendInternal("Page.enable", {}, this.cdpSessionId);
     await this.presentAsChrome(state);
 
-    if (this.opts.clearCookiesOnStart) state.sendInternalOneWay("Storage.clearCookies", {});
+    if (this.opts.clearCookiesOnStart) {
+      state.sendInternalOneWay("Storage.clearCookies", scopeToBrowserContext("Storage.clearCookies", {}, contextId));
+    }
     state.sendInternalOneWay(
       "Page.addScriptToEvaluateOnNewDocument",
       { source: SAME_TAB_SCRIPT },

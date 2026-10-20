@@ -6,6 +6,7 @@
  * `providers` field differs. Extracting that here keeps the defaults in one
  * place so they can't drift.
  */
+import { SessionDefaultsSchema } from "../../core/session-defaults.js";
 import { ProfilesConfigSchema, ReplayConfigSchema, RestConfigSchema, type GatewayConfig, type ProviderConfig } from "../../core/types.js";
 
 export function buildMcpGatewayConfig(
@@ -39,6 +40,8 @@ export function buildMcpGatewayConfig(
     logging: { level: "info" },
     profiles: ProfilesConfigSchema.parse({}),
     rest: RestConfigSchema.parse({}),
+    proxies: {},
     replay: ReplayConfigSchema.parse({}),
+    sessionDefaults: SessionDefaultsSchema.parse({}),
   };
 }

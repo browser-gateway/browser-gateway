@@ -53,6 +53,93 @@ export async function fetchProviders(): Promise<ProviderListResponse> {
   return res.json();
 }
 
+export interface ProxySummary {
+  name: string;
+  server: string | null;
+  bypass: string[];
+  usable: boolean;
+  reason?: string;
+  hasCredentials: boolean;
+}
+
+export async function fetchProxies(): Promise<{ proxies: ProxySummary[] }> {
+  const res = await fetch(`${API_BASE}/v1/proxies`, fetchOpts);
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) throw new Error(`Proxies API error: ${res.status}`);
+  return res.json();
+}
+
+export interface ProxyInput {
+  address: string;
+  bypass?: string[];
+  clearCredentials?: boolean;
+}
+
+export interface ProxyExit {
+  ip: string;
+  country: string | null;
+  region: string | null;
+  city: string | null;
+  org: string | null;
+  timezone: string | null;
+}
+
+export type ProxyCheckResult =
+  | ({ ok: true; latencyMs: number } & ProxyExit)
+  | { ok: false; error: string; latencyMs: number };
+
+/** Address that reports the caller's public IP and location as JSON. */
+export const PROXY_CHECK_URL = "https://ipinfo.io/json";
+
+/** Loads the IP service in a real browser through the proxy and reports what that browser saw. */
+export async function checkProxyInBrowser(name: string, provider?: string): Promise<ProxyCheckResult> {
+  const start = Date.now();
+  const res = await sendJson<{ success?: boolean; error?: string; message?: string; data?: { content?: { text?: string } } }>(
+    "POST",
+    "/v1/content",
+    { url: PROXY_CHECK_URL, proxy: name, formats: ["text"], retries: 0, ...(provider ? { provider } : {}) },
+  );
+  const latencyMs = Date.now() - start;
+  if (!res.success) return { ok: false, error: res.error ?? res.message ?? "the browser check failed", latencyMs };
+  try {
+    const body = JSON.parse(res.data?.content?.text ?? "") as Record<string, unknown>;
+    const text = (v: unknown) => (typeof v === "string" && v ? v : null);
+    if (typeof body.ip !== "string") throw new Error("no ip");
+    return { ok: true, ip: body.ip, country: text(body.country), region: text(body.region), city: text(body.city), org: text(body.org), timezone: text(body.timezone), latencyMs };
+  } catch {
+    return { ok: false, error: "the page the browser loaded did not report an IP address", latencyMs };
+  }
+}
+
+async function sendJson<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    credentials: "include",
+  });
+  if (res.status === 401) throw new AuthError();
+  return res.json();
+}
+
+type SaveResult = { ok: boolean; error?: string; details?: string[] };
+
+export function addProxy(name: string, data: ProxyInput): Promise<SaveResult> {
+  return sendJson("POST", "/v1/proxies", { name, ...data });
+}
+
+export function updateProxy(name: string, data: ProxyInput): Promise<SaveResult> {
+  return sendJson("PUT", `/v1/proxies/${encodeURIComponent(name)}`, data);
+}
+
+export function deleteProxy(name: string): Promise<SaveResult> {
+  return sendJson("DELETE", `/v1/proxies/${encodeURIComponent(name)}`);
+}
+
+export function testProxy(name: string): Promise<ProxyCheckResult> {
+  return sendJson("POST", `/v1/proxies/${encodeURIComponent(name)}/test`);
+}
+
 export type CapabilityState = "supported" | "unsupported" | "unknown";
 export type CapabilityProbeStatus = "pending" | "probing" | "ready" | "failed";
 
@@ -101,6 +188,7 @@ export async function addProvider(data: {
   multiProfile?: boolean;
   headers?: Record<string, string>;
   enabled?: boolean;
+  injectProxy?: boolean;
 }): Promise<{ ok: boolean; error?: string; details?: string[] }> {
   const res = await fetch(`${API_BASE}/v1/providers`, {
     method: "POST",
@@ -113,7 +201,7 @@ export async function addProvider(data: {
 
 export async function updateProvider(
   id: string,
-  data: { url?: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null; multiProfile?: boolean; headers?: Record<string, string>; enabled?: boolean },
+  data: { url?: string; maxConcurrent?: number; priority?: number; weight?: number; profile?: string | null; multiProfile?: boolean; headers?: Record<string, string>; enabled?: boolean; injectProxy?: boolean },
 ): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`${API_BASE}/v1/providers/${id}`, {
     method: "PUT",
@@ -133,6 +221,47 @@ export async function deleteProvider(id: string): Promise<{ ok: boolean; error?:
 }
 
 export type Strategy = "priority-chain" | "round-robin" | "least-connections" | "latency-optimized" | "weighted";
+
+export interface SessionDefaults {
+  record: boolean;
+  profile: string | null;
+  saveProfile: boolean;
+  proxy: string | null;
+}
+
+export interface AdvancedSettings {
+  connectionTimeout: number;
+  healthCheckInterval: number;
+  sessionIdleTimeoutMs: number;
+  queueMaxSize: number;
+  queueTimeoutMs: number;
+  cooldownMs: number;
+  cooldownFailureThreshold: number;
+  cooldownMinRequestVolume: number;
+}
+
+export interface GatewaySettings {
+  sessionDefaults: SessionDefaults;
+  strategy: Strategy;
+  advanced: AdvancedSettings;
+  profilesEnabled: boolean;
+  appliesAfterRestart: (keyof AdvancedSettings)[];
+}
+
+export async function fetchSettings(): Promise<GatewaySettings> {
+  const res = await fetch(`${API_BASE}/v1/config/settings`, fetchOpts);
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) throw new Error(`Settings API error: ${res.status}`);
+  return res.json();
+}
+
+export function saveSessionDefaults(defaults: SessionDefaults): Promise<SaveResult & { sessionDefaults?: SessionDefaults }> {
+  return sendJson("PUT", "/v1/config/session-defaults", defaults);
+}
+
+export function saveAdvancedSettings(values: Partial<AdvancedSettings>): Promise<SaveResult & { advanced?: AdvancedSettings }> {
+  return sendJson("PUT", "/v1/config/advanced", values);
+}
 
 export async function setStrategy(strategy: Strategy): Promise<{ ok: boolean; strategy?: string; error?: string; allowed?: string[] }> {
   const res = await fetch(`${API_BASE}/v1/config/strategy`, {
@@ -300,6 +429,7 @@ export interface ProviderConfigItem {
   multiProfile: boolean;
   headers: Record<string, string> | null;
   enabled: boolean;
+  injectProxy: boolean;
 }
 
 /** Mirror of isEligibleProviderForProfile from src/core/providers/effective.ts. */
@@ -320,6 +450,7 @@ export interface SessionInfo {
   id: string;
   providerId: string;
   profileId: string | null;
+  proxyName: string | null;
   connectedAt: string;
   lastActivity: string;
   durationMs: number;
