@@ -10,7 +10,7 @@ export function makeProfilePluginFromAcquired(
   acquired: AcquiredProfile,
   profileLifecycle: ProfileLifecycle,
   logger: Logger,
-  opts: { providerId?: string; skipResidueCheck?: boolean } = {},
+  opts: { providerId?: string; skipResidueCheck?: boolean; browserContextId?: () => string | null } = {},
 ): ProfilePlugin {
   const loadedProfile = {
     version: PROFILE_VERSION,
@@ -26,6 +26,7 @@ export function makeProfilePluginFromAcquired(
     readOnly: acquired.readOnly,
     providerId: opts.providerId,
     skipResidueCheck: opts.skipResidueCheck,
+    browserContextId: opts.browserContextId,
     preloaded: acquired.readOnly
       ? { profile: loadedProfile }
       : {

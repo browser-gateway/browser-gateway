@@ -1,4 +1,7 @@
 import { redactConnectionUrl, redactConnectionUrlsInText, redactHeaders } from "../core/redact.js";
+import { buildProxyConfig, describeProxies, isAllowedResourceName, isDirectBrowserProxy, parseProxyUrl, RESERVED_NONE_NAME, type ProxyConfig, type ProxyInput } from "../core/proxy-config.js";
+import { checkProxyExit } from "./proxy-check.js";
+import { parseAdvancedSettingsBody, parseSessionDefaultsBody } from "./settings-body.js";
 import { safeTokenCompare } from "./util/token-compare.js";
 import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
@@ -279,6 +282,7 @@ export function createApp(
       id: s.id,
       providerId: s.providerId,
       profileId: s.profileId ?? null,
+      proxyName: s.proxyName ?? null,
       connectedAt: new Date(s.connectedAt).toISOString(),
       lastActivity: new Date(s.lastActivity).toISOString(),
       durationMs: Date.now() - s.connectedAt,
@@ -321,6 +325,64 @@ export function createApp(
     });
     if (failed) return c.json(failed, 500);
     return c.json({ ok: true, strategy });
+  });
+
+  const advancedSettings = () => {
+    const g = gateway.config.gateway;
+    return {
+      connectionTimeout: g.connectionTimeout,
+      healthCheckInterval: g.healthCheckInterval,
+      sessionIdleTimeoutMs: g.sessions.idleTimeoutMs,
+      queueMaxSize: g.queue.maxSize,
+      queueTimeoutMs: g.queue.timeoutMs,
+      cooldownMs: g.cooldown.defaultMs,
+      cooldownFailureThreshold: g.cooldown.failureThreshold,
+      cooldownMinRequestVolume: g.cooldown.minRequestVolume,
+    };
+  };
+
+  /** Session defaults, routing strategy and advanced settings, with the settings that apply only after a restart. */
+  app.get("/v1/config/settings", (c) => c.json({
+    sessionDefaults: gateway.config.sessionDefaults,
+    strategy: gateway.config.gateway.defaultStrategy,
+    advanced: advancedSettings(),
+    profilesEnabled: gateway.config.profiles.enabled,
+    appliesAfterRestart: ["healthCheckInterval", "cooldownMs", "cooldownFailureThreshold", "cooldownMinRequestVolume"],
+  }));
+
+  /** Sets the defaults new sessions use (record, profile, save changes, proxy). A connection parameter overrides each one, including `none`. */
+  app.put("/v1/config/session-defaults", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsed = parseSessionDefaultsBody(body, gateway.config);
+    if (parsed.errors) return c.json({ error: "Invalid session defaults", details: parsed.errors }, 400);
+    const previous = gateway.config.sessionDefaults;
+    gateway.config.sessionDefaults = parsed.data;
+    const failed = persistConfigOrRollback(gateway.config, () => { gateway.config.sessionDefaults = previous; });
+    if (failed) return c.json(failed, 500);
+    return c.json({ ok: true, sessionDefaults: parsed.data });
+  });
+
+  /** Updates connection timeout, idle timeout, queue, health-check and cooldown settings within their allowed ranges. */
+  app.put("/v1/config/advanced", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const parsed = parseAdvancedSettingsBody(body);
+    if (parsed.errors) return c.json({ error: "Invalid settings", details: parsed.errors }, 400);
+    const g = gateway.config.gateway;
+    const previous = structuredClone({ connectionTimeout: g.connectionTimeout, healthCheckInterval: g.healthCheckInterval, sessions: g.sessions, queue: g.queue, cooldown: g.cooldown });
+    const v = parsed.data;
+    if (v.connectionTimeout !== undefined) g.connectionTimeout = v.connectionTimeout;
+    if (v.healthCheckInterval !== undefined) g.healthCheckInterval = v.healthCheckInterval;
+    if (v.sessionIdleTimeoutMs !== undefined) g.sessions = { ...g.sessions, idleTimeoutMs: v.sessionIdleTimeoutMs };
+    g.queue = { ...g.queue, ...(v.queueMaxSize !== undefined ? { maxSize: v.queueMaxSize } : {}), ...(v.queueTimeoutMs !== undefined ? { timeoutMs: v.queueTimeoutMs } : {}) };
+    g.cooldown = {
+      ...g.cooldown,
+      ...(v.cooldownMs !== undefined ? { defaultMs: v.cooldownMs } : {}),
+      ...(v.cooldownFailureThreshold !== undefined ? { failureThreshold: v.cooldownFailureThreshold } : {}),
+      ...(v.cooldownMinRequestVolume !== undefined ? { minRequestVolume: v.cooldownMinRequestVolume } : {}),
+    };
+    const failed = persistConfigOrRollback(gateway.config, () => { Object.assign(g, previous); });
+    if (failed) return c.json(failed, 500);
+    return c.json({ ok: true, advanced: advancedSettings() });
   });
 
   const redactWebhookUrl = (url: string): string =>
@@ -466,9 +528,93 @@ export function createApp(
         multiProfile: p.multiProfile || state?.detectedKind === "browserserve" || false,
         headers: p.headers ? redactHeaders(p.headers) : null,
         enabled: p.enabled !== false,
+        injectProxy: p.injectProxy === true,
       };
     });
     return c.json({ providers });
+  });
+
+  /** Lists configured proxies. Passwords are never returned. */
+  app.get("/v1/proxies", (c) => c.json({ proxies: describeProxies(gateway.config.proxies) }));
+
+  const readProxyInput = async (c: Context): Promise<ProxyInput & { name?: unknown }> => {
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    return {
+      name: body.name,
+      address: text(body.address) ?? "",
+      username: text(body.username),
+      password: text(body.password),
+      bypass: Array.isArray(body.bypass) ? body.bypass.filter((b): b is string => typeof b === "string") : undefined,
+      clearCredentials: body.clearCredentials === true,
+    };
+  };
+
+  const saveProxy = (name: string, next: ProxyConfig | undefined, previous: ProxyConfig | undefined) => {
+    if (next) gateway.config.proxies[name] = next;
+    else delete gateway.config.proxies[name];
+    return persistConfigOrRollback(gateway.config, () => {
+      if (previous) gateway.config.proxies[name] = previous;
+      else delete gateway.config.proxies[name];
+    });
+  };
+
+  const NOT_DIRECT_REASON = "This gateway applies http or socks5 proxies without a login. A browser cannot use a proxy with a username, password or an https address on its own.";
+  const appliesDirectly = (config: ProxyConfig): boolean => {
+    const parsed = parseProxyUrl(config.url);
+    return parsed.ok && isDirectBrowserProxy(parsed.proxy);
+  };
+
+  /** Adds a proxy (http or socks5, no login). The name `none` is reserved. */
+  app.post("/v1/proxies", async (c) => {
+    const input = await readProxyInput(c);
+    const name = typeof input.name === "string" ? input.name.trim() : "";
+    if (!isAllowedResourceName(name)) {
+      return c.json({ error: `Proxy name must be 1-64 letters, numbers, hyphens or underscores, and not "${RESERVED_NONE_NAME}"` }, 400);
+    }
+    if (gateway.config.proxies[name]) return c.json({ error: `Proxy '${name}' already exists` }, 409);
+    const built = buildProxyConfig(input);
+    if (!built.ok) return c.json({ error: "Invalid proxy", details: [built.reason] }, 400);
+    if (!appliesDirectly(built.config)) return c.json({ error: "Invalid proxy", details: [NOT_DIRECT_REASON] }, 400);
+    const failed = saveProxy(name, built.config, undefined);
+    if (failed) return c.json(failed, 500);
+    return c.json({ ok: true, name }, 201);
+  });
+
+  /** Updates a proxy. A password is kept unless a new one is sent or credentials are cleared. */
+  app.put("/v1/proxies/:name", async (c) => {
+    const name = c.req.param("name");
+    const existing = gateway.config.proxies[name];
+    if (!existing) return c.json({ error: `Proxy '${name}' not found` }, 404);
+    const built = buildProxyConfig(await readProxyInput(c), existing);
+    if (!built.ok) return c.json({ error: "Invalid proxy", details: [built.reason] }, 400);
+    if (!appliesDirectly(built.config)) return c.json({ error: "Invalid proxy", details: [NOT_DIRECT_REASON] }, 400);
+    const failed = saveProxy(name, built.config, existing);
+    if (failed) return c.json(failed, 500);
+    return c.json({ ok: true, name });
+  });
+
+  /** Deletes a proxy. Refused while it is the default proxy. */
+  app.delete("/v1/proxies/:name", (c) => {
+    const name = c.req.param("name");
+    const existing = gateway.config.proxies[name];
+    if (!existing) return c.json({ error: `Proxy '${name}' not found` }, 404);
+    if (gateway.config.sessionDefaults.proxy === name) {
+      return c.json({ error: `Proxy '${name}' is the default proxy in Settings. Change the default first.` }, 409);
+    }
+    const failed = saveProxy(name, undefined, existing);
+    if (failed) return c.json(failed, 500);
+    return c.json({ ok: true, name });
+  });
+
+  /** Connects through the proxy from the gateway's machine and reports the exit IP address and country. */
+  app.post("/v1/proxies/:name/test", async (c) => {
+    const name = c.req.param("name");
+    const existing = gateway.config.proxies[name];
+    if (!existing) return c.json({ error: `Proxy '${name}' not found` }, 404);
+    const parsed = parseProxyUrl(existing.url);
+    if (!parsed.ok) return c.json({ ok: false, error: parsed.reason, latencyMs: 0 });
+    return c.json(await checkProxyExit(parsed.proxy));
   });
 
   app.post("/v1/providers/probe", async (c) => {

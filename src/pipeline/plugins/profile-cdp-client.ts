@@ -1,5 +1,6 @@
 import type { HelperPoolCdpClient } from "../../core/profile/helper-pool-client.js";
 import type { CdpMessage, SessionState } from "../types.js";
+import { scopeToBrowserContext } from "./proxy-context.js";
 
 type Handler = (params: unknown) => void;
 
@@ -11,10 +12,13 @@ type Handler = (params: unknown) => void;
 export class PluginCdpClient implements HelperPoolCdpClient {
   private readonly handlers = new Map<string, Set<Handler>>();
 
-  constructor(private readonly state: SessionState) {}
+  constructor(
+    private readonly state: SessionState,
+    private readonly browserContextId: () => string | null = () => null,
+  ) {}
 
   async send<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-    return this.state.sendInternal<T>(method, params);
+    return this.state.sendInternal<T>(method, scopeToBrowserContext(method, params, this.browserContextId()));
   }
 
   async sendOn<T = unknown>(
@@ -22,6 +26,7 @@ export class PluginCdpClient implements HelperPoolCdpClient {
     params: Record<string, unknown> = {},
     sessionId?: string,
   ): Promise<T> {
+    if (!sessionId) return this.send<T>(method, params);
     return this.state.sendInternal<T>(method, params, sessionId);
   }
 

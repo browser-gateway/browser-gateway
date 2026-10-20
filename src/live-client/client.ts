@@ -52,6 +52,8 @@ export interface ConnectOpts {
   profile?: string;
   /** Optional read-only profile flag — no lock, no writeback. */
   readOnly?: boolean;
+  /** Optional proxy name; the viewed page's traffic goes through it. */
+  proxy?: string;
   /** Auth token. In OSS this is `BG_TOKEN`; in SaaS this is a `bg_` router key. */
   token?: string | null;
   /** Screencast tuning — server enforces clamps. */
@@ -83,6 +85,7 @@ export class LiveClient {
     const params = new URLSearchParams({ provider: opts.provider });
     if (opts.profile) params.set("profile", opts.profile);
     if (opts.readOnly) params.set("readOnly", "1");
+    if (opts.proxy) params.set("proxy", opts.proxy);
     if (opts.token) {
       // SaaS router auth uses `?key=`; OSS uses `?token=`. Send both so a
       // single client works against either gateway. The server that doesn't

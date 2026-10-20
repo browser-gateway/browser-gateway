@@ -71,6 +71,8 @@ export interface ProfilePluginOpts {
   providerId?: string;
   /** Workspace id stamped into the planted marker (SaaS caller only). */
   workspaceId?: string;
+  /** Browser context the session's pages live in, when not the default one. Profile reads and writes target it. */
+  browserContextId?: () => string | null;
   /** Called on non-fatal issues. */
   logger?: (msg: string, data?: Record<string, unknown>) => void;
 }
@@ -188,7 +190,7 @@ export class ProfilePlugin implements CdpPlugin {
       }
     }
 
-    this.client = new PluginCdpClient(state);
+    this.client = new PluginCdpClient(state, this.opts.browserContextId);
     this.state = state;
     this.started = true;
 

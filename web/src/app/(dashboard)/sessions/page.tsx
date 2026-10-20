@@ -65,6 +65,7 @@ export default function SessionsPage() {
                 <TableHead className="text-[11px] uppercase tracking-wider h-9">Session</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider h-9">Provider</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider h-9">Profile</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider h-9">Proxy</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider h-9">Connected</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider h-9">Duration</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider h-9 text-right">Messages</TableHead>
@@ -73,7 +74,7 @@ export default function SessionsPage() {
             <TableBody>
               {!data || data.count === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="text-center text-[13px] text-muted-foreground py-12">
+                  <TableCell colSpan={7} className="text-center text-[13px] text-muted-foreground py-12">
                     {data ? "No active sessions" : "Loading..."}
                   </TableCell>
                 </TableRow>
@@ -89,7 +90,10 @@ export default function SessionsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="font-mono text-[12px] text-muted-foreground">
-                      {session.profileId ?? "—"}
+                      {session.profileId ?? "None"}
+                    </TableCell>
+                    <TableCell className="font-mono text-[12px] text-muted-foreground">
+                      {session.proxyName ?? "None"}
                     </TableCell>
                     <TableCell className="text-[12px] text-muted-foreground tabular-nums">
                       {new Date(session.connectedAt).toLocaleTimeString()}

@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Plus, Server } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Select, type SelectOption } from "@/components/ui/select";
+import { Select } from "@/components/ui/select";
 import { ProviderCard } from "@/components/provider-card";
 import { ProviderDeleteDialog } from "@/components/provider-delete-dialog";
 import {
@@ -20,14 +20,8 @@ import {
   type Strategy,
 } from "@/lib/api";
 import type { SiblingProvider } from "@shared/provider-form";
+import { STRATEGY_OPTIONS } from "@/lib/strategies";
 
-const STRATEGY_OPTIONS: SelectOption<Strategy>[] = [
-  { value: "priority-chain", label: "Priority chain", hint: "Always use the highest-priority provider that has room." },
-  { value: "round-robin", label: "Round robin", hint: "Spread sessions evenly across providers." },
-  { value: "least-connections", label: "Least busy", hint: "Send to whichever provider has the fewest active sessions." },
-  { value: "latency-optimized", label: "Fastest", hint: "Prefer the provider with the lowest recent latency." },
-  { value: "weighted", label: "Weighted", hint: "Split traffic by each provider's weight." },
-];
 
 interface TestResult {
   ok: boolean;

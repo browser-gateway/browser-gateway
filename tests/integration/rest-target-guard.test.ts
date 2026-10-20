@@ -28,6 +28,13 @@ describe("rejectUnsafeTargetUrl", () => {
     expect(await rejectUnsafeTargetUrl("https://example.com/", {})).toBeNull();
   });
 
+  it("rejects a host whose lookup fails or returns nothing", async () => {
+    lookup.mockRejectedValue(Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" }));
+    expect(await rejectUnsafeTargetUrl("http://flaky.example.com/", {})).toContain("could not be resolved");
+    lookup.mockResolvedValue([]);
+    expect(await rejectUnsafeTargetUrl("http://empty.example.com/", {})).toContain("could not be resolved");
+  });
+
   it("skips resolution for a host the policy allows", async () => {
     lookup.mockReset();
     const reason = await rejectUnsafeTargetUrl("http://staging.internal/", {

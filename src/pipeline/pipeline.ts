@@ -283,15 +283,17 @@ export class Pipeline {
         return;
       }
       if (this.ids.isInternal(msg.id)) return;
+      let rewritten: CdpMessage | null = null;
       for (const p of this.plugins) {
         if (!p.onResponse) continue;
         try {
-          p.onResponse(msg, this.state);
+          const result = p.onResponse(rewritten ?? msg, this.state);
+          if (result) rewritten = result;
         } catch (err) {
           this.logger({ kind: "plugin-error", data: { plugin: p.name, hook: "onResponse", err: errToString(err) } });
         }
       }
-      if (this.client) trySend(this.client, data);
+      if (this.client) trySend(this.client, rewritten ? JSON.stringify(rewritten) : data);
       return;
     }
 

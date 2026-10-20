@@ -8,6 +8,18 @@ import type {
   PoolStatus,
 } from "./types.js";
 
+/** Query value that keeps a gateway session default (proxy, profile) off a pool connection. */
+const NO_DEFAULT = "none";
+const ONE_SHOT_VIEWPORT = { width: 1280, height: 720 };
+
+export interface OneShotOptions {
+  targetProviderId?: string;
+  /** Saved proxy name, already resolved against the gateway default. */
+  proxy?: string;
+  /** Profile id; the session saves it back when it ends. */
+  profile?: string;
+}
+
 interface QueueEntry {
   resolve: (value: boolean) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -59,13 +71,13 @@ export class SessionPool {
    * so we don't want to return a session that's already attached to a
    * different one.
    */
-  async acquirePage(opts: { targetProviderId?: string } = {}): Promise<PageHandle> {
+  async acquirePage(opts: OneShotOptions = {}): Promise<PageHandle> {
     if (this.closed) {
       throw new Error("Pool is shut down");
     }
 
-    if (opts.targetProviderId) {
-      return this.acquirePinnedPage(opts.targetProviderId);
+    if (opts.targetProviderId || opts.proxy || opts.profile) {
+      return this.acquireOneShotPage(opts);
     }
 
     // Trigger proactive scaling BEFORE serialized acquisition
@@ -198,69 +210,57 @@ export class SessionPool {
   }
 
   /**
-   * Open a fresh CDP connection pinned to the requested provider, hand back a
-   * page handle that closes the underlying browser on release. Bypasses the
-   * cached pool intentionally — pool sessions are anonymous (any provider),
-   * and reusing one would defeat the pinning guarantee.
-   *
-   * The pin is enforced inside the WS-upgrade handler: we pass
-   * `?provider=<id>` on the loopback connect URL and the handler refuses to
-   * route anywhere else (including failover). 400/503 from the upgrade
-   * surface here as a thrown Error so the caller can map to the right HTTP
-   * status.
+   * Open a fresh connection for one request: pinned to a provider, through a
+   * proxy, or with a profile. Bypasses the cached pool, whose sessions are
+   * anonymous and shared. A proxied or profile session opens its page in the
+   * default context, which the gateway points at the proxied context holding
+   * the profile.
+   * The upgrade handler enforces the pin and the proxy; its 400/503 surface
+   * here as a thrown Error.
    */
-  private async acquirePinnedPage(providerId: string): Promise<PageHandle> {
+  private async acquireOneShotPage(opts: OneShotOptions): Promise<PageHandle> {
     const params = new URLSearchParams();
     if (this.token) params.set("token", this.token);
-    params.set("provider", providerId);
+    if (opts.targetProviderId) params.set("provider", opts.targetProviderId);
+    params.set("proxy", opts.proxy ?? NO_DEFAULT);
+    params.set("profile", opts.profile ?? NO_DEFAULT);
+    if (opts.profile) params.set("readOnly", "0");
+    params.set("session_record", "false");
     params.set("__pool", "1");
     const wsUrl = `ws://127.0.0.1:${this.gatewayPort}/v1/connect?${params.toString()}`;
 
     const id = randomUUID();
-    const session: PoolSession = {
-      id,
-      browser: null!,
-      state: "starting",
-      activePages: 0,
-      totalPagesServed: 0,
-      createdAt: Date.now(),
-      lastActivity: Date.now(),
-    };
-
     const browser = await chromium.connectOverCDP(wsUrl, {
       timeout: this.config.pageTimeoutMs,
     });
-    session.browser = browser;
-    session.state = "active";
 
     const handleId = randomUUID();
-    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const useGatewayPage = Boolean(opts.proxy || opts.profile);
+    const context = useGatewayPage
+      ? browser.contexts()[0] ?? (await browser.newContext())
+      : await browser.newContext({ viewport: ONE_SHOT_VIEWPORT });
     let page;
     try {
       page = await context.newPage();
+      if (useGatewayPage) await page.setViewportSize(ONE_SHOT_VIEWPORT);
     } catch (err) {
-      await context.close().catch(() => { /* ignore */ });
       await browser.close().catch(() => { /* ignore */ });
       throw err;
     }
 
-    session.activePages = 1;
-    session.totalPagesServed = 1;
-
     const handle: PageHandle = { id: handleId, sessionId: id, context, page, acquiredAt: Date.now() };
     this.activeHandles.set(handleId, handle);
 
-    // Wrap release so the one-shot browser closes after the page does.
     const originalContextClose = context.close.bind(context);
     context.close = async () => {
       try {
-        await originalContextClose();
+        if (!useGatewayPage) await originalContextClose();
       } finally {
         await browser.close().catch(() => { /* ignore */ });
       }
     };
 
-    this.logger.info({ handleId, providerId, sessionId: id }, "pool: pinned page acquired");
+    this.logger.info({ handleId, providerId: opts.targetProviderId, proxy: opts.proxy, sessionId: id }, "pool: one-shot page acquired");
     return handle;
   }
 
@@ -361,9 +361,13 @@ export class SessionPool {
   private async createSession(): Promise<PoolSession> {
     this.creatingSession = true;
     const id = randomUUID();
-    const wsUrl = this.token
-      ? `ws://127.0.0.1:${this.gatewayPort}/v1/connect?token=${this.token}&__pool=1`
-      : `ws://127.0.0.1:${this.gatewayPort}/v1/connect?__pool=1`;
+    const params = new URLSearchParams();
+    if (this.token) params.set("token", this.token);
+    params.set("proxy", NO_DEFAULT);
+    params.set("profile", NO_DEFAULT);
+    params.set("session_record", "false");
+    params.set("__pool", "1");
+    const wsUrl = `ws://127.0.0.1:${this.gatewayPort}/v1/connect?${params.toString()}`;
 
     const session: PoolSession = {
       id,

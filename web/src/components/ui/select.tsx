@@ -10,6 +10,8 @@ export interface SelectOption<T extends string = string> {
   value: T;
   label: string;
   hint?: string;
+  /** Shown but not selectable; put the reason in `hint`. */
+  disabled?: boolean;
 }
 
 interface Props<T extends string> {
@@ -122,11 +124,17 @@ export function Select<T extends string>({
                   key={o.value}
                   type="button"
                   role="menuitem"
+                  disabled={o.disabled}
+                  aria-disabled={o.disabled}
                   onClick={() => {
+                    if (o.disabled) return;
                     onChange(o.value);
                     close();
                   }}
-                  className="w-full flex items-start gap-2 px-2.5 py-1.5 rounded-md text-sm hover:bg-muted text-left"
+                  className={cn(
+                    "w-full flex items-start gap-2 px-2.5 py-1.5 rounded-md text-sm text-left",
+                    o.disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-muted",
+                  )}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">

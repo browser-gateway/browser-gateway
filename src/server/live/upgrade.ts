@@ -19,6 +19,9 @@ import { ProfileResidueError } from "../../pipeline/plugins/profile.js";
 import type { CdpPlugin } from "../../pipeline/types.js";
 import { openUpstream } from "../ws/upstream-open.js";
 import { makeProfilePluginFromAcquired } from "../profile/preloaded-profile-plugin.js";
+import { ProxyContextPlugin } from "../../pipeline/plugins/proxy-context.js";
+import { resolveRequestedProxy } from "../ws/proxy-request.js";
+import { applySessionDefaults } from "../../core/session-defaults.js";
 
 function extractBearer(header: string | undefined): string | undefined {
   if (!header || !header.startsWith("Bearer ")) return undefined;
@@ -48,7 +51,8 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
   const wss = new WebSocketServer({ noServer: true });
 
   async function handle(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
-    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const requested = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const url = applySessionDefaults(requested, { ...gateway.config.sessionDefaults, record: false });
 
     if (token) {
       const reqToken =
@@ -79,6 +83,13 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       writeHttpError(socket, 503, { error: `provider not healthy: ${providerId}` });
       return;
     }
+
+    const proxyRequest = resolveRequestedProxy(gateway, url, { targetProviderId: providerId });
+    if (!proxyRequest.ok) {
+      writeHttpError(socket, proxyRequest.status, proxyRequest.body);
+      return;
+    }
+    const requestedProxy = proxyRequest.requested;
 
     let providerWsUrl: string;
     try {
@@ -139,7 +150,7 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
     wss.handleUpgrade(req, socket, head, async (viewer) => {
       const liveViewer = bufferViewerMessages(viewer as unknown as PipelineSocket);
       logger.info(
-        { providerId, profileId, format, quality, maxWidth, maxHeight, everyNthFrame, keepAliveSeconds },
+        { providerId, profileId, proxy: requestedProxy?.name, format, quality, maxWidth, maxHeight, everyNthFrame, keepAliveSeconds },
         "live: viewer connected",
       );
 
@@ -154,12 +165,16 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       }
 
       const isBrowserserveProfile = acquired !== null && provider.detectedKind === "browserserve";
+      const proxyPlugin = requestedProxy
+        ? new ProxyContextPlugin({ proxyServer: requestedProxy.proxy.server, bypass: requestedProxy.bypass })
+        : null;
+      const proxiedContext = proxyPlugin ? () => proxyPlugin.proxiedContextId : undefined;
       const profilePlugin = acquired && profileLifecycle
         ? makeProfilePluginFromAcquired(
           acquired,
           profileLifecycle,
           logger,
-          { providerId: provider.id, skipResidueCheck: isBrowserserveProfile },
+          { providerId: provider.id, skipResidueCheck: isBrowserserveProfile, browserContextId: proxiedContext },
         )
         : null;
       const bridge = new ScreencastBridgePlugin({
@@ -172,10 +187,15 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
         keepAliveSeconds,
         onBeforeNavigate: profilePlugin ? (sessionId) => profilePlugin.snapshotPageBeforeLeave(sessionId) : undefined,
         clearCookiesOnStart: profilePlugin === null,
+        browserContextId: proxiedContext,
         logger: (msg, data) => logger.info(data ?? {}, msg),
       });
 
-      const plugins: CdpPlugin[] = profilePlugin ? [bridge, profilePlugin] : [bridge];
+      const plugins: CdpPlugin[] = [
+        ...(proxyPlugin ? [proxyPlugin] : []),
+        bridge,
+        ...(profilePlugin ? [profilePlugin] : []),
+      ];
 
       const pipeline = new Pipeline(
         upstreamReady.ws as unknown as PipelineSocket,

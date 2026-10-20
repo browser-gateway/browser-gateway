@@ -18,6 +18,8 @@ import { withBrowserPage } from "./executor.js";
 import type { PageOptions, PageResult } from "./executor.js";
 import { withProfilePage } from "./profile-executor.js";
 import { RestApiError } from "../../rest-schemas/index.js";
+import { RESERVED_NONE_NAME } from "../../core/proxy-config.js";
+import { resolveRequestedProxy } from "../ws/proxy-request.js";
 
 export interface DispatchDeps {
   pool: SessionPool;
@@ -43,22 +45,46 @@ export async function dispatchPageAction<T>(
     validateProviderPin(deps.gateway, options.provider, profileId !== undefined);
   }
 
+  const proxy = resolveRestProxy(deps.gateway, options);
+  if (proxy) {
+    if (profileId && !deps.profileLifecycle) throw profilesDisabled();
+    return withBrowserPage(deps.pool, deps.logger, { ...options, proxy, profile: profileId, retries: profileId ? 0 : options.retries }, action, runOpts);
+  }
+  const unproxied = { ...options, proxy: undefined };
+
   if (profileId) {
-    if (!deps.profileLifecycle) {
-      throw new RestApiError(
-        400,
-        "profile field used but profiles are not enabled on this gateway — set profiles.enabled: true in gateway.yml and configure BG_ENCRYPTION_KEY",
-      );
-    }
+    if (!deps.profileLifecycle) throw profilesDisabled();
     return withProfilePage(
       { gateway: deps.gateway, lifecycle: deps.profileLifecycle, logger: deps.logger },
       profileId,
-      { ...options, retries: 0 },
+      { ...unproxied, retries: 0 },
       action,
       runOpts,
     );
   }
-  return withBrowserPage(deps.pool, deps.logger, options, action, runOpts);
+  return withBrowserPage(deps.pool, deps.logger, unproxied, action, runOpts);
+}
+
+function profilesDisabled(): RestApiError {
+  return new RestApiError(
+    400,
+    "profile field used but profiles are not enabled on this gateway — set profiles.enabled: true in gateway.yml and configure BG_ENCRYPTION_KEY",
+  );
+}
+
+/**
+ * The proxy a REST request runs through: the body's `proxy`, else the
+ * gateway's default proxy; `none` means no proxy. Refused with the same
+ * reasons as a connection asking for it.
+ */
+function resolveRestProxy(gateway: Gateway, options: PageOptions): string | undefined {
+  const requested = options.proxy ?? gateway.config.sessionDefaults.proxy ?? undefined;
+  if (!requested || requested.toLowerCase() === RESERVED_NONE_NAME) return undefined;
+  const url = new URL("http://rest.invalid/");
+  url.searchParams.set("proxy", requested);
+  const result = resolveRequestedProxy(gateway, url, { targetProviderId: options.provider });
+  if (!result.ok) throw new RestApiError(result.status, String(result.body.error));
+  return requested;
 }
 
 /**

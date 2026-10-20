@@ -36,6 +36,10 @@ import { NodeReplayStorage } from "../replay/node-storage.js";
 import { CHUNK_MAX_BYTES, CHUNK_MAX_ELAPSED_MS } from "../replay/constants.js";
 import type { CdpPlugin } from "../../pipeline/types.js";
 import { makeProfilePluginFromAcquired } from "../profile/preloaded-profile-plugin.js";
+import { ProxyContextPlugin } from "../../pipeline/plugins/proxy-context.js";
+import { isEligibleProviderForProxy } from "../../core/providers/effective.js";
+import { resolveRequestedProxy, type RequestedProxy } from "./proxy-request.js";
+import { applySessionDefaults } from "../../core/session-defaults.js";
 
 /** How long to wait for a held profile lock to release before returning 409. */
 const PROFILE_LOCK_WAIT_MS = 15_000;
@@ -52,8 +56,10 @@ function anyProviderEligibleForProfile(gateway: Gateway, profileId: string): boo
 }
 
 interface PluginListInputs {
+  proxy: RequestedProxy | null;
   acquired: AcquiredProfile | null;
   isBrowserserveProfile: boolean;
+  freshBrowser: boolean;
   sessionRecord: boolean;
   sessionId: string;
   providerId: string;
@@ -67,12 +73,19 @@ interface PluginListInputs {
 function buildPluginList(inputs: PluginListInputs): CdpPlugin[] {
   const plugins: CdpPlugin[] = [];
 
+  const proxyPlugin = inputs.proxy
+    ? new ProxyContextPlugin({ proxyServer: inputs.proxy.proxy.server, bypass: inputs.proxy.bypass })
+    : null;
+  if (proxyPlugin) plugins.push(proxyPlugin);
+
   if (inputs.acquired && !inputs.isBrowserserveProfile && inputs.profileLifecycle) {
     plugins.push(makeProfilePluginFromAcquired(
       inputs.acquired,
       inputs.profileLifecycle,
       inputs.logger,
-      { providerId: inputs.providerId },
+      proxyPlugin
+        ? { providerId: inputs.providerId, skipResidueCheck: inputs.freshBrowser, browserContextId: () => proxyPlugin.proxiedContextId }
+        : { providerId: inputs.providerId },
     ));
   }
 
@@ -238,12 +251,21 @@ export function createWebSocketHandler(
       return;
     }
 
-    const sessionRecord = url.searchParams.get("session_record") === "true";
+    const effective = applySessionDefaults(url, gateway.config.sessionDefaults);
+    const sessionRecord = effective.searchParams.get("session_record") === "true";
 
     // Profile acquisition — lock + decrypt happen BEFORE provider selection so we
     // fail-fast on contention. Inject happens after we have a wsUrl.
-    const profileId = url.searchParams.get("profile");
-    const readOnly = isReadOnlyProfileRequest(url);
+    const profileId = effective.searchParams.get("profile");
+    const readOnly = isReadOnlyProfileRequest(effective);
+    const proxyRequest = resolveRequestedProxy(gateway, effective, {
+      targetProviderId: url.searchParams.get("provider") ?? undefined,
+    });
+    if (!proxyRequest.ok) {
+      respondError(socket, proxyRequest.status, proxyRequest.body);
+      return;
+    }
+    const requestedProxy = proxyRequest.requested;
     let acquired: AcquiredProfile | null = null;
     if (profileId !== null) {
       if (!profileLifecycle) {
@@ -381,6 +403,7 @@ export function createWebSocketHandler(
       }
 
       for (const provider of candidates) {
+        if (requestedProxy && !isEligibleProviderForProxy(provider.config, requestedProxy.proxy)) continue;
         if (!gateway.acquireSlot(provider.id, sessionId)) {
           logger.debug({ sessionId, providerId: provider.id }, "provider at capacity, trying next");
           continue;
@@ -389,10 +412,13 @@ export function createWebSocketHandler(
         // browserserve gets the profile out-of-band via HTTP drop-off;
         // that keeps the byte-pipe. External providers with a profile use
         // ProfilePlugin. session_record adds ScreencastCapturePlugin.
-        const isBrowserserveProfile = acquired !== null && provider.detectedKind === "browserserve";
+        const freshBrowser = provider.detectedKind === "browserserve";
+        const isBrowserserveProfile = acquired !== null && freshBrowser && requestedProxy === null;
         const plugins = buildPluginList({
+          proxy: requestedProxy,
           acquired,
           isBrowserserveProfile,
+          freshBrowser,
           sessionRecord,
           sessionId,
           providerId: provider.id,
@@ -410,6 +436,8 @@ export function createWebSocketHandler(
           const relayResult = await handlePipelineRelay({
             gateway, logger, req, socket, head, provider, sessionId,
             plugins,
+            profileId: acquired?.profileId,
+            proxyName: requestedProxy?.name,
             reconnectRegistry,
             ...handOff,
           });

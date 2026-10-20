@@ -133,6 +133,7 @@ describe("REST golden — locks public API response shapes", () => {
               "enabled": "boolean",
               "headers": "null",
               "id": "string",
+              "injectProxy": "boolean",
               "maxConcurrent": "number",
               "maxConcurrentSource": "string",
               "multiProfile": "boolean",
@@ -142,6 +143,50 @@ describe("REST golden — locks public API response shapes", () => {
               "weight": "number",
             },
           ],
+        },
+        "status": 200,
+      }
+    `);
+  });
+
+  it("/v1/proxies", async () => {
+    expect(await fetchShape("/v1/proxies")).toMatchInlineSnapshot(`
+      {
+        "shape": {
+          "proxies": [
+            "<empty>",
+          ],
+        },
+        "status": 200,
+      }
+    `);
+  });
+
+  it("/v1/config/settings", async () => {
+    expect(await fetchShape("/v1/config/settings")).toMatchInlineSnapshot(`
+      {
+        "shape": {
+          "advanced": {
+            "connectionTimeout": "number",
+            "cooldownFailureThreshold": "number",
+            "cooldownMinRequestVolume": "number",
+            "cooldownMs": "number",
+            "healthCheckInterval": "number",
+            "queueMaxSize": "number",
+            "queueTimeoutMs": "number",
+            "sessionIdleTimeoutMs": "number",
+          },
+          "appliesAfterRestart": [
+            "string",
+          ],
+          "profilesEnabled": "boolean",
+          "sessionDefaults": {
+            "profile": "null",
+            "proxy": "null",
+            "record": "boolean",
+            "saveProfile": "boolean",
+          },
+          "strategy": "string",
         },
         "status": 200,
       }

@@ -30,4 +30,6 @@ export type { ProfileStorage, LoadedProfile, LockToken } from "./plugins/profile
 export { ScreencastBridgePlugin } from "./plugins/screencast-bridge.js";
 export { bufferViewerMessages } from "./viewer-buffer.js";
 export { BrowserCloseAsDisconnectPlugin } from "./plugins/browser-close-as-disconnect.js";
+export { ProxyContextPlugin } from "./plugins/proxy-context.js";
+export type { ProxyContextPluginOpts } from "./plugins/proxy-context.js";
 export type { ScreencastBridgePluginOpts } from "./plugins/screencast-bridge.js";

@@ -49,6 +49,13 @@ const PROFILE_PARAM = {
     "Optional profile id. When set, the request runs with the saved cookies + storage of that profile and captures the latest state on success. Disables retries (one-shot).",
 };
 
+const PROXY_PARAM = {
+  name: "proxy",
+  type: "string",
+  description:
+    "Optional saved proxy name. Loads the page through that proxy on a provider with Apply proxies on. Without it the default proxy from Settings applies; none skips it.",
+};
+
 export const screenshotDoc: EndpointDoc = {
   description:
     "Capture a screenshot of any URL. Returns raw image bytes (PNG or JPEG). Supports full-page captures, element-only captures via CSS selector, and arbitrary region clips.",
@@ -67,6 +74,7 @@ export const screenshotDoc: EndpointDoc = {
     { name: "omitBackground", type: "boolean", default: "false", description: "Render with a transparent background (PNG only)." },
     { name: "scrollPage", type: "boolean", default: "false", description: "Scroll through the page before capture, useful for lazy-loaded content." },
     PROFILE_PARAM,
+    PROXY_PARAM,
   ],
   requestExample: `{
   "url": "https://example.com",
@@ -107,6 +115,7 @@ export const contentDoc: EndpointDoc = {
       description: "Which formats to extract. Any combination of: html, markdown, text, readability.",
     },
     PROFILE_PARAM,
+    PROXY_PARAM,
   ],
   requestExample: `{
   "url": "https://example.com",
@@ -163,6 +172,7 @@ export const scrapeDoc: EndpointDoc = {
     },
     { name: "screenshot", type: "boolean", default: "false", description: "Also capture a base64 PNG of the page." },
     PROFILE_PARAM,
+    PROXY_PARAM,
   ],
   requestExample: `{
   "url": "https://example.com",

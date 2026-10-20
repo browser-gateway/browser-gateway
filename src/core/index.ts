@@ -8,7 +8,7 @@ export { SessionTracker } from "./proxy/session.js";
 export { ReconnectRegistry } from "./proxy/reconnect.js";
 export { WebhookNotifier } from "./notifications/webhooks.js";
 export { SessionPool, PoolConfigSchema } from "./pool/index.js";
-export type { PoolConfig, PageHandle, PoolStatus } from "./pool/index.js";
+export type { OneShotOptions, PoolConfig, PageHandle, PoolStatus } from "./pool/index.js";
 export { GatewayConfigSchema, ProviderConfigSchema } from "./types.js";
 export type {
   GatewayConfig,

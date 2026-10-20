@@ -114,6 +114,15 @@ export function ProviderCard({
                 )}
               </dd>
 
+              {provider.injectProxy && (
+                <>
+                  <dt className="text-muted-foreground">Proxies</dt>
+                  <dd className="text-foreground">
+                    Applied to <span className="font-mono">?proxy=</span> connections
+                  </dd>
+                </>
+              )}
+
               <dt className="text-muted-foreground">Capacity</dt>
               <dd className="text-foreground">
                 {status?.active ?? 0} in use / {provider.maxConcurrent ?? "no limit"}

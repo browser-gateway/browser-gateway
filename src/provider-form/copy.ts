@@ -22,6 +22,10 @@ export const PROVIDER_FORM_COPY = {
     hintPinned: (slug: string) => `Only sessions that connect with ?profile=${slug} are sent here, and they save changes back.`,
     hintNone: "Takes every session. Sessions with a profile load it and save changes back.",
   },
+  injectProxy: {
+    label: "Apply proxies",
+    hint: "For browsers you run yourself. Connections with ?proxy=<name> can be sent here, and their pages use that proxy.",
+  },
   maxConcurrent: {
     label: "Max connections",
     placeholder: "No limit",
