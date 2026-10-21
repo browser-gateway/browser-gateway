@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -47,11 +47,14 @@ describe("profile proxy setting over REST", () => {
     expect((await call("PUT", "/profiles/ghost/settings", { proxy: null })).status).toBe(404);
   });
 
-  it("will not follow a symlinked settings file", async () => {
+  it("never reads or writes through a symlinked settings file", async () => {
     await call("POST", "/profiles/create", { id: "work" });
-    await writeFile(join(dir, "elsewhere.json"), JSON.stringify({ proxy: "home" }));
-    await symlink(join(dir, "elsewhere.json"), join(dir, "work", "settings.json"));
+    const target = join(dir, "elsewhere.json");
+    await writeFile(target, JSON.stringify({ proxy: "home" }));
+    await symlink(target, join(dir, "work", "settings.json"));
     await expect(store.getSettings("work")).rejects.toThrow(/not a regular file/);
-    await expect(store.putSettings("work", { proxy: null })).rejects.toThrow(/symlinked/);
+    await store.putSettings("work", { proxy: null });
+    expect(JSON.parse(await readFile(target, "utf8"))).toEqual({ proxy: "home" });
+    expect(await store.getSettings("work")).toEqual({ proxy: null });
   });
 });

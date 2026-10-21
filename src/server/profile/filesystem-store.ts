@@ -1,4 +1,6 @@
-import { readFile, mkdir, rm, readdir, stat, lstat, statfs } from "node:fs/promises";
+import { readFile, mkdir, rm, readdir, stat, lstat, statfs, open, rename, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { constants } from "node:fs";
 import { existsSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import writeFileAtomic from "write-file-atomic";
@@ -150,13 +152,22 @@ export class FilesystemProfileStore implements ProfileStore {
   async getSettings(id: string): Promise<ProfileSettings | null> {
     this.assertProfileId(id);
     const path = this.settingsPath(id);
-    if (!existsSync(path)) return null;
-    const lst = await lstat(path);
-    if (lst.isSymbolicLink() || !lst.isFile()) {
-      throw new Error(`profile settings path is not a regular file: ${path}`);
+    let handle;
+    try {
+      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return null;
+      if (code === "ELOOP") throw new Error(`profile settings path is not a regular file: ${path}`, { cause: err });
+      throw err;
     }
-    const parsed = ProfileSettingsSchema.safeParse(JSON.parse(await readFile(path, "utf8")));
-    return parsed.success ? parsed.data : null;
+    try {
+      if (!(await handle.stat()).isFile()) throw new Error(`profile settings path is not a regular file: ${path}`);
+      const parsed = ProfileSettingsSchema.safeParse(JSON.parse(await handle.readFile("utf8")));
+      return parsed.success ? parsed.data : null;
+    } finally {
+      await handle.close();
+    }
   }
 
   async putSettings(id: string, settings: ProfileSettings): Promise<void> {
@@ -165,10 +176,15 @@ export class FilesystemProfileStore implements ProfileStore {
     const dir = this.profileDir(id);
     await mkdir(dir, { recursive: true, mode: 0o700 });
     const path = this.settingsPath(id);
-    if (existsSync(path) && (await lstat(path)).isSymbolicLink()) {
-      throw new Error(`refusing to overwrite symlinked profile settings path: ${path}`);
+    const temp = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+    // `wx` never opens an existing file or link; rename replaces a link at `path` instead of writing through it.
+    await writeFile(temp, JSON.stringify(valid), { mode: 0o600, flag: "wx" });
+    try {
+      await rename(temp, path);
+    } catch (err) {
+      await rm(temp, { force: true });
+      throw err;
     }
-    await writeFileAtomic(path, JSON.stringify(valid), { mode: 0o600 });
   }
 
   private settingsPath(id: string): string {

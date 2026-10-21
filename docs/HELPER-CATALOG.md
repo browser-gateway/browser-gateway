@@ -504,8 +504,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `pickUpProfile(base: string, authToken: string | null, token: string, timeoutMs = 20_000) → Promise<BrowserservePayload | null>` (line 76) — Picks up the captured profile once the session ends, polling past 404 until
 ### `src/server/profile/filesystem-store.ts`
 
-- **interface** `interface FilesystemStoreOptions` (line 25)
-- **class** `class FilesystemProfileStore` (line 31)
+- **interface** `interface FilesystemStoreOptions` (line 27)
+- **class** `class FilesystemProfileStore` (line 33)
 ### `src/server/profile/keycheck.ts`
 
 - **const** `const KEYCHECK_FILE` (line 18)
