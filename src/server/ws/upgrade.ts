@@ -39,7 +39,6 @@ import { makeProfilePluginFromAcquired } from "../profile/preloaded-profile-plug
 import { ProxyContextPlugin } from "../../pipeline/plugins/proxy-context.js";
 import { isEligibleProviderForProxy } from "../../core/providers/effective.js";
 import { resolveRequestedProxy, type RequestedProxy } from "./proxy-request.js";
-import { applySessionDefaults } from "../../core/session-defaults.js";
 
 /** How long to wait for a held profile lock to release before returning 409. */
 const PROFILE_LOCK_WAIT_MS = 15_000;
@@ -251,7 +250,7 @@ export function createWebSocketHandler(
       return;
     }
 
-    const effective = applySessionDefaults(url, gateway.config.sessionDefaults);
+    const effective = await applySessionDefaultsForUrl(url, gateway.config, profileLifecycle, logger);
     const sessionRecord = effective.searchParams.get("session_record") === "true";
 
     // Profile acquisition — lock + decrypt happen BEFORE provider selection so we
@@ -505,6 +504,7 @@ export function createWebSocketHandler(
 }
 
 import { resolveWsUrl, isHttpUrl } from "../../core/providers/cdp.js";
+import { applySessionDefaultsForUrl } from "../profile/profile-proxy.js";
 
 // L1 fix: bounded LRU. If you remove and re-add providers many times the cache
 // would otherwise grow forever; in practice the cap is reached by anyone using

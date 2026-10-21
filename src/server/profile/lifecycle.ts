@@ -19,6 +19,7 @@ import {
 import { mergeAndPrepareProfile } from "../../core/profile/save.js";
 import type { WsCDPClient } from "../../core/profile/cdp-client.js";
 import type { LockToken, ProfileStore } from "../../core/profile/store.js";
+import type { ProfileSettings } from "../../core/profile/types.js";
 
 export interface LifecycleOptions {
   /** Lock TTL: maximum time we'll hold a profile lock for one session. */
@@ -85,6 +86,11 @@ export class ProfileLifecycle {
     private readonly logger: Logger,
     private readonly opts: LifecycleOptions = {},
   ) {}
+
+  /** The profile's plain settings, or null when none were saved. */
+  async getSettings(id: string): Promise<ProfileSettings | null> {
+    return this.store.getSettings ? this.store.getSettings(id) : null;
+  }
 
   /** Acquires the profile lock and decrypts the stored blob if any. */
   async acquire(profileId: string): Promise<AcquiredProfile> {

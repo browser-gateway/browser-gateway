@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SessionDefaultsSchema, applySessionDefaults, type SessionDefaults } from "../../src/core/session-defaults.js";
+import { SessionDefaultsSchema, applySessionDefaults, applySessionDefaultsWithProfileProxy, sessionProfileId, type SessionDefaults } from "../../src/core/session-defaults.js";
 
 const OFF = SessionDefaultsSchema.parse({});
 const ALL: SessionDefaults = { record: true, profile: "work", saveProfile: false, proxy: "home" };
@@ -64,5 +64,24 @@ describe("applySessionDefaults override table", () => {
     const url = new URL("ws://g/v1/connect?token=t");
     applySessionDefaults(url, ALL);
     expect(url.search).toBe("?token=t");
+  });
+});
+
+describe("profile proxy between the url and the default proxy", () => {
+  const defaults = { record: false, profile: null, saveProfile: false, proxy: "dflt" };
+  const at = (q: string) => new URL(`ws://g/v1/connect${q}`);
+
+  it("uses the profile's proxy when the url names none, and the url's choice otherwise", () => {
+    expect(applySessionDefaultsWithProfileProxy(at("?profile=p"), defaults, "pp").searchParams.get("proxy")).toBe("pp");
+    expect(applySessionDefaultsWithProfileProxy(at("?profile=p&proxy=other"), defaults, "pp").searchParams.get("proxy")).toBe("other");
+    expect(applySessionDefaultsWithProfileProxy(at("?profile=p&proxy=none"), defaults, "pp").searchParams.has("proxy")).toBe(false);
+    expect(applySessionDefaultsWithProfileProxy(at("?profile=p"), defaults, null).searchParams.get("proxy")).toBe("dflt");
+  });
+
+  it("finds the profile a url will use, including the default profile, and none for profile=none", () => {
+    expect(sessionProfileId(at("?profile=p"), defaults)).toBe("p");
+    expect(sessionProfileId(at(""), { ...defaults, profile: "d" })).toBe("d");
+    expect(sessionProfileId(at("?profile=none"), { ...defaults, profile: "d" })).toBeNull();
+    expect(sessionProfileId(at(""), defaults)).toBeNull();
   });
 });

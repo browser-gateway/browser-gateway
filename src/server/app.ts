@@ -23,6 +23,7 @@ import { loadedConfigPath } from "./config/loader.js";
 import type { SessionPool } from "../core/pool/index.js";
 import { createRestRoutes } from "./rest/index.js";
 import { createDisabledProfileRoutes, createProfileRoutes } from "./rest/profiles.js";
+import { profilesUsingProxy } from "./profile/profile-proxy.js";
 import { createReplayRoutes } from "./rest/replays.js";
 import type { ReplayStore } from "./replay/index.js";
 import type { ReconnectRegistry } from "../core/proxy/reconnect.js";
@@ -595,12 +596,16 @@ export function createApp(
   });
 
   /** Deletes a proxy. Refused while it is the default proxy. */
-  app.delete("/v1/proxies/:name", (c) => {
+  app.delete("/v1/proxies/:name", async (c) => {
     const name = c.req.param("name");
     const existing = gateway.config.proxies[name];
     if (!existing) return c.json({ error: `Proxy '${name}' not found` }, 404);
     if (gateway.config.sessionDefaults.proxy === name) {
       return c.json({ error: `Proxy '${name}' is the default proxy in Settings. Change the default first.` }, 409);
+    }
+    const usedBy = profile ? await profilesUsingProxy(profile.store, name) : [];
+    if (usedBy.length > 0) {
+      return c.json({ error: `Proxy '${name}' is set on profile ${usedBy.map((id) => `'${id}'`).join(", ")}. Change those profiles first.` }, 409);
     }
     const failed = saveProxy(name, undefined, existing);
     if (failed) return c.json(failed, 500);

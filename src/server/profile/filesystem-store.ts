@@ -8,6 +8,7 @@ import {
   decodeBlobHeader,
   type ProfileMeta,
 } from "../../core/profile/index.js";
+import { ProfileSettingsSchema, type ProfileSettings } from "../../core/profile/types.js";
 import type { LockToken, ProfileStore } from "../../core/profile/store.js";
 import { KEYCHECK_FILE } from "./keycheck.js";
 
@@ -144,6 +145,34 @@ export class FilesystemProfileStore implements ProfileStore {
     } catch {
       // Best-effort release. Stale lock TTL handles forgotten unlocks.
     }
+  }
+
+  async getSettings(id: string): Promise<ProfileSettings | null> {
+    this.assertProfileId(id);
+    const path = this.settingsPath(id);
+    if (!existsSync(path)) return null;
+    const lst = await lstat(path);
+    if (lst.isSymbolicLink() || !lst.isFile()) {
+      throw new Error(`profile settings path is not a regular file: ${path}`);
+    }
+    const parsed = ProfileSettingsSchema.safeParse(JSON.parse(await readFile(path, "utf8")));
+    return parsed.success ? parsed.data : null;
+  }
+
+  async putSettings(id: string, settings: ProfileSettings): Promise<void> {
+    this.assertProfileId(id);
+    const valid = ProfileSettingsSchema.parse(settings);
+    const dir = this.profileDir(id);
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    const path = this.settingsPath(id);
+    if (existsSync(path) && (await lstat(path)).isSymbolicLink()) {
+      throw new Error(`refusing to overwrite symlinked profile settings path: ${path}`);
+    }
+    await writeFileAtomic(path, JSON.stringify(valid), { mode: 0o600 });
+  }
+
+  private settingsPath(id: string): string {
+    return join(this.profileDir(id), "settings.json");
   }
 
   private profileDir(id: string): string {

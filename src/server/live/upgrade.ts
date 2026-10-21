@@ -22,6 +22,7 @@ import { makeProfilePluginFromAcquired } from "../profile/preloaded-profile-plug
 import { ProxyContextPlugin } from "../../pipeline/plugins/proxy-context.js";
 import { resolveRequestedProxy } from "../ws/proxy-request.js";
 import { applySessionDefaults } from "../../core/session-defaults.js";
+import { applySessionDefaultsForUrl } from "../profile/profile-proxy.js";
 
 function extractBearer(header: string | undefined): string | undefined {
   if (!header || !header.startsWith("Bearer ")) return undefined;
@@ -52,7 +53,8 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
 
   async function handle(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const requested = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
-    const url = applySessionDefaults(requested, { ...gateway.config.sessionDefaults, record: false });
+    const liveDefaults = { ...gateway.config.sessionDefaults, record: false };
+    let url = applySessionDefaults(requested, liveDefaults);
 
     if (token) {
       const reqToken =
@@ -67,6 +69,7 @@ export function createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) {
       writeHttpError(socket, 503, { error: "Gateway is shutting down" });
       return;
     }
+    url = await applySessionDefaultsForUrl(requested, gateway.config, profileLifecycle, logger, liveDefaults);
 
     const providerId = url.searchParams.get("provider");
     if (!providerId) {
