@@ -535,7 +535,7 @@ export function createApp(
     return c.json({ providers });
   });
 
-  /** Lists configured proxies. Passwords are never returned. */
+  /** Lists configured proxies. A proxy saved with a login before this release is shown as unusable, and its password is never returned. */
   app.get("/v1/proxies", (c) => c.json({ proxies: describeProxies(gateway.config.proxies) }));
 
   const readProxyInput = async (c: Context): Promise<ProxyInput & { name?: unknown }> => {
@@ -582,7 +582,7 @@ export function createApp(
     return c.json({ ok: true, name }, 201);
   });
 
-  /** Updates a proxy. A password is kept unless a new one is sent or credentials are cleared. */
+  /** Updates a proxy (http or socks5, no login). */
   app.put("/v1/proxies/:name", async (c) => {
     const name = c.req.param("name");
     const existing = gateway.config.proxies[name];

@@ -72,7 +72,7 @@ const RESOURCE_HELP: Record<string, { title: string; description: string; overvi
   proxies: {
     title: "Proxies",
     description: "Proxies sessions can be sent through.",
-    overview: "Add, update, delete and test the proxies a session can use with `?proxy=<name>` or as the default proxy. Only providers with Apply proxies on can use them. Passwords are write-only.",
+    overview: "Add, update, delete and test the proxies a session can use with `?proxy=<name>` or as the default proxy. Only providers with Apply proxies on can use them. The gateway accepts only proxies a browser can use directly: http or socks5, no login.",
   },
   profiles: {
     title: "Profiles",
