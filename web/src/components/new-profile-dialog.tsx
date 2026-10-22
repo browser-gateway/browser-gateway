@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * "New Profile" dialog — explicit create flow.
+ * "New Profile" drawer — explicit create flow.
  *
  *   1. User types a profile id
  *   2. Real-time validation (matches PROFILE_ID_REGEX)
@@ -18,14 +18,15 @@
 import { useEffect, useState } from "react";
 import { Check, Copy, Loader2, Plus } from "lucide-react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { ProfileProxyField } from "./profile-proxy-field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { buildConnectUrl, maskUrlToken, validateProfileId } from "@/lib/connect-url";
@@ -50,6 +51,7 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
   const [copied, setCopied] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [serverErr, setServerErr] = useState<string | null>(null);
+  const [proxy, setProxy] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -59,6 +61,7 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
         setCopied(false);
         setStatus("idle");
         setServerErr(null);
+        setProxy(null);
       }, 200);
     }
   }, [open]);
@@ -94,7 +97,7 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
     setStatus("creating");
     setServerErr(null);
     try {
-      await createProfile(id);
+      await createProfile(id, proxy);
       setStatus("created");
       onCreated?.();
       // Close shortly after success so the user sees the confirmation flash.
@@ -106,8 +109,8 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger
         render={
           <Button size="sm">
             <Plus className="size-3.5 mr-1.5" />
@@ -115,15 +118,15 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
           </Button>
         }
       />
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Create a new profile</DialogTitle>
-          <DialogDescription>
+      <SheetContent side="right" className="data-[side=right]:sm:max-w-md">
+        <SheetHeader className="pr-12">
+          <SheetTitle>Create a new profile</SheetTitle>
+          <SheetDescription>
             Pick an id. Creating it writes an empty profile so the row appears in the list immediately. The first session that connects with this id fills it with real cookies and storage on disconnect.
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
 
-        <div className="space-y-4 min-w-0">
+        <div className="space-y-4 min-w-0 px-4 overflow-y-auto">
           <div className="space-y-1.5">
             <label htmlFor="profile-id" className="text-[12px] font-medium text-foreground/80">
               Profile id
@@ -147,6 +150,8 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
               </p>
             )}
           </div>
+
+          <ProfileProxyField value={proxy} onChange={setProxy} />
 
           {realUrl && (
             <div className="space-y-1.5">
@@ -184,7 +189,7 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
           )}
         </div>
 
-        <DialogFooter className="flex-row sm:flex-row gap-2">
+        <SheetFooter className="flex-row justify-end gap-2 border-t border-border">
           <Button
             variant="outline"
             size="sm"
@@ -207,8 +212,8 @@ export function NewProfileDialog({ authEnabled, onCreated, triggerLabel = "New P
               <><Plus className="size-3.5 mr-1.5" />Create profile</>
             )}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }

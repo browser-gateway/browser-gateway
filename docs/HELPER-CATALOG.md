@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-10-20
+Generated: 2026-10-21
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -239,11 +239,14 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface ProfileCaptureMeta` (line 54)
 - **interface** `interface SkippedOrigin` (line 61)
 - **interface** `interface ProfileMeta` (line 66)
-- **interface** `interface KdfParams` (line 73)
-- **const** `const DEFAULT_KDF_PARAMS: KdfParams` (line 82)
-- **interface** `interface WrappedDek` (line 91)
-- **interface** `interface Keycheck` (line 98)
-- **const** `const KeycheckSchema` (line 108)
+- **const** `const ProfileSettingsSchema` (line 74) — Plain (unencrypted) settings kept beside a profile's data.
+- **type** `type ProfileSettings` (line 78)
+- **const** `const DEFAULT_PROFILE_SETTINGS: ProfileSettings` (line 80)
+- **interface** `interface KdfParams` (line 82)
+- **const** `const DEFAULT_KDF_PARAMS: KdfParams` (line 91)
+- **interface** `interface WrappedDek` (line 100)
+- **interface** `interface Keycheck` (line 107)
+- **const** `const KeycheckSchema` (line 117)
 ### `src/core/providers/capabilities-shared.ts`
 
 - **interface** `interface ProbeInit` (line 9)
@@ -332,6 +335,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **const** `const SessionDefaultsSchema` (line 4)
 - **type** `type SessionDefaults` (line 11)
 - **fn** `applySessionDefaults(url: URL, defaults: SessionDefaults) → URL` (line 21) — Fills the gateway's session defaults into a connection url wherever the url
+- **fn** `sessionProfileId(url: URL, defaults: SessionDefaults) → string | null` (line 49) — The profile a connection url will use once defaults apply, or null for none.
+- **fn** `applySessionDefaultsWithProfileProxy(url: URL, defaults: SessionDefaults, profileProxy: string | null) → URL` (line 60) — `applySessionDefaults` with the profile's own proxy between the url and the
 ### `src/core/target-url.ts`
 
 - **fn** `isPrivateAddress(host: string) → boolean` (line 14) — True when the literal address is loopback, link-local, or in a private range.
@@ -378,8 +383,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 40)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 176)
+- **interface** `interface ProfileAppDeps` (line 41)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 177)
 ### `src/server/browse/cli.ts`
 
 - **fn** `runBrowseCli(argv: string[]) → Promise<number>` (line 13)
@@ -441,8 +446,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string, templates: EnvTemplates = loadedEnvTemplates) → void` (line 8)
 ### `src/server/live/upgrade.ts`
 
-- **interface** `interface CreateLiveHandlerDeps` (line 42)
-- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 49)
+- **interface** `interface CreateLiveHandlerDeps` (line 43)
+- **fn** `createLiveUpgradeHandler(deps: CreateLiveHandlerDeps) → unknown` (line 50)
 ### `src/server/mcp/config-defaults.ts`
 
 - **fn** `buildMcpGatewayConfig(port: number, providers: Record<string, ProviderConfig>) → GatewayConfig` (line 12)
@@ -499,8 +504,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `pickUpProfile(base: string, authToken: string | null, token: string, timeoutMs = 20_000) → Promise<BrowserservePayload | null>` (line 76) — Picks up the captured profile once the session ends, polling past 404 until
 ### `src/server/profile/filesystem-store.ts`
 
-- **interface** `interface FilesystemStoreOptions` (line 24)
-- **class** `class FilesystemProfileStore` (line 30)
+- **interface** `interface FilesystemStoreOptions` (line 27)
+- **class** `class FilesystemProfileStore` (line 33)
 ### `src/server/profile/keycheck.ts`
 
 - **const** `const KEYCHECK_FILE` (line 18)
@@ -513,18 +518,23 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `rewrapKeycheck(storePath: string, oldPassword: string, newPassword: string) → Promise<void>` (line 107)
 ### `src/server/profile/lifecycle.ts`
 
-- **interface** `interface LifecycleOptions` (line 23)
-- **interface** `interface AcquiredProfile` (line 38)
-- **type** `type LifecycleFailureReason` (line 54)
-- **fn** `isReadOnlyProfileRequest(url: URL) → boolean` (line 62) — True when a connect or live url asks to open its profile without saving.
-- **class** `class LifecycleError` (line 66)
-- **class** `class ProfileLifecycle` (line 77) — Orchestrates acquire/inject/commit/release for a profile around one session.
+- **interface** `interface LifecycleOptions` (line 24)
+- **interface** `interface AcquiredProfile` (line 39)
+- **type** `type LifecycleFailureReason` (line 55)
+- **fn** `isReadOnlyProfileRequest(url: URL) → boolean` (line 63) — True when a connect or live url asks to open its profile without saving.
+- **class** `class LifecycleError` (line 67)
+- **class** `class ProfileLifecycle` (line 78) — Orchestrates acquire/inject/commit/release for a profile around one session.
 ### `src/server/profile/node-profile-storage.ts`
 
 - **class** `class NodeProfileStorage` (line 17) — Node-side {@link ProfileStorage} adapter. Wraps the existing
 ### `src/server/profile/preloaded-profile-plugin.ts`
 
 - **fn** `makeProfilePluginFromAcquired(acquired: AcquiredProfile, profileLifecycle: ProfileLifecycle, logger: Logger, opts: { providerId?: string; skipResidueCheck?: boolean; browserContextId?: () => string | null } = {}) → ProfilePlugin` (line 9) — Wraps an already-acquired profile as a preloaded {@link ProfilePlugin}.
+### `src/server/profile/profile-proxy.ts`
+
+- **fn** `profileProxyFor(store: SettingsSource | undefined, config: GatewayConfig, profileId: string | null, logger?: Logger) → Promise<string | null>` (line 10) — The saved proxy a profile keeps, if it still exists; a missing one is logged and ignored.
+- **fn** `applySessionDefaultsForUrl(url: URL, config: GatewayConfig, store: SettingsSource | undefined, logger?: Logger, defaults = config.sessionDefaults) → Promise<URL>` (line 27) — Applies session defaults to a connection url, with the profile's proxy ahead of the default proxy.
+- **fn** `profilesUsingProxy(store: ProfileStore, proxyName: string) → Promise<string[]>` (line 39) — Profiles whose settings name this proxy.
 ### `src/server/proxy-check.ts`
 
 - **const** `const PROXY_CHECK_URL` (line 5)
@@ -563,8 +573,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `handleContent(c: Context, pool: SessionPool, gateway: Gateway, logger: Logger, profileLifecycle?: ProfileLifecycle) → unknown` (line 18)
 ### `src/server/rest/dispatch.ts`
 
-- **interface** `interface DispatchDeps` (line 24)
-- **fn** `dispatchPageAction(deps: DispatchDeps, profileId: string | undefined, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 37) — If `profileId` is set, route through the profile-pinned executor; otherwise
+- **interface** `interface DispatchDeps` (line 25)
+- **fn** `dispatchPageAction(deps: DispatchDeps, profileId: string | undefined, options: PageOptions, action: (page: Page) => Promise<T>, runOpts: { tolerateGotoTimeout?: boolean } = {}) → Promise<PageResult<T>>` (line 38) — If `profileId` is set, route through the profile-pinned executor; otherwise
 ### `src/server/rest/executor.ts`
 
 - **interface** `interface PageOptions` (line 7)
@@ -584,7 +594,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface ProfileRestDeps` (line 23)
 - **interface** `interface DisabledProfileDeps` (line 30)
 - **fn** `createDisabledProfileRoutes(deps: DisabledProfileDeps = {}) → Hono` (line 54) — Profile routes that respond gracefully when the profiles feature is OFF.
-- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 123) — Profile management REST routes.
+- **fn** `createProfileRoutes(deps: ProfileRestDeps) → Hono` (line 127) — Profile management REST routes.
 ### `src/server/rest/replays.ts`
 
 - **fn** `createReplayRoutes(deps: ReplayRoutesDeps) → Hono` (line 26)
@@ -674,8 +684,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `resolveRequestedProxy(gateway: Gateway, url: URL, context: { targetProviderId?: string }) → ProxyRequestResult` (line 16) — Resolves `?proxy=<name>` against the configured proxies; refuses anything the gateway cannot apply.
 ### `src/server/ws/upgrade.ts`
 
-- **interface** `interface PipelineReplayContext` (line 196)
-- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 201)
+- **interface** `interface PipelineReplayContext` (line 195)
+- **fn** `createWebSocketHandler(gateway: Gateway, logger: Logger, token?: string, reconnectRegistry?: ReconnectRegistry, profileLifecycle?: ProfileLifecycle, transport: RelayTransport = new NodeTcpPipeTransport(), pipelineReplay?: PipelineReplayContext) → unknown` (line 200)
 ### `src/server/ws/upstream-open.ts`
 
 - **fn** `openUpstream(url: string, timeoutMs: number, headers?: Record<string, string>) → Promise<{ ok: true; ws: WebSocket } | { ok: false; err: string }>` (line 7) — Open a Node `ws` upstream and race it against a timeout. Resolves once

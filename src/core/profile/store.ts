@@ -1,4 +1,4 @@
-import type { ProfileMeta } from "./types.js";
+import type { ProfileMeta, ProfileSettings } from "./types.js";
 
 export type LockToken = string;
 
@@ -20,4 +20,10 @@ export interface ProfileStore {
 
   /** Release a lock previously acquired with lock(). Idempotent. */
   unlock(id: string, token: LockToken): Promise<void>;
+
+  /** Plain settings for a profile; null when none were ever saved. */
+  getSettings?(id: string): Promise<ProfileSettings | null>;
+
+  /** Replace a profile's plain settings. */
+  putSettings?(id: string, settings: ProfileSettings): Promise<void>;
 }

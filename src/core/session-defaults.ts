@@ -44,3 +44,22 @@ export function applySessionDefaults(url: URL, defaults: SessionDefaults): URL {
   for (const edit of edits) edit(next.searchParams);
   return next;
 }
+
+/** The profile a connection url will use once defaults apply, or null for none. */
+export function sessionProfileId(url: URL, defaults: SessionDefaults): string | null {
+  const profile = url.searchParams.get("profile");
+  if (isNone(profile)) return null;
+  return profile ?? defaults.profile ?? null;
+}
+
+/**
+ * `applySessionDefaults` with the profile's own proxy between the url and the
+ * gateway default: a url that names a proxy (or `none`) keeps it, otherwise the
+ * profile's proxy is used, otherwise the default proxy.
+ */
+export function applySessionDefaultsWithProfileProxy(url: URL, defaults: SessionDefaults, profileProxy: string | null): URL {
+  if (!profileProxy || url.searchParams.has("proxy")) return applySessionDefaults(url, defaults);
+  const next = new URL(url.href);
+  next.searchParams.set("proxy", profileProxy);
+  return applySessionDefaults(next, defaults);
+}

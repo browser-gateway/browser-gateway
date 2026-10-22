@@ -489,6 +489,8 @@ export interface ProfileMetaItem {
   updatedAt: string;
   sizeBytes: number;
   dekVersion: number;
+  /** Proxy sessions with this profile use when they name none. Absent on older gateways. */
+  proxy?: string | null;
 }
 
 export interface ProfileListResponse {
@@ -573,11 +575,25 @@ export interface EnableProfilesResult {
   restartRequired: boolean;
 }
 
-export async function createProfile(id: string): Promise<ProfileMetaItem> {
+export async function setProfileProxy(id: string, proxy: string | null): Promise<void> {
+  const res = await fetch(`${API_BASE}/v1/profiles/${encodeURIComponent(id)}/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ proxy }),
+    ...fetchOpts,
+  });
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Save failed: ${res.status}`);
+  }
+}
+
+export async function createProfile(id: string, proxy: string | null = null): Promise<ProfileMetaItem> {
   const res = await fetch(`${API_BASE}/v1/profiles/create`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id }),
+    body: JSON.stringify({ id, proxy }),
     ...fetchOpts,
   });
   if (res.status === 401) throw new AuthError();

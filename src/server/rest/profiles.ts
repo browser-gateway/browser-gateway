@@ -12,7 +12,7 @@ import {
   capturedProfileToStorageState,
   storageStateToCapturedProfile,
 } from "../../core/profile/playwright-format.js";
-import type { CapturedProfile } from "../../core/profile/types.js";
+import type { CapturedProfile, ProfileMeta } from "../../core/profile/types.js";
 import type { FilesystemProfileStore } from "../profile/filesystem-store.js";
 import { loadedConfigPath } from "../config/loader.js";
 import { enableProfilesFlow, disableProfilesFlow } from "../setup/profiles-setup.js";
@@ -73,6 +73,9 @@ export function createDisabledProfileRoutes(deps: DisabledProfileDeps = {}): Hon
   app.post("/profiles/create", (c) =>
     c.json({ error: "Profiles disabled", reason: reason() }, 400),
   );
+  app.put("/profiles/:id/settings", (c) =>
+    c.json({ error: "Profiles disabled", reason: reason() }, 400),
+  );
 
   /**
    * Enable-Profiles wizard — appends a profiles block to gateway.yml AND
@@ -112,6 +115,7 @@ export function createDisabledProfileRoutes(deps: DisabledProfileDeps = {}): Hon
  *
  *  GET    /profiles              → list metadata (no payload)
  *  GET    /profiles/:id          → single profile metadata
+ *  PUT    /profiles/:id/settings → set the proxy sessions using the profile run through
  *  DELETE /profiles/:id          → delete (refuses if currently locked)
  *  GET    /profiles/:id/export   → download encrypted blob as binary
  *  POST   /profiles/import       → upload encrypted blob; id taken from blob AAD
@@ -124,9 +128,36 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
   const { store, dekByVersion, logger } = deps;
   const app = new Hono();
 
+  const withSettings = async (meta: ProfileMeta) => ({
+    ...meta,
+    proxy: (await store.getSettings(meta.id).catch(() => null))?.proxy ?? null,
+  });
+
+  /** A proxy a profile may keep: null, or a saved proxy name. */
+  const checkProfileProxy = (value: unknown): { ok: true; proxy: string | null } | { ok: false; error: string } => {
+    if (value === null || value === undefined || value === "") return { ok: true, proxy: null };
+    if (typeof value !== "string") return { ok: false, error: "proxy must be a saved proxy name or null" };
+    if (!deps.config?.proxies[value]) return { ok: false, error: `Proxy '${value}' not found` };
+    return { ok: true, proxy: value };
+  };
+
   app.get("/profiles", async (c) => {
-    const profiles = await store.list();
+    const profiles = await Promise.all((await store.list()).map(withSettings));
     return c.json({ enabled: true, count: profiles.length, profiles });
+  });
+
+  /** Sets the proxy sessions using this profile run through when they name none. */
+  app.put("/profiles/:id/settings", async (c) => {
+    const id = c.req.param("id");
+    if (!PROFILE_ID_REGEX.test(id)) return c.json({ error: "Invalid profile id" }, 400);
+    if (!(await store.list()).some((p) => p.id === id)) return c.json({ error: "Not found" }, 404);
+    const body = (await c.req.json().catch(() => null)) as { proxy?: unknown } | null;
+    if (!body || !("proxy" in body)) return c.json({ error: "proxy (saved proxy name or null) is required" }, 400);
+    const checked = checkProfileProxy(body.proxy);
+    if (!checked.ok) return c.json({ error: checked.error }, 400);
+    await store.putSettings(id, { proxy: checked.proxy });
+    logger.info({ profileId: id, proxy: checked.proxy }, "profile proxy set");
+    return c.json({ id, proxy: checked.proxy });
   });
 
   /**
@@ -136,7 +167,7 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
    * with whatever real cookies/storage exist on the first session disconnect.
    */
   app.post("/profiles/create", async (c) => {
-    let body: { id?: unknown };
+    let body: { id?: unknown; proxy?: unknown };
     try {
       body = await c.req.json();
     } catch {
@@ -156,6 +187,8 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
     if (all.find((p) => p.id === body.id)) {
       return c.json({ error: "Profile already exists" }, 409);
     }
+    const proxyChoice = checkProfileProxy(body.proxy);
+    if (!proxyChoice.ok) return c.json({ error: proxyChoice.error }, 400);
 
     // Pick the highest known DEK version for forward compatibility with rotation.
     const dekVersions = Array.from(dekByVersion.keys());
@@ -179,12 +212,13 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
     const plaintext = Buffer.from(JSON.stringify(emptyState), "utf-8");
     const encoded = encodeBlob(dek, dekVersion, plaintext, body.id);
     await store.putRaw(body.id, encoded.bytes);
+    if (proxyChoice.proxy) await store.putSettings(body.id, { proxy: proxyChoice.proxy });
 
     logger.info({ profileId: body.id, sizeBytes: encoded.totalLen }, "profile created via dashboard");
 
     const refreshed = await store.list();
     const meta = refreshed.find((p) => p.id === body.id);
-    return c.json(meta ?? { id: body.id, sizeBytes: encoded.totalLen, dekVersion }, 201);
+    return c.json(meta ? await withSettings(meta) : { id: body.id, sizeBytes: encoded.totalLen, dekVersion, proxy: proxyChoice.proxy }, 201);
   });
 
   app.get("/profiles/:id", async (c) => {
@@ -195,7 +229,7 @@ export function createProfileRoutes(deps: ProfileRestDeps): Hono {
     const all = await store.list();
     const meta = all.find((p) => p.id === id);
     if (!meta) return c.json({ error: "Not found" }, 404);
-    return c.json(meta);
+    return c.json(await withSettings(meta));
   });
 
   app.delete("/profiles/:id", async (c) => {

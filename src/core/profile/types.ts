@@ -70,6 +70,15 @@ export interface ProfileMeta {
   dekVersion: number;
 }
 
+/** Plain (unencrypted) settings kept beside a profile's data. */
+export const ProfileSettingsSchema = z.object({
+  /** Saved proxy name sessions using this profile run through when they name no proxy; null for none. */
+  proxy: z.string().regex(/^[a-zA-Z0-9_-]{1,64}$/).nullable(),
+});
+export type ProfileSettings = z.infer<typeof ProfileSettingsSchema>;
+
+export const DEFAULT_PROFILE_SETTINGS: ProfileSettings = { proxy: null };
+
 export interface KdfParams {
   algorithm: "scrypt";
   N: number;

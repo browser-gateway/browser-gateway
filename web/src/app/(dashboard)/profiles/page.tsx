@@ -22,6 +22,7 @@ import {
 } from "@/lib/api";
 import { IntegrationTabs } from "@/components/integration-tabs";
 import { NewProfileDialog } from "@/components/new-profile-dialog";
+import { ProfileSettingsSheet } from "@/components/profile-settings-sheet";
 import { RestartNotice } from "@/components/restart-notice";
 import { SetupEncryptionKeyDialog } from "@/components/setup-encryption-key-dialog";
 import { disableProfiles } from "@/lib/api";
@@ -324,6 +325,7 @@ export default function ProfilesPage() {
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead className="text-[11px] uppercase tracking-wider h-9">Profile</TableHead>
+                <TableHead className="text-[11px] uppercase tracking-wider h-9">Proxy</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider h-9">Updated</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider h-9 text-right">Size</TableHead>
                 <TableHead className="text-[11px] uppercase tracking-wider h-9 text-right">DEK</TableHead>
@@ -333,13 +335,13 @@ export default function ProfilesPage() {
             <TableBody>
               {!data ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={5} className="text-center text-[13px] text-muted-foreground py-12">
+                  <TableCell colSpan={6} className="text-center text-[13px] text-muted-foreground py-12">
                     Loading...
                   </TableCell>
                 </TableRow>
               ) : data.count === 0 ? (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={5} className="py-12">
+                  <TableCell colSpan={6} className="py-12">
                     <div className="flex flex-col items-center gap-2 text-center px-4">
                       <p className="text-[13px] text-muted-foreground">
                         No profiles saved yet.
@@ -358,6 +360,7 @@ export default function ProfilesPage() {
                 data.profiles.map((p) => (
                   <TableRow key={p.id} className="hover:bg-muted/30">
                     <TableCell className="font-mono text-[13px]">{p.id}</TableCell>
+                    <TableCell className="font-mono text-[12px] text-muted-foreground">{p.proxy ?? "None"}</TableCell>
                     <TableCell className="text-[12px] text-muted-foreground">
                       {formatWhen(p.updatedAt)}
                     </TableCell>
@@ -389,6 +392,7 @@ export default function ProfilesPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1.5">
+                        <ProfileSettingsSheet id={p.id} proxy={p.proxy ?? null} disabled={busy !== null} onSaved={reload} />
                         <Button
                           variant="outline"
                           size="sm"

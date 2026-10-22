@@ -544,10 +544,20 @@ export default function PlaygroundPage() {
     [profileOptions],
   );
 
+  const profileProxy = profiles.find((p) => p.id === selectedProfile)?.proxy ?? null;
   const proxySelectOptions = useMemo<SelectOption[]>(
-    () => [{ value: "", label: "(no proxy)", hint: proxies.length === 0 ? "No proxies saved. Add one in Proxies." : undefined }, ...proxyPickerOptions(proxies)],
-    [proxies],
+    () => [
+      { value: "", label: "(no proxy)", hint: proxies.length === 0 ? "No proxies saved. Add one in Proxies." : undefined },
+      ...proxyPickerOptions(proxies).map((o) => (o.value === profileProxy ? { ...o, hint: "This profile's proxy" } : o)),
+    ],
+    [proxies, profileProxy],
   );
+
+  function chooseProfile(id: string) {
+    setSelectedProfile(id);
+    const keep = profiles.find((p) => p.id === id)?.proxy;
+    if (keep) setSelectedProxy(keep);
+  }
   const providerAppliesProxy = providers?.find((p) => p.id === selectedProvider)?.injectProxy === true;
 
   const rootClass = isFullscreen
@@ -588,7 +598,7 @@ export default function PlaygroundPage() {
                 label="Profile"
                 value={selectedProfile}
                 options={profileSelectOptions}
-                onChange={setSelectedProfile}
+                onChange={chooseProfile}
                 disabled={status === "live" || status === "connecting"}
               />
             )}
