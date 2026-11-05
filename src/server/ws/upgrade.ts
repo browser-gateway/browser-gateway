@@ -26,7 +26,7 @@ import {
 } from "../profile/browserserve-channel.js";
 import { createLiveUpgradeHandler } from "../live/upgrade.js";
 import { parseAllowedOrigins } from "../util/request.js";
-import { isOriginAllowed } from "../util/origin.js";
+import { isHostAllowed, isOriginAllowed, parseAllowedHosts } from "../util/origin.js";
 import type { ReplayConfig } from "../../core/types.js";
 import { handlePipelineRelay } from "./pipeline-relay.js";
 import { ScreencastCapturePlugin } from "../../pipeline/plugins/screencast-capture.js";
@@ -210,37 +210,49 @@ export function createWebSocketHandler(
 
   const liveHandler = createLiveUpgradeHandler({ gateway, logger, token, profileLifecycle });
   const allowedOrigins = parseAllowedOrigins(process.env.BG_ALLOWED_ORIGINS);
+  const allowedHosts = parseAllowedHosts(process.env.BG_ALLOWED_HOSTS);
 
   async function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-    if (url.pathname === "/v1/live") {
-      await liveHandler.handle(req, socket, head);
-      return;
-    }
-
-    if (url.pathname !== "/v1/connect") {
+    if (url.pathname !== "/v1/live" && url.pathname !== "/v1/connect") {
       socket.write("HTTP/1.1 404 Not Found\r\n\r\n");
       socket.destroy();
       return;
     }
 
     if (!isOriginAllowed(req, allowedOrigins)) {
-      logger.warn({ origin: req.headers.origin }, "ws upgrade: foreign Origin rejected");
+      logger.warn({ origin: req.headers.origin, path: url.pathname }, "ws upgrade: foreign Origin rejected");
       socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
       socket.destroy();
       return;
     }
 
+    if (!token && !isHostAllowed(req, allowedHosts)) {
+      logger.warn({ host: req.headers.host, path: url.pathname }, "ws upgrade: non-loopback Host rejected without BG_TOKEN");
+      socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
+    if (url.pathname === "/v1/live") {
+      await liveHandler.handle(req, socket, head);
+      return;
+    }
+
     if (token) {
-      const reqToken =
-        url.searchParams.get("token") ??
-        extractBearerToken(req.headers.authorization);
+      const queryToken = url.searchParams.get("token");
+      const bearerToken = extractBearerToken(req.headers.authorization);
+      const reqToken = queryToken ?? bearerToken;
 
       if (!reqToken || !safeTokenCompare(reqToken, token)) {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return;
+      }
+
+      if (bearerToken && safeTokenCompare(bearerToken, token)) {
+        stripRequestHeader(req, "authorization");
       }
     }
 
@@ -729,3 +741,11 @@ function closeReasonToSource(reason: RelayCloseReason): string {
   }
 }
 
+
+function stripRequestHeader(req: IncomingMessage, name: string): void {
+  delete req.headers[name];
+  const raw = req.rawHeaders;
+  for (let i = raw.length - 2; i >= 0; i -= 2) {
+    if (raw[i]?.toLowerCase() === name) raw.splice(i, 2);
+  }
+}

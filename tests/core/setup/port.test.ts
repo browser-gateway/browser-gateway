@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { resolvePort, resolveHost } from "../../../src/server/setup/port.js";
+import { bindsBeyondLoopback, resolvePort, resolveHost } from "../../../src/server/setup/port.js";
 
 let prevPort: string | undefined;
 let prevHost: string | undefined;
@@ -61,5 +61,19 @@ describe("resolveHost", () => {
   it("honors HOST for IPv6 loopback", () => {
     process.env.HOST = "::1";
     expect(resolveHost()).toBe("::1");
+  });
+});
+
+describe("bindsBeyondLoopback", () => {
+  it("treats loopback interfaces as local", () => {
+    for (const host of ["127.0.0.1", "127.1.2.3", "localhost", "::1", "[::1]"]) {
+      expect(bindsBeyondLoopback(host)).toBe(false);
+    }
+  });
+
+  it("treats every other interface as reachable from the network", () => {
+    for (const host of ["0.0.0.0", "::", "192.168.1.20", "10.0.0.5", "gateway.internal", "127.0.0.1.example.com"]) {
+      expect(bindsBeyondLoopback(host)).toBe(true);
+    }
   });
 });

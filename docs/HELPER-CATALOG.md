@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-10-20
+Generated: 2026-11-05
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -390,9 +390,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/browse/client.ts`
 
 - **fn** `socketPathFor(name: string) → string` (line 26)
-- **fn** `listSessions() → string[]` (line 42)
-- **fn** `sendToDaemon(socketPath: string, req: BrowseRequest) → Promise<BrowseResponse>` (line 49)
-- **fn** `ensureDaemon(name: string, endpoint: string, idleMs?: number) → Promise<string>` (line 70) — Starts a detached daemon for this session name and waits for its socket.
+- **fn** `listSessions() → string[]` (line 46)
+- **fn** `sendToDaemon(socketPath: string, req: BrowseRequest) → Promise<BrowseResponse>` (line 54)
+- **fn** `ensureDaemon(name: string, endpoint: string, idleMs?: number) → Promise<string>` (line 76) — Starts a detached daemon for this session name and waits for its socket.
 ### `src/server/browse/commands.ts`
 
 - **fn** `runBrowseCommand(session: AgentSession, req: BrowseRequest) → Promise<BrowseResponse>` (line 17) — Runs one CLI verb against a live session. Text output stays terse so an agent
@@ -621,7 +621,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **fn** `resolvePort(cliOverride: string | undefined) → number | undefined` (line 1)
 - **fn** `resolveHost() → string` (line 13) — Bind interface. `HOST` always wins. Without `BG_TOKEN` every `/v1/*` route is
-- **fn** `resolvePublicUrl(port: number) → string` (line 27) — Public base URL the gateway advertises to clients, with no trailing slash.
+- **fn** `bindsBeyondLoopback(host: string) → boolean` (line 19) — True when a bind interface accepts connections from other machines.
+- **fn** `resolvePublicUrl(port: number) → string` (line 33) — Public base URL the gateway advertises to clients, with no trailing slash.
 ### `src/server/setup/profiles-setup.ts`
 
 - **interface** `interface ProfilesSetupInput` (line 5)

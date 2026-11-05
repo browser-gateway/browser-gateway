@@ -9,7 +9,7 @@ dist
 !.env.example
 gateway.dev.yml
 gateway.yml
-gateway.yml.backup
+*.yml.backup
 *.tgz
 coverage
 .DS_Store

@@ -2,7 +2,6 @@ import type { MouseButton } from "../input.js";
 import type { ActionStep } from "../actions.js";
 import type { TabInfo } from "../session.js";
 import type { Point } from "../types.js";
-import { checkUrl } from "./url-policy.js";
 import { ComputerUseSession, type ComputerUseOptions } from "./session.js";
 import {
   chordKeys,
@@ -335,14 +334,10 @@ export class AnthropicBrowserExecutor {
   }
 
   private async enforceUrlPolicy(tabs: TabInfo[]): Promise<void> {
-    for (const tab of tabs) {
-      if (!tab.url || tab.url === "about:blank") continue;
-      try {
-        checkUrl(tab.url, this.session.urlPolicy);
-      } catch (err) {
-        await this.session.agent.navigate("about:blank", tab.tabId).catch(() => undefined);
-        throw new MemberError(`tab ${tab.tabId} reached an address this session may not open: ${messageOf(err)}`, { cause: err });
-      }
+    try {
+      await this.session.enforceUrlPolicy(tabs);
+    } catch (err) {
+      throw new MemberError(messageOf(err), { cause: err });
     }
   }
 

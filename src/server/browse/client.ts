@@ -33,6 +33,10 @@ export function socketPathFor(name: string): string {
  *  leaves an existing directory's owner and mode untouched. */
 function ensureSessionDir(): void {
   mkdirSync(SESSION_DIR, { recursive: true, mode: 0o700 });
+  assertPrivateSessionDir();
+}
+
+function assertPrivateSessionDir(): void {
   const st = lstatSync(SESSION_DIR);
   if (!st.isDirectory() || st.uid !== process.getuid?.() || (st.mode & 0o077) !== 0) {
     throw new Error(`${SESSION_DIR} is not a private directory owned by this user. Remove it and retry.`);
@@ -41,12 +45,14 @@ function ensureSessionDir(): void {
 
 export function listSessions(): string[] {
   if (!existsSync(SESSION_DIR)) return [];
+  assertPrivateSessionDir();
   return readdirSync(SESSION_DIR)
     .filter((f) => f.endsWith(".sock"))
     .map((f) => f.replace(/\.sock$/, ""));
 }
 
 export async function sendToDaemon(socketPath: string, req: BrowseRequest): Promise<BrowseResponse> {
+  assertPrivateSessionDir();
   const socket = await openSocket(socketPath);
   return new Promise<BrowseResponse>((resolve, reject) => {
     let buffer = "";
@@ -68,10 +74,10 @@ export async function sendToDaemon(socketPath: string, req: BrowseRequest): Prom
 
 /** Starts a detached daemon for this session name and waits for its socket. */
 export async function ensureDaemon(name: string, endpoint: string, idleMs?: number): Promise<string> {
+  ensureSessionDir();
   const socketPath = socketPathFor(name);
   if (await isAlive(socketPath)) return socketPath;
 
-  ensureSessionDir();
   rmSync(socketPath, { force: true });
 
   const entry = fileURLToPath(new URL("./daemon-entry.js", import.meta.url));

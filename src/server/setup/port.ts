@@ -15,6 +15,12 @@ export function resolveHost(): string {
   return process.env.BG_TOKEN ? "0.0.0.0" : "127.0.0.1";
 }
 
+/** True when a bind interface accepts connections from other machines. */
+export function bindsBeyondLoopback(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, "");
+  return !(h === "localhost" || h === "::1" || /^127\.\d+\.\d+\.\d+$/.test(h));
+}
+
 /**
  * Public base URL the gateway advertises to clients, with no trailing slash.
  * `BG_PUBLIC_URL` wins; otherwise it is built from the bind interface and port.

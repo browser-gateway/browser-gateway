@@ -261,8 +261,13 @@ BG_TOKEN=my-secret-token browser-gateway serve
 
 Without `BG_TOKEN` every `/v1/*` route is unauthenticated, so the gateway binds to
 `127.0.0.1` instead of all interfaces. Set a token (or set `HOST` explicitly) to
-serve other machines. `BG_ALLOWED_HOSTS` allows extra `Host` values on `/mcp`
-when no token is set.
+serve other machines. Without a token the gateway also refuses requests and
+WebSocket upgrades whose `Host` is not a loopback name, which blocks DNS-rebinding
+pages; `BG_ALLOWED_HOSTS` adds extra hostnames to that list.
+
+The Docker image sets `HOST=0.0.0.0`, so a container started without `BG_TOKEN`
+accepts connections from any network that can reach its port. Set `BG_TOKEN`
+whenever the port is published beyond the local machine.
 
 ---
 
