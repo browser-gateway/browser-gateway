@@ -2,6 +2,8 @@
 
 export {
   deliverWebhook,
+  generateWebhookSecret,
+  signWebhook,
   type WebhookDeliverOptions,
   type WebhookDeliverResult,
   type WebhookPayload,

@@ -121,6 +121,26 @@ describe("Gateway", () => {
     expect(provider.cooldownUntil).not.toBeNull();
   });
 
+  it("announces each provider change once: down, then paused, then back up", () => {
+    const events: string[] = [];
+    for (const e of ["provider.down", "provider.cooldown", "provider.up"] as const) gateway.on(e, () => events.push(e));
+    gateway.recordFailure("fast");
+    gateway.recordFailure("fast");
+    gateway.recordFailure("fast");
+    gateway.recordFailure("fast");
+    expect(events).toEqual(["provider.down", "provider.cooldown"]);
+    gateway.recordSuccess("fast", 100);
+    gateway.recordSuccess("fast", 100);
+    expect(events).toEqual(["provider.down", "provider.cooldown", "provider.up"]);
+  });
+
+  it("does not announce a provider coming back that never had trouble", () => {
+    const up = vi.fn();
+    gateway.on("provider.up", up);
+    gateway.recordSuccess("fast", 100);
+    expect(up).not.toHaveBeenCalled();
+  });
+
   it("should return status with all provider info", () => {
     gateway.sessions.create("s1", "fast");
     const status = gateway.getStatus();

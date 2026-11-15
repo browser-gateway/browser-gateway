@@ -81,6 +81,7 @@ const LoggingSchema = z.object({
 export const WebhookSchema = z.object({
   url: z.string().url(),
   events: z.array(z.string()).optional(),
+  secret: z.string().startsWith("whsec_").optional(),
 });
 
 const ProfilesFilesystemSchema = z.object({

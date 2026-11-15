@@ -54,6 +54,7 @@ export class Gateway extends EventEmitter {
   private onIdleSession?: (sessionId: string) => void;
   private queue: QueueEntry[] = [];
   private _shuttingDown = false;
+  private readonly troubledProviders = new Set<string>();
 
   get shuttingDown(): boolean {
     return this._shuttingDown;
@@ -145,6 +146,7 @@ export class Gateway extends EventEmitter {
     const provider = this.registry.get(providerId);
     if (!provider) return;
     this.cooldown.recordSuccess(provider);
+    if (this.troubledProviders.delete(providerId)) this.emit("provider.up", { providerId });
 
     const alpha = 0.3;
     provider.avgLatencyMs = provider.avgLatencyMs === 0
@@ -160,10 +162,14 @@ export class Gateway extends EventEmitter {
     this.cooldown.recordFailure(provider);
 
     if (provider.cooldownUntil && !wasCooledDown) {
+      this.troubledProviders.add(providerId);
       this.emit("provider.cooldown", {
         providerId,
         cooldownMs: provider.cooldownUntil - Date.now(),
       });
+    } else if (!this.troubledProviders.has(providerId)) {
+      this.troubledProviders.add(providerId);
+      this.emit("provider.down", { providerId, reason: "connection failed" });
     }
 
     this.logger.warn(
