@@ -692,6 +692,7 @@ async function pipeToProvider(
       responseHeaders["X-Session-Resumable"] = issuedResumeToken && !acquired ? "true" : "false";
       if (resumeToken) responseHeaders["X-Session-Resumed"] = "true";
       gateway.sessions.create(sessionId, provider.id, acquired?.profileId);
+      gateway.recordConnected(provider.id);
       gateway.sessions.setCloser(sessionId, () => clientSocket.destroy());
       gateway.emit("session.created", { sessionId, providerId: provider.id });
       logger.info({ sessionId, providerId: provider.id }, "session established");

@@ -79,6 +79,7 @@ export class McpSessionManager {
             createdAt: startedAt,
           };
           this.sessions.set(sessionId, session);
+          this.gateway.recordConnected(provider.id);
           this.gateway.recordSuccess(provider.id, Date.now() - startedAt);
           this.logger.info({ sessionId, providerId: provider.id }, "mcp browser session created");
           return session;

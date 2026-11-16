@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-11-15
+Generated: 2026-11-16
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -52,9 +52,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **interface** `interface WebhookPayload` (line 3) — Pure webhook delivery with retry. Isomorphic — Node, Cloudflare Workers, Bun, Deno.
 - **interface** `interface WebhookDeliverOptions` (line 12)
 - **interface** `interface WebhookDeliverResult` (line 29)
-- **fn** `generateWebhookSecret() → string` (line 53) — A new webhook signing secret: `whsec_` followed by 32 random bytes in base64.
-- **fn** `signWebhook(secret: string, messageId: string, timestampSec: number, body: string) → Promise<string>` (line 58) — Signs `id.timestamp.body` with HMAC-SHA256 and returns the `v1,<base64>` signature header value.
-- **fn** `deliverWebhook(url: string, payload: WebhookPayload, opts: WebhookDeliverOptions = {}) → Promise<WebhookDeliverResult>` (line 65)
+- **fn** `webhookSecretKey(secret: string) → Uint8Array<ArrayBuffer>` (line 57) — Decodes a `whsec_` secret to its key bytes, or throws a generic error that never includes the secret.
+- **fn** `generateWebhookSecret() → string` (line 68) — A new webhook signing secret: `whsec_` followed by 32 random bytes in base64.
+- **fn** `signWebhook(secret: string, messageId: string, timestampSec: number, body: string) → Promise<string>` (line 73) — Signs `id.timestamp.body` with HMAC-SHA256 and returns the `v1,<base64>` signature header value.
+- **fn** `deliverWebhook(url: string, payload: WebhookPayload, opts: WebhookDeliverOptions = {}) → Promise<WebhookDeliverResult>` (line 80)
 ### `src/core/notifications/webhooks.ts`
 
 - **class** `class WebhookNotifier` (line 11)
@@ -323,7 +324,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **fn** `redactConnectionUrl(url: string) → string` (line 13) — Masks credentials in a connection URL: userinfo and any secret-looking query
 - **fn** `redactHeaders(headers: Record<string, string> | undefined) → Record<string, string>` (line 29) — Masks every header value whose name carries credentials.
-- **fn** `redactConnectionUrlsInText(text: string) → string` (line 40) — Masks `token=`, `apikey=`, `user:pass@` and friends inside a config blob.
+- **fn** `redactConnectionUrlsInText(text: string) → string` (line 43) — Masks `token=`, `apikey=`, `user:pass@`, and `secret:`/`token:`/`authorization:` style values inside a config blob.
 ### `src/core/router/selector.ts`
 
 - **type** `type Strategy` (line 8)
@@ -362,26 +363,26 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `isClientSessionKey(value: string | null | undefined) → value is string` (line 164) — True for a well-formed `sessionKey` a client chose itself: 8 to 64 letters, digits, `_` or `-`.
 ### `src/core/types.ts`
 
-- **const** `const ProviderConfigSchema` (line 6)
-- **const** `const WebhookSchema` (line 81)
-- **const** `const ProfilesConfigSchema` (line 95)
-- **type** `type ProfilesConfig` (line 111)
-- **const** `const ReplayConfigSchema` (line 123)
-- **type** `type ReplayConfig` (line 131)
-- **const** `const RestConfigSchema` (line 133)
-- **type** `type RestConfig` (line 141)
-- **const** `const GatewayConfigSchema` (line 143)
-- **type** `type ProviderConfig` (line 161)
-- **type** `type GatewayConfig` (line 162)
-- **interface** `interface ProviderState` (line 164)
-- **interface** `interface Session` (line 181)
+- **const** `const ProviderConfigSchema` (line 7)
+- **const** `const WebhookSchema` (line 82)
+- **const** `const ProfilesConfigSchema` (line 106)
+- **type** `type ProfilesConfig` (line 122)
+- **const** `const ReplayConfigSchema` (line 134)
+- **type** `type ReplayConfig` (line 142)
+- **const** `const RestConfigSchema` (line 144)
+- **type** `type RestConfig` (line 152)
+- **const** `const GatewayConfigSchema` (line 154)
+- **type** `type ProviderConfig` (line 172)
+- **type** `type GatewayConfig` (line 173)
+- **interface** `interface ProviderState` (line 175)
+- **interface** `interface Session` (line 192)
 
 ## Server layer (src/server/)
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 40)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 176)
+- **interface** `interface ProfileAppDeps` (line 41)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 177)
 ### `src/server/browse/cli.ts`
 
 - **fn** `runBrowseCli(argv: string[]) → Promise<number>` (line 13)
@@ -438,6 +439,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **const** `const loadedConfigPath: string | null` (line 8)
 - **const** `const loadedEnvTemplates: EnvTemplates` (line 9)
 - **fn** `loadConfig(configPath?: string) → GatewayConfig` (line 22)
+### `src/server/config/redact-config.ts`
+
+- **fn** `configHasMaskedValues(yaml: string) → boolean` (line 52) — True when the YAML still carries a masked value, so saving it would overwrite a real credential.
+- **fn** `redactConfigYaml(yaml: string) → string` (line 62) — Config YAML with every credential masked, for callers not allowed to see raw secrets.
 ### `src/server/config/writer.ts`
 
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string, templates: EnvTemplates = loadedEnvTemplates) → void` (line 8)
@@ -656,7 +661,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 16) — Format a Zod error into a human-readable list of "path: message" strings.
 - **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 49) — Parse a provider config body (from POST or PUT /v1/providers/...).
-- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 90) — Validate a webhook request body against {@link WebhookSchema}.
+- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[]; secret?: string }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 90) — Validate a webhook request body against {@link WebhookSchema}.
 - **fn** `parseYamlGatewayConfig(yaml: string) → Promise<
   | { kind: "parse-error"; message: string }
   | { kind: "validation-error"; errors: string[] }

@@ -36,9 +36,13 @@ export function redactHeaders(
   return out;
 }
 
-/** Masks `token=`, `apikey=`, `user:pass@` and friends inside a config blob. */
+const SECRET_YAML_VALUE =
+  /^(\s*(?:-\s+)?["']?(?:secret|token|password|passphrase|api[-_]?key|apikey|access[-_]?token|authorization|x-api-key|encryption[-_]?key)["']?\s*:[ \t]*)(?!\*\*\*)([^\s#].*)$/gim;
+
+/** Masks `token=`, `apikey=`, `user:pass@`, and `secret:`/`token:`/`authorization:` style values inside a config blob. */
 export function redactConnectionUrlsInText(text: string): string {
   return text
+    .replace(SECRET_YAML_VALUE, `$1${MASK}`)
     .replace(
       /([?&](?:token|apikey|api_key|api-key|access_token|key|secret|password|jwt)=)([^&\s"']+)/gi,
       `$1${MASK}`,

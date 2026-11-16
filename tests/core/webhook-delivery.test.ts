@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { deliverWebhook, generateWebhookSecret, signWebhook } from "../../src/core/webhooks.js";
+import { WebhookSchema, deliverWebhook, generateWebhookSecret, signWebhook } from "../../src/core/webhooks.js";
 
 const payload = { version: "1", timestamp: "2026-11-15T00:00:00.000Z", event: "provider.down", status: "firing" as const, source: "test", data: {} };
 
@@ -46,5 +46,54 @@ describe("webhook signing", () => {
     await deliverWebhook("https://hooks.example.invalid", payload, { retryDelays: [] });
     expect(headers["webhook-signature"]).toBeUndefined();
     expect(headers["webhook-id"]).toMatch(/^msg_/);
+  });
+
+  it.each([
+    ["empty", ""],
+    ["one byte", "whsec_YQ=="],
+    ["no prefix", Buffer.alloc(32, 1).toString("base64")],
+    ["bad base64", "whsec_not*base64*at*all*not*base64*at*all*xx"],
+    ["too long", `whsec_${Buffer.alloc(65, 1).toString("base64")}`],
+  ])("refuses a %s secret once, without sending or retrying, and never echoes it", async (_name, secret) => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const failures: Error[] = [];
+    const result = await deliverWebhook("https://hooks.example.invalid", payload, { secret, retryDelays: [1, 1, 1], onFailure: (e) => failures.push(e) });
+    expect(result).toEqual({ delivered: false, attempts: 0 });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(failures).toHaveLength(1);
+    if (secret) expect(failures[0]!.message).not.toContain(secret);
+    expect(WebhookSchema.safeParse({ url: "https://hooks.example.invalid", secret }).success).toBe(false);
+  });
+
+  it("refuses a message id that headers would change or the signed string would misread", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    for (const messageId of [" msg_1 ", "msg.1", ""]) {
+      const result = await deliverWebhook("https://hooks.example.invalid", payload, { secret: generateWebhookSecret(), messageId, retryDelays: [] });
+      expect(result).toEqual({ delivered: false, attempts: 0 });
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("accepts a secret written as a YAML block with a trailing newline, and signs with the trimmed value", async () => {
+    const secret = generateWebhookSecret();
+    expect(WebhookSchema.safeParse({ url: "https://hooks.example.invalid", secret: `${secret}\n` }).success).toBe(true);
+    expect(await signWebhook(`${secret}\n`, "msg_1", 1, "{}")).toBe(await signWebhook(secret, "msg_1", 1, "{}"));
+    expect(WebhookSchema.safeParse({ url: "https://hooks.example.invalid", secret: `${secret.slice(0, 20)} ${secret.slice(20)}` }).success).toBe(false);
+  });
+
+  it("the config notifier never sends unsigned when it was given an empty secret", async () => {
+    const { WebhookNotifier } = await import("../../src/core/notifications/webhooks.js");
+    const pino = (await import("pino")).default;
+    const fetchSpy = vi.fn(async () => new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    await new WebhookNotifier([{ url: "https://hooks.example.invalid", secret: "" }], pino({ level: "silent" })).send("provider.down", "firing", {});
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("accepts a generated secret in config", () => {
+    expect(WebhookSchema.safeParse({ url: "https://hooks.example.invalid", secret: generateWebhookSecret() }).success).toBe(true);
   });
 });

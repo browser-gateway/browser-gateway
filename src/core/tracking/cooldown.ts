@@ -56,6 +56,12 @@ export class CooldownTracker {
     }
   }
 
+  /** Drops a provider's failure and success history, for a provider that was removed. */
+  forget(providerId: string): void {
+    this.failures.delete(providerId);
+    this.successes.delete(providerId);
+  }
+
   isInCooldown(provider: ProviderState): boolean {
     if (!provider.cooldownUntil) return false;
 
