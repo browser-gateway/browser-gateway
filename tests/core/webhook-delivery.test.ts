@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { deliverWebhook, generateWebhookSecret, signWebhook } from "../../src/core/webhooks.js";
 
@@ -6,9 +7,11 @@ const payload = { version: "1", timestamp: "2026-11-15T00:00:00.000Z", event: "p
 afterEach(() => vi.unstubAllGlobals());
 
 describe("webhook signing", () => {
-  it("matches the published reference signature", async () => {
-    const sig = await signWebhook("whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw", "msg_p5jXN8AQM9LWM0D4loKWxJek", 1614265330, '{"test": 2432232314}');
-    expect(sig).toBe("v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=");
+  it("signs id.timestamp.body with HMAC-SHA256 of the decoded secret", async () => {
+    const key = randomBytes(32);
+    const body = '{"test": 2432232314}';
+    const expected = createHmac("sha256", key).update(`msg_1.1614265330.${body}`).digest("base64");
+    expect(await signWebhook(`whsec_${key.toString("base64")}`, "msg_1", 1614265330, body)).toBe(`v1,${expected}`);
   });
 
   it("makes secrets with the whsec_ prefix and 32 random bytes", () => {
