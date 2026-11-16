@@ -120,6 +120,7 @@ export async function withProfilePage<T>(
       }
 
       browser = await chromium.connectOverCDP(wsUrl, { timeout: options.timeout ?? 30000 });
+      gateway.recordConnected(provider.id);
       const contexts = browser.contexts();
       const context = contexts[0] ?? (await browser.newContext());
       const page = await context.newPage();

@@ -1,4 +1,5 @@
-import { redactConnectionUrl, redactConnectionUrlsInText, redactHeaders } from "../core/redact.js";
+import { redactConnectionUrl, redactHeaders } from "../core/redact.js";
+import { configHasMaskedValues, redactConfigYaml } from "./config/redact-config.js";
 import { buildProxyConfig, describeProxies, isAllowedResourceName, isDirectBrowserProxy, parseProxyUrl, RESERVED_NONE_NAME, type ProxyConfig, type ProxyInput } from "../core/proxy-config.js";
 import { checkProxyExit } from "./proxy-check.js";
 import { parseAdvancedSettingsBody, parseSessionDefaultsBody } from "./settings-body.js";
@@ -409,6 +410,9 @@ export function createApp(
   app.post("/v1/webhooks", async (c) => {
     const parsed = await readWebhookBody(c);
     if (parsed.errors) return c.json({ error: "Invalid webhook", details: parsed.errors }, 400);
+    if (parsed.data.url.includes("***")) {
+      return c.json({ error: "Invalid webhook", details: ["The address still has a masked value (***). Enter the full address."] }, 400);
+    }
     gateway.config.webhooks.push(parsed.data);
     const failed = persistConfigOrRollback(gateway.config, () => gateway.config.webhooks.pop());
     if (failed) return c.json(failed, 500);
@@ -421,7 +425,12 @@ export function createApp(
     const parsed = await readWebhookBody(c);
     if (parsed.errors) return c.json({ error: "Invalid webhook", details: parsed.errors }, 400);
     const previous = gateway.config.webhooks[index];
-    gateway.config.webhooks[index] = parsed.data;
+    const keepsMaskedUrl = previous !== undefined && parsed.data.url === redactWebhookUrl(previous.url);
+    if (!keepsMaskedUrl && parsed.data.url.includes("***")) {
+      return c.json({ error: "Invalid webhook", details: ["The address still has a masked value (***). Enter the full address."] }, 400);
+    }
+    const next = keepsMaskedUrl ? { ...parsed.data, url: previous.url } : parsed.data;
+    gateway.config.webhooks[index] = next.secret === undefined && previous?.secret ? { ...next, secret: previous.secret } : next;
     const failed = persistConfigOrRollback(gateway.config, () => { gateway.config.webhooks[index] = previous; });
     if (failed) return c.json(failed, 500);
     return c.json({ ok: true });
@@ -504,7 +513,7 @@ export function createApp(
         return;
       }
       delete gateway.config.providers[id];
-      gateway.registry.remove(id);
+      gateway.removeProvider(id);
     });
   }
 
@@ -695,7 +704,7 @@ export function createApp(
     }
 
     delete gateway.config.providers[id];
-    gateway.registry.remove(id);
+    gateway.removeProvider(id);
 
     try {
       writeConfig(gateway.config);
@@ -785,7 +794,7 @@ export function createApp(
     const cookie = getCookie(c.req.header("cookie"), COOKIE_NAME);
     const cookieAuth = !!(token && cookie && verifySession(cookie, sessionSecret, sessionEpoch.value()));
     return c.json({
-      yaml: cookieAuth ? yaml : redactConnectionUrlsInText(yaml),
+      yaml: cookieAuth ? yaml : redactConfigYaml(yaml),
       path,
       exists: true,
       redacted: !cookieAuth,
@@ -811,6 +820,13 @@ export function createApp(
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
     const yaml = body.yaml as string | undefined;
     if (!yaml) return c.json({ error: "No YAML content provided" }, 400);
+    if (configHasMaskedValues(yaml)) {
+      return c.json({
+        error: token
+          ? "This config still has masked values (***). Sign in to the dashboard to load the full config before saving."
+          : "This config still has masked values (***). Set a gateway token to edit the full config here, or edit the config file on disk.",
+      }, 400);
+    }
 
     const result = await parseYamlGatewayConfig(yaml);
     if (result.kind === "parse-error") {

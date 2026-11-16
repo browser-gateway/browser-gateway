@@ -54,7 +54,7 @@ export class WebhookNotifier {
       if (webhook.events && !webhook.events.includes(event)) continue;
 
       deliverWebhook(webhook.url, payload, {
-        ...(webhook.secret ? { secret: webhook.secret } : {}),
+        ...(webhook.secret !== undefined ? { secret: webhook.secret } : {}),
         onSuccess: () => {
           this.logger.debug({ url: webhook.url.slice(0, 50), event }, "webhook delivered");
         },

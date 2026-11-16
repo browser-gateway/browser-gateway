@@ -121,23 +121,87 @@ describe("Gateway", () => {
     expect(provider.cooldownUntil).not.toBeNull();
   });
 
-  it("announces each provider change once: down, then paused, then back up", () => {
+  it("announces each provider change once: down, then paused, then back up on a new connection", () => {
     const events: string[] = [];
     for (const e of ["provider.down", "provider.cooldown", "provider.up"] as const) gateway.on(e, () => events.push(e));
-    gateway.recordFailure("fast");
-    gateway.recordFailure("fast");
-    gateway.recordFailure("fast");
+    for (let i = 0; i < 4; i++) gateway.recordFailure("fast");
+    expect(events).toEqual(["provider.down", "provider.cooldown"]);
+    gateway.recordConnected("fast");
+    gateway.recordConnected("fast");
+    expect(events).toEqual(["provider.down", "provider.cooldown", "provider.up"]);
+  });
+
+  it("does not announce back up when an older session ends while the provider is still in trouble", () => {
+    const up = vi.fn();
+    gateway.on("provider.up", up);
+    for (let i = 0; i < 4; i++) gateway.recordFailure("fast");
+    gateway.recordSuccess("fast", 100);
+    expect(up).not.toHaveBeenCalled();
+  });
+
+  it("announces down even when the first failure also starts a pause", () => {
+    gateway.stop();
+    gateway = new Gateway(createConfig({ gateway: { ...createConfig().gateway, cooldown: { defaultMs: 5000, failureThreshold: 0.5, minRequestVolume: 1 } } }), silentLogger);
+    const events: string[] = [];
+    for (const e of ["provider.down", "provider.cooldown"] as const) gateway.on(e, () => events.push(e));
     gateway.recordFailure("fast");
     expect(events).toEqual(["provider.down", "provider.cooldown"]);
-    gateway.recordSuccess("fast", 100);
-    gateway.recordSuccess("fast", 100);
-    expect(events).toEqual(["provider.down", "provider.cooldown", "provider.up"]);
+  });
+
+  it("forgets a removed provider's trouble, so a new provider with the same id starts clean", () => {
+    const events: string[] = [];
+    for (const e of ["provider.down", "provider.up"] as const) gateway.on(e, () => events.push(e));
+    gateway.recordFailure("fast");
+    gateway.removeProvider("fast");
+    gateway.applyProviderConfig("fast", { url: "ws://fast:3000", priority: 1 });
+    gateway.recordConnected("fast");
+    gateway.recordFailure("fast");
+    expect(events).toEqual(["provider.down", "provider.down"]);
+  });
+
+  it("never announces back up from a session ending, only from a new connection", () => {
+    const up = vi.fn();
+    gateway.on("provider.up", up);
+    gateway.recordFailure("fast");
+    gateway.recordSuccess("fast", 1);
+    expect(up).not.toHaveBeenCalled();
+    gateway.recordConnected("fast");
+    expect(up).toHaveBeenCalledTimes(1);
+  });
+
+  it("is told about every new connection on every session path that reports success", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : e.name.endsWith(".ts") ? [join(dir, e.name)] : []));
+    const code = (f: string) => readFileSync(f, "utf-8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const reporting = walk(join(__dirname, "../../src/server")).filter((f) => code(f).includes(".recordSuccess("));
+    expect(reporting.length).toBeGreaterThanOrEqual(4);
+    for (const file of reporting) expect(code(file), file).toContain(".recordConnected(");
+  });
+
+  it("keeps a provider's trouble when its settings are edited, so recovery is still announced", () => {
+    const up = vi.fn();
+    gateway.on("provider.up", up);
+    gateway.recordFailure("fast");
+    gateway.applyProviderConfig("fast", { url: "ws://fast:3001", priority: 1 });
+    gateway.recordConnected("fast");
+    expect(up).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not pause a re-added provider because of failures from before it was removed", () => {
+    gateway.recordFailure("fast");
+    gateway.recordFailure("fast");
+    gateway.removeProvider("fast");
+    gateway.applyProviderConfig("fast", { url: "ws://fast:3000", priority: 1 });
+    gateway.recordFailure("fast");
+    expect(gateway.registry.get("fast")!.cooldownUntil).toBeNull();
   });
 
   it("does not announce a provider coming back that never had trouble", () => {
     const up = vi.fn();
     gateway.on("provider.up", up);
-    gateway.recordSuccess("fast", 100);
+    gateway.recordConnected("fast");
     expect(up).not.toHaveBeenCalled();
   });
 

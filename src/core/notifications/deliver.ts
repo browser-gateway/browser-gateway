@@ -35,6 +35,10 @@ const DEFAULT_RETRY_DELAYS = [1000, 5000, 15000] as const;
 const DEFAULT_TIMEOUT_MS = 5000;
 const SECRET_PREFIX = "whsec_";
 const SECRET_BYTES = 32;
+const MIN_SECRET_BYTES = 24;
+const MAX_SECRET_BYTES = 64;
+const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_:-]{1,256}$/;
+const STRICT_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -49,6 +53,17 @@ function fromBase64(value: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+/** Decodes a `whsec_` secret to its key bytes, or throws a generic error that never includes the secret. */
+export function webhookSecretKey(secret: string): Uint8Array<ArrayBuffer> {
+  const trimmed = secret.trim();
+  const raw = trimmed.startsWith(SECRET_PREFIX) ? trimmed.slice(SECRET_PREFIX.length) : "";
+  const bytes = raw && STRICT_BASE64.test(raw) ? fromBase64(raw) : null;
+  if (!bytes || bytes.length < MIN_SECRET_BYTES || bytes.length > MAX_SECRET_BYTES) {
+    throw new Error(`invalid webhook secret: expected whsec_ followed by ${MIN_SECRET_BYTES} to ${MAX_SECRET_BYTES} bytes in base64`);
+  }
+  return bytes;
+}
+
 /** A new webhook signing secret: `whsec_` followed by 32 random bytes in base64. */
 export function generateWebhookSecret(): string {
   return SECRET_PREFIX + toBase64(crypto.getRandomValues(new Uint8Array(SECRET_BYTES)));
@@ -56,8 +71,8 @@ export function generateWebhookSecret(): string {
 
 /** Signs `id.timestamp.body` with HMAC-SHA256 and returns the `v1,<base64>` signature header value. */
 export async function signWebhook(secret: string, messageId: string, timestampSec: number, body: string): Promise<string> {
-  const raw = secret.startsWith(SECRET_PREFIX) ? secret.slice(SECRET_PREFIX.length) : secret;
-  const key = await crypto.subtle.importKey("raw", fromBase64(raw), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  if (!MESSAGE_ID_PATTERN.test(messageId)) throw new Error("invalid webhook message id");
+  const key = await crypto.subtle.importKey("raw", webhookSecretKey(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${messageId}.${timestampSec}.${body}`));
   return `v1,${toBase64(new Uint8Array(mac))}`;
 }
@@ -71,6 +86,14 @@ export async function deliverWebhook(
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const body = JSON.stringify(payload);
   const messageId = opts.messageId ?? `msg_${crypto.randomUUID()}`;
+  try {
+    if (opts.secret !== undefined) webhookSecretKey(opts.secret);
+    if (!MESSAGE_ID_PATTERN.test(messageId)) throw new Error("invalid webhook message id");
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    opts.onFailure?.(error);
+    return { delivered: false, attempts: 0 };
+  }
 
   let attempt = 0;
   for (;;) {
@@ -81,7 +104,7 @@ export async function deliverWebhook(
         "webhook-id": messageId,
         "webhook-timestamp": String(timestampSec),
       };
-      if (opts.secret) headers["webhook-signature"] = await signWebhook(opts.secret, messageId, timestampSec, body);
+      if (opts.secret !== undefined) headers["webhook-signature"] = await signWebhook(opts.secret, messageId, timestampSec, body);
       const response = await fetch(url, {
         method: "POST",
         headers,

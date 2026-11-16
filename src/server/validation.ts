@@ -89,7 +89,7 @@ export function parseProviderConfigBody(
 /** Validate a webhook request body against {@link WebhookSchema}. */
 export function parseWebhookBody(
   body: Record<string, unknown>,
-): { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] } {
+): { data: { url: string; events?: string[]; secret?: string }; errors?: undefined } | { data?: undefined; errors: string[] } {
   const parsed = WebhookSchema.safeParse(body);
   if (!parsed.success) {
     return { errors: formatZodErrors(parsed.error) };
