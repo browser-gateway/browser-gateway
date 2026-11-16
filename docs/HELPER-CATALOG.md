@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-11-05
+Generated: 2026-11-15
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -51,11 +51,13 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **interface** `interface WebhookPayload` (line 3) — Pure webhook delivery with retry. Isomorphic — Node, Cloudflare Workers, Bun, Deno.
 - **interface** `interface WebhookDeliverOptions` (line 12)
-- **interface** `interface WebhookDeliverResult` (line 25)
-- **fn** `deliverWebhook(url: string, payload: WebhookPayload, opts: WebhookDeliverOptions = {}) → Promise<WebhookDeliverResult>` (line 33)
+- **interface** `interface WebhookDeliverResult` (line 29)
+- **fn** `generateWebhookSecret() → string` (line 53) — A new webhook signing secret: `whsec_` followed by 32 random bytes in base64.
+- **fn** `signWebhook(secret: string, messageId: string, timestampSec: number, body: string) → Promise<string>` (line 58) — Signs `id.timestamp.body` with HMAC-SHA256 and returns the `v1,<base64>` signature header value.
+- **fn** `deliverWebhook(url: string, payload: WebhookPayload, opts: WebhookDeliverOptions = {}) → Promise<WebhookDeliverResult>` (line 65)
 ### `src/core/notifications/webhooks.ts`
 
-- **class** `class WebhookNotifier` (line 10)
+- **class** `class WebhookNotifier` (line 11)
 ### `src/core/pool/session-pool.ts`
 
 - **interface** `interface OneShotOptions` (line 15)
@@ -362,17 +364,17 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **const** `const ProviderConfigSchema` (line 6)
 - **const** `const WebhookSchema` (line 81)
-- **const** `const ProfilesConfigSchema` (line 94)
-- **type** `type ProfilesConfig` (line 110)
-- **const** `const ReplayConfigSchema` (line 122)
-- **type** `type ReplayConfig` (line 130)
-- **const** `const RestConfigSchema` (line 132)
-- **type** `type RestConfig` (line 140)
-- **const** `const GatewayConfigSchema` (line 142)
-- **type** `type ProviderConfig` (line 160)
-- **type** `type GatewayConfig` (line 161)
-- **interface** `interface ProviderState` (line 163)
-- **interface** `interface Session` (line 180)
+- **const** `const ProfilesConfigSchema` (line 95)
+- **type** `type ProfilesConfig` (line 111)
+- **const** `const ReplayConfigSchema` (line 123)
+- **type** `type ReplayConfig` (line 131)
+- **const** `const RestConfigSchema` (line 133)
+- **type** `type RestConfig` (line 141)
+- **const** `const GatewayConfigSchema` (line 143)
+- **type** `type ProviderConfig` (line 161)
+- **type** `type GatewayConfig` (line 162)
+- **interface** `interface ProviderState` (line 164)
+- **interface** `interface Session` (line 181)
 
 ## Server layer (src/server/)
 

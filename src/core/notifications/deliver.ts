@@ -20,6 +20,10 @@ export interface WebhookDeliverOptions {
   onAttemptFailed?: (attempt: number, err: Error) => void;
   /** Called once when all retries are exhausted. */
   onFailure?: (finalErr: Error) => void;
+  /** Signing secret (`whsec_` + base64). When set, every attempt carries a `webhook-signature` header. */
+  secret?: string;
+  /** Message id sent as `webhook-id`, the same on every retry. Defaults to a random id. */
+  messageId?: string;
 }
 
 export interface WebhookDeliverResult {
@@ -29,6 +33,34 @@ export interface WebhookDeliverResult {
 
 const DEFAULT_RETRY_DELAYS = [1000, 5000, 15000] as const;
 const DEFAULT_TIMEOUT_MS = 5000;
+const SECRET_PREFIX = "whsec_";
+const SECRET_BYTES = 32;
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+function fromBase64(value: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/** A new webhook signing secret: `whsec_` followed by 32 random bytes in base64. */
+export function generateWebhookSecret(): string {
+  return SECRET_PREFIX + toBase64(crypto.getRandomValues(new Uint8Array(SECRET_BYTES)));
+}
+
+/** Signs `id.timestamp.body` with HMAC-SHA256 and returns the `v1,<base64>` signature header value. */
+export async function signWebhook(secret: string, messageId: string, timestampSec: number, body: string): Promise<string> {
+  const raw = secret.startsWith(SECRET_PREFIX) ? secret.slice(SECRET_PREFIX.length) : secret;
+  const key = await crypto.subtle.importKey("raw", fromBase64(raw), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${messageId}.${timestampSec}.${body}`));
+  return `v1,${toBase64(new Uint8Array(mac))}`;
+}
 
 export async function deliverWebhook(
   url: string,
@@ -37,14 +69,23 @@ export async function deliverWebhook(
 ): Promise<WebhookDeliverResult> {
   const retryDelays = opts.retryDelays ?? DEFAULT_RETRY_DELAYS;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const body = JSON.stringify(payload);
+  const messageId = opts.messageId ?? `msg_${crypto.randomUUID()}`;
 
   let attempt = 0;
   for (;;) {
     try {
+      const timestampSec = Math.floor(Date.now() / 1000);
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "webhook-id": messageId,
+        "webhook-timestamp": String(timestampSec),
+      };
+      if (opts.secret) headers["webhook-signature"] = await signWebhook(opts.secret, messageId, timestampSec, body);
       const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers,
+        body,
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (!response.ok) {

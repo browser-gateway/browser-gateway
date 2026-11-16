@@ -5,6 +5,7 @@ import { deliverWebhook, type WebhookPayload } from "./deliver.js";
 interface WebhookConfig {
   url: string;
   events?: string[];
+  secret?: string;
 }
 
 export class WebhookNotifier {
@@ -53,6 +54,7 @@ export class WebhookNotifier {
       if (webhook.events && !webhook.events.includes(event)) continue;
 
       deliverWebhook(webhook.url, payload, {
+        ...(webhook.secret ? { secret: webhook.secret } : {}),
         onSuccess: () => {
           this.logger.debug({ url: webhook.url.slice(0, 50), event }, "webhook delivered");
         },

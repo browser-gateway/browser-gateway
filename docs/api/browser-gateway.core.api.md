@@ -147,6 +147,7 @@ export const GatewayConfigSchema: z.ZodObject<{
     webhooks: z.ZodDefault<z.ZodArray<z.ZodObject<{
         url: z.ZodString;
         events: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        secret: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>>;
     dashboard: z.ZodDefault<z.ZodObject<{
         enabled: z.ZodDefault<z.ZodBoolean>;
