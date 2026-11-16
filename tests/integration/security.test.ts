@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 /**
  * Security-fix tests for the 0.3.1 hardening pass. Covers:
  *
@@ -15,6 +16,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 const TOKEN = "test-token-32chars-long-abcdefgh";
+const FILE_SECRET = `whsec_${randomBytes(32).toString("base64")}`;
 const configPath = join(tmpdir(), `gateway-security-${process.pid}.yml`);
 const webDir = join(tmpdir(), `gateway-security-web-${process.pid}`);
 mkdirSync(webDir, { recursive: true });
@@ -33,7 +35,7 @@ providers:
     priority: 1
 webhooks:
   - url: https://hooks.example/in
-    secret: whsec_SECRETWEBHOOKSECRETWEBHOOKSECRETWEBHOOK0123
+    secret: ${FILE_SECRET}
 `,
   "utf-8",
 );
@@ -189,7 +191,7 @@ describe("/v1/config secret redaction", () => {
     const app = build();
     const res = await app.request("/v1/config", { headers: { Authorization: `Bearer ${TOKEN}` } });
     const body = await res.json() as { yaml: string };
-    expect(body.yaml).not.toContain("SECRETWEBHOOK");
+    expect(body.yaml).not.toContain(FILE_SECRET);
     expect(body.yaml).not.toContain("SECRET_HEADER_TOKEN");
     expect(body.yaml).toMatch(/secret: "?\*\*\*"?/);
   });
@@ -255,11 +257,13 @@ describe("editing a webhook", () => {
 
 describe("redacted config view", () => {
   it("hides credentials in wrapped, folded and one-line YAML", async () => {
+    const FLOW_SECRET = `whsec_${randomBytes(32).toString("base64")}`;
+    const FOLDED_SECRET = `whsec_${randomBytes(32).toString("base64")}`;
     const { redactConfigYaml } = await import("../../src/server/config/redact-config.js");
     const longToken = "L".repeat(130);
     const yaml = [
       "webhooks:",
-      "  - {url: https://hooks.example/in, secret: whsec_FLOWSECRETFLOWSECRET}",
+      `  - {url: https://hooks.example/in, secret: ${FLOW_SECRET}}`,
       "providers:",
       "  a:",
       "    url: wss://a.example/",
@@ -273,10 +277,10 @@ describe("redacted config view", () => {
       "      Proxy-Authorization: Basic PROXYVALUE",
       "extra:",
       "  secret: >-",
-      "    whsec_FOLDEDSECRET",
+      `    ${FOLDED_SECRET}`,
     ].join("\n");
     const out = redactConfigYaml(yaml);
-    for (const leaked of ["FLOWSECRET", "FLOWHEADER", longToken.slice(0, 20), "COOKIEVALUE", "PROXYVALUE", "FOLDEDSECRET"]) {
+    for (const leaked of [FLOW_SECRET, "FLOWHEADER", longToken.slice(0, 20), "COOKIEVALUE", "PROXYVALUE", FOLDED_SECRET]) {
       expect(out).not.toContain(leaked);
     }
     expect(out).toContain("wss://a.example/");
