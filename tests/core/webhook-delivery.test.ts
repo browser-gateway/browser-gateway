@@ -93,6 +93,38 @@ describe("webhook signing", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("never puts a login or token from the address into errors, and refuses an address with a login", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const failures: Error[] = [];
+    const login = await deliverWebhook("https://alice:URLPASSWORD@hooks.example.invalid/", payload, { secret: generateWebhookSecret(), retryDelays: [], onFailure: (e) => failures.push(e) });
+    expect(login).toEqual({ delivered: false, attempts: 0 });
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    const url = "https://hooks.example.invalid/in?token=QUERYTOKEN";
+    vi.stubGlobal("fetch", async () => {
+      throw new Error(`fetch failed for ${url} via https://bob:OTHERPASS@relay.invalid/x`);
+    });
+    const attempts: Error[] = [];
+    await deliverWebhook(url, payload, { retryDelays: [], onAttemptFailed: (_n, e) => attempts.push(e), onFailure: (e) => failures.push(e) });
+    const text = [...failures, ...attempts].map((e) => e.message).join("\n");
+    for (const leaked of ["URLPASSWORD", "QUERYTOKEN", "OTHERPASS", "alice", "bob"]) expect(text).not.toContain(leaked);
+    expect(text).toContain("https://hooks.example.invalid");
+  });
+
+  it("the config notifier logs only the scheme and host of a webhook address", async () => {
+    const { WebhookNotifier } = await import("../../src/core/notifications/webhooks.js");
+    const pino = (await import("pino")).default;
+    const lines: string[] = [];
+    const logger = pino({ level: "debug" }, { write: (line: string) => void lines.push(line) });
+    vi.stubGlobal("fetch", async () => new Response(null, { status: 200 }));
+    await new WebhookNotifier([{ url: "https://hooks.example.invalid/x?token=QTOKEN" }], logger).send("provider.down", "firing", {});
+    await new Promise((r) => setTimeout(r, 50));
+    const text = lines.join("");
+    expect(text).toContain("https://hooks.example.invalid");
+    expect(text).not.toContain("QTOKEN");
+  });
+
   it("accepts a generated secret in config", () => {
     expect(WebhookSchema.safeParse({ url: "https://hooks.example.invalid", secret: generateWebhookSecret() }).success).toBe(true);
   });

@@ -1,5 +1,7 @@
 /** Pure webhook delivery with retry. Isomorphic — Node, Cloudflare Workers, Bun, Deno. */
 
+import { redactAddressesInText } from "../redact.js";
+
 export interface WebhookPayload {
   version: string;
   timestamp: string;
@@ -77,6 +79,20 @@ export async function signWebhook(secret: string, messageId: string, timestampSe
   return `v1,${toBase64(new Uint8Array(mac))}`;
 }
 
+function hasLogin(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.username !== "" || parsed.password !== "";
+  } catch {
+    return false;
+  }
+}
+
+function safeError(err: unknown, url: string): Error {
+  const message = err instanceof Error ? err.message : String(err);
+  return new Error(redactAddressesInText(message, url));
+}
+
 export async function deliverWebhook(
   url: string,
   payload: WebhookPayload,
@@ -89,9 +105,9 @@ export async function deliverWebhook(
   try {
     if (opts.secret !== undefined) webhookSecretKey(opts.secret);
     if (!MESSAGE_ID_PATTERN.test(messageId)) throw new Error("invalid webhook message id");
+    if (hasLogin(url)) throw new Error("invalid webhook url: a login in the address is not supported");
   } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err));
-    opts.onFailure?.(error);
+    opts.onFailure?.(safeError(err, url));
     return { delivered: false, attempts: 0 };
   }
 
@@ -117,7 +133,7 @@ export async function deliverWebhook(
       opts.onSuccess?.(attempt);
       return { delivered: true, attempts: attempt + 1 };
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+      const error = safeError(err, url);
       opts.onAttemptFailed?.(attempt, error);
       if (attempt >= retryDelays.length) {
         opts.onFailure?.(error);

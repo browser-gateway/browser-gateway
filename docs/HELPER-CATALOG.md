@@ -49,16 +49,16 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class Gateway` (line 42)
 ### `src/core/notifications/deliver.ts`
 
-- **interface** `interface WebhookPayload` (line 3) — Pure webhook delivery with retry. Isomorphic — Node, Cloudflare Workers, Bun, Deno.
-- **interface** `interface WebhookDeliverOptions` (line 12)
-- **interface** `interface WebhookDeliverResult` (line 29)
-- **fn** `webhookSecretKey(secret: string) → Uint8Array<ArrayBuffer>` (line 57) — Decodes a `whsec_` secret to its key bytes, or throws a generic error that never includes the secret.
-- **fn** `generateWebhookSecret() → string` (line 68) — A new webhook signing secret: `whsec_` followed by 32 random bytes in base64.
-- **fn** `signWebhook(secret: string, messageId: string, timestampSec: number, body: string) → Promise<string>` (line 73) — Signs `id.timestamp.body` with HMAC-SHA256 and returns the `v1,<base64>` signature header value.
-- **fn** `deliverWebhook(url: string, payload: WebhookPayload, opts: WebhookDeliverOptions = {}) → Promise<WebhookDeliverResult>` (line 80)
+- **interface** `interface WebhookPayload` (line 5)
+- **interface** `interface WebhookDeliverOptions` (line 14)
+- **interface** `interface WebhookDeliverResult` (line 31)
+- **fn** `webhookSecretKey(secret: string) → Uint8Array<ArrayBuffer>` (line 59) — Decodes a `whsec_` secret to its key bytes, or throws a generic error that never includes the secret.
+- **fn** `generateWebhookSecret() → string` (line 70) — A new webhook signing secret: `whsec_` followed by 32 random bytes in base64.
+- **fn** `signWebhook(secret: string, messageId: string, timestampSec: number, body: string) → Promise<string>` (line 75) — Signs `id.timestamp.body` with HMAC-SHA256 and returns the `v1,<base64>` signature header value.
+- **fn** `deliverWebhook(url: string, payload: WebhookPayload, opts: WebhookDeliverOptions = {}) → Promise<WebhookDeliverResult>` (line 96)
 ### `src/core/notifications/webhooks.ts`
 
-- **class** `class WebhookNotifier` (line 11)
+- **class** `class WebhookNotifier` (line 12)
 ### `src/core/pool/session-pool.ts`
 
 - **interface** `interface OneShotOptions` (line 15)
@@ -323,8 +323,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/redact.ts`
 
 - **fn** `redactConnectionUrl(url: string) → string` (line 13) — Masks credentials in a connection URL: userinfo and any secret-looking query
-- **fn** `redactHeaders(headers: Record<string, string> | undefined) → Record<string, string>` (line 29) — Masks every header value whose name carries credentials.
-- **fn** `redactConnectionUrlsInText(text: string) → string` (line 43) — Masks `token=`, `apikey=`, `user:pass@`, and `secret:`/`token:`/`authorization:` style values inside a config blob.
+- **fn** `addressOrigin(url: string) → string` (line 29) — Scheme and host of an address, with nothing that could carry a credential. `***` when it does not parse.
+- **fn** `redactAddressesInText(text: string, address?: string) → string` (line 39) — Replaces `address` and every other address in `text` with its scheme and host.
+- **fn** `redactHeaders(headers: Record<string, string> | undefined) → Record<string, string>` (line 45) — Masks every header value whose name carries credentials.
+- **fn** `redactConnectionUrlsInText(text: string) → string` (line 59) — Masks `token=`, `apikey=`, `user:pass@`, and `secret:`/`token:`/`authorization:` style values inside a config blob.
 ### `src/core/router/selector.ts`
 
 - **type** `type Strategy` (line 8)
@@ -381,8 +383,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 41)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 177)
+- **interface** `interface ProfileAppDeps` (line 40)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 176)
 ### `src/server/browse/cli.ts`
 
 - **fn** `runBrowseCli(argv: string[]) → Promise<number>` (line 13)
@@ -439,10 +441,6 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **const** `const loadedConfigPath: string | null` (line 8)
 - **const** `const loadedEnvTemplates: EnvTemplates` (line 9)
 - **fn** `loadConfig(configPath?: string) → GatewayConfig` (line 22)
-### `src/server/config/redact-config.ts`
-
-- **fn** `configHasMaskedValues(yaml: string) → boolean` (line 52) — True when the YAML still carries a masked value, so saving it would overwrite a real credential.
-- **fn** `redactConfigYaml(yaml: string) → string` (line 62) — Config YAML with every credential masked, for callers not allowed to see raw secrets.
 ### `src/server/config/writer.ts`
 
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string, templates: EnvTemplates = loadedEnvTemplates) → void` (line 8)
@@ -660,13 +658,13 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/validation.ts`
 
 - **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 16) — Format a Zod error into a human-readable list of "path: message" strings.
-- **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 49) — Parse a provider config body (from POST or PUT /v1/providers/...).
-- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[]; secret?: string }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 90) — Validate a webhook request body against {@link WebhookSchema}.
+- **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 52) — Parse a provider config body (from POST or PUT /v1/providers/...).
+- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[]; secret?: string }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 96) — Validate a webhook request body against {@link WebhookSchema}.
 - **fn** `parseYamlGatewayConfig(yaml: string) → Promise<
   | { kind: "parse-error"; message: string }
   | { kind: "validation-error"; errors: string[] }
   | { kind: "ok"; data: GatewayConfig }
->` (line 108) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
+>` (line 114) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/pipeline-relay.ts`
 
 - **interface** `interface PipelineRelayOpts` (line 15)

@@ -1,5 +1,4 @@
 import { redactConnectionUrl, redactHeaders } from "../core/redact.js";
-import { configHasMaskedValues, redactConfigYaml } from "./config/redact-config.js";
 import { buildProxyConfig, describeProxies, isAllowedResourceName, isDirectBrowserProxy, parseProxyUrl, RESERVED_NONE_NAME, type ProxyConfig, type ProxyInput } from "../core/proxy-config.js";
 import { checkProxyExit } from "./proxy-check.js";
 import { parseAdvancedSettingsBody, parseSessionDefaultsBody } from "./settings-body.js";
@@ -782,23 +781,16 @@ export function createApp(
     });
   });
 
-  // Config editor endpoints. Raw YAML reveals provider tokens, so the
-  // unredacted view is gated behind the dashboard cookie session — Bearer
-  // callers get a redacted copy with `token=`, `apikey=`, etc. masked.
+  // The raw file holds provider and webhook credentials, so only a signed-in dashboard session reads it.
   app.get("/v1/config", (c) => {
     const path = loadedConfigPath;
     if (!path || !existsSync(path)) {
-      return c.json({ yaml: "", path: null, exists: false });
+      return c.json({ yaml: "", path: null, exists: false, hidden: false });
     }
-    const yaml = readFileSync(path, "utf-8");
     const cookie = getCookie(c.req.header("cookie"), COOKIE_NAME);
     const cookieAuth = !!(token && cookie && verifySession(cookie, sessionSecret, sessionEpoch.value()));
-    return c.json({
-      yaml: cookieAuth ? yaml : redactConfigYaml(yaml),
-      path,
-      exists: true,
-      redacted: !cookieAuth,
-    });
+    if (!cookieAuth) return c.json({ yaml: "", path: null, exists: true, hidden: true });
+    return c.json({ yaml: readFileSync(path, "utf-8"), path, exists: true, hidden: false });
   });
 
   app.post("/v1/config/validate", bodyLimit({ maxSize: MAX_CONFIG_YAML_BYTES }), async (c) => {
@@ -820,12 +812,8 @@ export function createApp(
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
     const yaml = body.yaml as string | undefined;
     if (!yaml) return c.json({ error: "No YAML content provided" }, 400);
-    if (configHasMaskedValues(yaml)) {
-      return c.json({
-        error: token
-          ? "This config still has masked values (***). Sign in to the dashboard to load the full config before saving."
-          : "This config still has masked values (***). Set a gateway token to edit the full config here, or edit the config file on disk.",
-      }, 400);
+    if (yaml.includes("***")) {
+      return c.json({ error: "This config has a masked value (***). Enter the real value before saving, or edit the config file on disk." }, 400);
     }
 
     const result = await parseYamlGatewayConfig(yaml);

@@ -371,7 +371,7 @@ export async function fetchHealth() {
   return res.json();
 }
 
-export async function fetchConfig(): Promise<{ yaml: string; path: string | null; exists: boolean }> {
+export async function fetchConfig(): Promise<{ yaml: string; path: string | null; exists: boolean; hidden?: boolean }> {
   const res = await fetch(`${API_BASE}/v1/config`, fetchOpts);
   if (res.status === 401) throw new AuthError();
   return res.json();

@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
  *   - CORS allowlist (off by default; on via BG_ALLOWED_ORIGINS)
  *   - /json/version respects X-Forwarded-Proto
  *   - /v1/auth/info only returns BG_TOKEN to cookie-auth callers
- *   - /v1/config GET redacts provider tokens for Bearer-auth callers
+ *   - /v1/config GET returns the file only to a signed-in dashboard session
  *   - Cookie Secure flag follows X-Forwarded-Proto, not the request URL
  */
 import { afterAll, beforeEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -177,38 +177,49 @@ describe("/v1/auth/info", () => {
   });
 });
 
-describe("/v1/config secret redaction", () => {
-  it("redacts provider tokens for Bearer callers", async () => {
-    const app = build();
-    const res = await app.request("/v1/config", { headers: { Authorization: `Bearer ${TOKEN}` } });
-    const body = await res.json() as { yaml: string; redacted: boolean };
-    expect(body.redacted).toBe(true);
-    expect(body.yaml).not.toContain("SECRET_PROVIDER_TOKEN");
-    expect(body.yaml).toContain("wss://browserless.io/?***");
+describe("/v1/config is shown only to a signed-in dashboard", () => {
+  async function read(app: ReturnType<typeof build>, headers: Record<string, string>) {
+    const res = await app.request("/v1/config", { headers });
+    return { status: res.status, text: await res.text() };
+  }
+
+  it("hides the whole file from token callers", async () => {
+    const { status, text } = await read(build(), { Authorization: `Bearer ${TOKEN}` });
+    expect(status).toBe(200);
+    expect(JSON.parse(text)).toEqual({ yaml: "", path: null, exists: true, hidden: true });
+    for (const leaked of ["SECRET_PROVIDER_TOKEN", "SECRET_HEADER_TOKEN", FILE_SECRET, configPath]) expect(text).not.toContain(leaked);
   });
 
-  it("redacts webhook signing secrets and credential headers for Bearer callers", async () => {
-    const app = build();
-    const res = await app.request("/v1/config", { headers: { Authorization: `Bearer ${TOKEN}` } });
-    const body = await res.json() as { yaml: string };
-    expect(body.yaml).not.toContain(FILE_SECRET);
-    expect(body.yaml).not.toContain("SECRET_HEADER_TOKEN");
-    expect(body.yaml).toMatch(/secret: "?\*\*\*"?/);
+  it("hides the whole file when the gateway has no token", async () => {
+    const { text } = await read(createApp(gateway, undefined, webDir, pino({ level: "silent" })), {});
+    expect(JSON.parse(text)).toMatchObject({ yaml: "", hidden: true });
+    expect(text).not.toContain("SECRET_PROVIDER_TOKEN");
   });
 
-  it("returns raw YAML for cookie-session callers", async () => {
+  it("returns the real file to a signed-in dashboard session", async () => {
     const app = build();
     const login = await app.request("/web/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: TOKEN }),
     });
-    const cookieValue = login.headers.get("set-cookie")!.split(";")[0];
-
-    const res = await app.request("/v1/config", { headers: { Cookie: cookieValue } });
-    const body = await res.json() as { yaml: string; redacted: boolean };
-    expect(body.redacted).toBe(false);
+    const cookieValue = login.headers.get("set-cookie")!.split(";")[0]!;
+    const body = JSON.parse((await read(app, { Cookie: cookieValue })).text) as { yaml: string; hidden: boolean };
+    expect(body.hidden).toBe(false);
     expect(body.yaml).toContain("SECRET_PROVIDER_TOKEN");
+  });
+
+  it("refuses to save a config that still holds a masked value", async () => {
+    const { readFileSync } = await import("node:fs");
+    const before = readFileSync(configPath, "utf-8");
+    const yaml = ["version: 1", "providers:", "  a:", "    url: wss://browser.example/?token=***", "    priority: 1"].join("\n");
+    const save = await build().request("/v1/config", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ yaml }),
+    });
+    expect(save.status).toBe(400);
+    expect(readFileSync(configPath, "utf-8")).toBe(before);
   });
 });
 
@@ -252,141 +263,6 @@ describe("editing a webhook", () => {
     expect(gateway.config.webhooks[index]).toEqual({ url: "https://hooks.example/b", events: ["provider.down"], secret });
     const list = await (await app.request("/v1/webhooks", { headers: { Authorization: `Bearer ${TOKEN}` } })).text();
     expect(list).not.toContain(secret);
-  });
-});
-
-describe("redacted config view", () => {
-  it("hides credentials in wrapped, folded and one-line YAML", async () => {
-    const FLOW_SECRET = `whsec_${randomBytes(32).toString("base64")}`;
-    const FOLDED_SECRET = `whsec_${randomBytes(32).toString("base64")}`;
-    const { redactConfigYaml } = await import("../../src/server/config/redact-config.js");
-    const longToken = "L".repeat(130);
-    const yaml = [
-      "webhooks:",
-      `  - {url: https://hooks.example/in, secret: ${FLOW_SECRET}}`,
-      "providers:",
-      "  a:",
-      "    url: wss://a.example/",
-      "    headers: {Authorization: \"Bearer FLOWHEADER\"}",
-      "  b:",
-      "    url: wss://b.example/",
-      "    headers:",
-      "      Authorization: >-",
-      `        Bearer ${longToken}`,
-      "      Cookie: sid=COOKIEVALUE",
-      "      Proxy-Authorization: Basic PROXYVALUE",
-      "extra:",
-      "  secret: >-",
-      `    ${FOLDED_SECRET}`,
-    ].join("\n");
-    const out = redactConfigYaml(yaml);
-    for (const leaked of [FLOW_SECRET, "FLOWHEADER", longToken.slice(0, 20), "COOKIEVALUE", "PROXYVALUE", FOLDED_SECRET]) {
-      expect(out).not.toContain(leaked);
-    }
-    expect(out).toContain("wss://a.example/");
-  });
-
-  it("masks connection addresses that start with spaces", async () => {
-    const { redactConfigYaml } = await import("../../src/server/config/redact-config.js");
-    const out = redactConfigYaml(`providers:\n  a:\n    url: " wss://u:PASSVALUE@browser.example/?token=TOKENVALUE"\n`);
-    expect(out).not.toContain("PASSVALUE");
-    expect(out).not.toContain("TOKENVALUE");
-  });
-
-  it("refuses to save the masked view back over the real credentials", async () => {
-    const { readFileSync } = await import("node:fs");
-    const before = readFileSync(configPath, "utf-8");
-    const app = build();
-    const view = await (await app.request("/v1/config", { headers: { Authorization: `Bearer ${TOKEN}` } })).json() as { yaml: string };
-    expect(view.yaml).toContain("***");
-    const save = await app.request("/v1/config", {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ yaml: view.yaml }),
-    });
-    expect(save.status).toBe(400);
-    expect(readFileSync(configPath, "utf-8")).toBe(before);
-  });
-
-  it("refuses a save whose only masked values are provider credentials", async () => {
-    const { readFileSync } = await import("node:fs");
-    const before = readFileSync(configPath, "utf-8");
-    const yaml = [
-      "version: 1",
-      "providers:",
-      "  a:",
-      "    url: wss://browser.example/?token=***",
-      "    headers:",
-      '      Authorization: "***"',
-      "    priority: 1",
-    ].join("\n");
-    const save = await build().request("/v1/config", {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ yaml }),
-    });
-    expect(save.status).toBe(400);
-    expect(readFileSync(configPath, "utf-8")).toBe(before);
-  });
-
-  it("masks credentials in addresses inside ordinary headers and in disguised addresses", async () => {
-    const { redactConfigYaml } = await import("../../src/server/config/redact-config.js");
-    const out = redactConfigYaml([
-      "providers:",
-      "  a:",
-      '    url: "ws\\ts://USER:PASSX@host/?%74oken=TOKENX"',
-      "    headers:",
-      "      Referer: https://u:PASSY@host/?token=TOKENY",
-      '      Link: "<https://host/?%74oken=TOKENZ>; rel=next"',
-      "      X-Note: \"see https://host/?q='a'&%74oken=TOKENQ\"",
-      "      Accept: json",
-    ].join("\n"));
-    for (const leaked of ["PASSX", "TOKENX", "PASSY", "TOKENY", "TOKENZ", "TOKENQ"]) expect(out).not.toContain(leaked);
-    expect(out).not.toContain("Accept: json");
-  });
-
-  it("hides a value whose credential survives masking only in encoded or cut-short form", async () => {
-    const { redactConfigYaml } = await import("../../src/server/config/redact-config.js");
-    const out = redactConfigYaml([
-      "providers:",
-      "  a:",
-      '    url: "https://host/?next=https%3A%2F%2Fuser%3APASSNESTED%40inner/"',
-      "    note: \"see https://host/?q=<value>&%74oken=TOKENCUT\"",
-      "  b:",
-      "    url: wss://plain.example/?region=eu",
-    ].join("\n"));
-    expect(out).not.toContain("PASSNESTED");
-    expect(out).not.toContain("TOKENCUT");
-    expect(out).toContain("wss://plain.example/?***");
-  });
-
-  it("shows only the scheme and host of an address, so odd encodings cannot carry a credential through", async () => {
-    const { redactConfigYaml, configHasMaskedValues } = await import("../../src/server/config/redact-config.js");
-    const out = redactConfigYaml([
-      "providers:",
-      "  a:",
-      "    url: wss://browser.example/?next=https%3A%2F%2Fuser%3APASSLEAK%40inner.example%2F&other=%",
-      "  b:",
-      "    url: wss://browser.example/?next=https%25252525253A%25252525252F%25252525252Fuser%25252525253APASSLEAK%252525252540inner.example%25252525252F",
-      "  c:",
-      "    url: wss://host/?next=%3Ftoken%3D%2A%2A%2ATOKENLEAK",
-      "  d:",
-      "    url: wss://plain.example/",
-      "    region: eu",
-    ].join("\n"));
-    expect(out).not.toMatch(/LEAK/);
-    expect(out).toContain("wss://plain.example/");
-    expect(out).toContain("region: eu");
-    expect(configHasMaskedValues(out)).toBe(true);
-    expect(configHasMaskedValues(redactConfigYaml("a: ["))).toBe(true);
-    const login = redactConfigYaml("providers:\n  a:\n    url: wss://alice:PASSVALUE@browser.example/\n");
-    expect(login).not.toContain("PASSVALUE");
-    expect(configHasMaskedValues(login)).toBe(true);
-  });
-
-  it("shows nothing when the file cannot be parsed", async () => {
-    const { redactConfigYaml } = await import("../../src/server/config/redact-config.js");
-    expect(redactConfigYaml("token: SECRETVALUE\n  bad: [")).not.toContain("SECRETVALUE");
   });
 });
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { Save, Check, X, Loader2, AlertTriangle, FileCode } from "lucide-react";
+import { Save, Check, X, Loader2, AlertTriangle, FileCode, Lock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ export default function ConfigPage() {
   const [yaml, setYaml] = useState("");
   const [originalYaml, setOriginalYaml] = useState("");
   const [configPath, setConfigPath] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -32,6 +33,7 @@ export default function ConfigPage() {
       setYaml(data.yaml);
       setOriginalYaml(data.yaml);
       setConfigPath(data.path);
+      setHidden(data.hidden === true);
     } catch {}
     setLoading(false);
   }, []);
@@ -72,6 +74,32 @@ export default function ConfigPage() {
     setValidation(null);
     setSaveResult(null);
   };
+
+  if (!loading && hidden) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Configuration</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Edit the gateway configuration file directly. Changes are validated before saving.
+          </p>
+        </div>
+        <Card>
+          <CardContent className="px-4 py-6 flex items-start gap-3">
+            <Lock className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Configuration hidden</p>
+              <p className="text-sm text-muted-foreground">
+                The file holds provider and webhook credentials, so it is shown only after signing in with the gateway token.
+                Set <span className="font-mono text-foreground/70">BG_TOKEN</span> and sign in, or edit{" "}
+                <span className="font-mono text-foreground/70">gateway.yml</span> on disk.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

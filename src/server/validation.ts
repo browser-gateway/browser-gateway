@@ -26,17 +26,20 @@ function unmaskAgainstExisting(
   url: string | undefined,
   headers: Record<string, string> | null | undefined,
   existing: ProviderConfig | undefined,
-): { url: string | undefined; headers: Record<string, string> | null | undefined } {
-  if (!existing) return { url, headers };
-  const nextUrl = url !== undefined && url === redactConnectionUrl(existing.url) ? existing.url : url;
-  if (!headers) return { url: nextUrl, headers };
-  const masked = redactHeaders(existing.headers);
+): { url: string | undefined; headers: Record<string, string> | null | undefined; unresolved: boolean } {
+  const echoed = existing !== undefined && url !== undefined && url === redactConnectionUrl(existing.url);
+  const nextUrl = echoed ? existing.url : url;
+  let unresolved = !echoed && typeof url === "string" && url.includes("***");
+  if (!headers) return { url: nextUrl, headers, unresolved };
+  const masked = redactHeaders(existing?.headers);
   const nextHeaders: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
-    const stored = existing.headers?.[key];
-    nextHeaders[key] = stored !== undefined && value === masked[key] ? stored : value;
+    const stored = existing?.headers?.[key];
+    const restore = stored !== undefined && (value === masked[key] || value === "***");
+    if (!restore && typeof value === "string" && value.includes("***")) unresolved = true;
+    nextHeaders[key] = restore ? stored : value;
   }
-  return { url: nextUrl, headers: nextHeaders };
+  return { url: nextUrl, headers: nextHeaders, unresolved };
 }
 
 /**
@@ -56,6 +59,9 @@ export function parseProviderConfigBody(
     existing,
   );
   const url = raw.url;
+  if (raw.unresolved) {
+    return { errors: ["The address or a header still has a masked value (***). Enter the full value."] };
+  }
   const maxConcurrent = body.maxConcurrent as number | undefined;
   const priority = body.priority as number | undefined;
   const weight = body.weight as number | undefined;

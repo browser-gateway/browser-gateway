@@ -25,6 +25,22 @@ export function redactConnectionUrl(url: string): string {
   return parsed.toString();
 }
 
+/** Scheme and host of an address, with nothing that could carry a credential. `***` when it does not parse. */
+export function addressOrigin(url: string): string {
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.host ? `${parsed.protocol}//${parsed.host}` : MASK;
+  } catch {
+    return MASK;
+  }
+}
+
+/** Replaces `address` and every other address in `text` with its scheme and host. */
+export function redactAddressesInText(text: string, address?: string): string {
+  const known = address ? text.split(address).join(addressOrigin(address)) : text;
+  return known.replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/gi, (match) => addressOrigin(match));
+}
+
 /** Masks every header value whose name carries credentials. */
 export function redactHeaders(
   headers: Record<string, string> | undefined,
