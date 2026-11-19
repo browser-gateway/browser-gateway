@@ -1,6 +1,6 @@
 {
   "name": "browser-gateway",
-  "version": "0.4.36",
+  "version": "0.4.37",
   "description": "The open router for cloud browsers. One endpoint, any provider: failover, load balancing, persistent profiles, session replay, REST API, MCP server, dashboard.",
   "mcpName": "io.github.browser-gateway/browser-gateway",
   "keywords": [
@@ -115,6 +115,10 @@
     "./rest-schemas/helpers": {
       "types": "./dist/rest-schemas/helpers.d.ts",
       "default": "./dist/rest-schemas/helpers.js"
+    },
+    "./rest-schemas/workers": {
+      "types": "./dist/rest-schemas/workers/index.d.ts",
+      "default": "./dist/rest-schemas/workers/index.js"
     }
   },
   "bin": {
@@ -165,7 +169,7 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "chrome-launcher": "^1.2.2",
     "defuddle": "^0.19.6",
-    "hono": "^4.13.14",
+    "hono": "^4.13.16",
     "linkedom": "^0.18.14",
     "pino": "^10.4.0",
     "pino-pretty": "^13.2.0",
@@ -185,6 +189,7 @@
     "@types/proper-lockfile": "^4.1.4",
     "@types/write-file-atomic": "^4.0.3",
     "@types/ws": "^8.18.2",
+    "esbuild": ">=0.28.1",
     "eslint": "^10.13.0",
     "eslint-plugin-sonarjs": "^4.2.2",
     "husky": "^9.1.7",

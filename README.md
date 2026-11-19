@@ -111,6 +111,7 @@ A web dashboard ships with every install. Open `http://localhost:9500/web` after
 - **Scrape** - `POST /v1/scrape` extracts structured data via CSS selectors or full-page formats
 - **Pooled sessions** - browser connections are reused across requests, like a database pool
 - **Automatic retry** - failed requests retry against a fresh page
+- **Cloudflare Workers** - to extract markdown with `browser-gateway/rest-schemas/helpers` inside a Worker, add `import "browser-gateway/rest-schemas/workers";` as the first import of the Worker
 
 ### Profiles — persistent browser state
 
