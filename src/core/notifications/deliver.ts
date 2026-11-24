@@ -1,5 +1,7 @@
 /** Pure webhook delivery with retry. Isomorphic — Node, Cloudflare Workers, Bun, Deno. */
 
+import { redactAddressesInText } from "../redact.js";
+
 export interface WebhookPayload {
   version: string;
   timestamp: string;
@@ -20,6 +22,10 @@ export interface WebhookDeliverOptions {
   onAttemptFailed?: (attempt: number, err: Error) => void;
   /** Called once when all retries are exhausted. */
   onFailure?: (finalErr: Error) => void;
+  /** Signing secret (`whsec_` + base64). When set, every attempt carries a `webhook-signature` header. */
+  secret?: string;
+  /** Message id sent as `webhook-id`, the same on every retry. Defaults to a random id. */
+  messageId?: string;
 }
 
 export interface WebhookDeliverResult {
@@ -29,6 +35,63 @@ export interface WebhookDeliverResult {
 
 const DEFAULT_RETRY_DELAYS = [1000, 5000, 15000] as const;
 const DEFAULT_TIMEOUT_MS = 5000;
+const SECRET_PREFIX = "whsec_";
+const SECRET_BYTES = 32;
+const MIN_SECRET_BYTES = 24;
+const MAX_SECRET_BYTES = 64;
+const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_:-]{1,256}$/;
+const STRICT_BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+function fromBase64(value: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/** Decodes a `whsec_` secret to its key bytes, or throws a generic error that never includes the secret. */
+export function webhookSecretKey(secret: string): Uint8Array<ArrayBuffer> {
+  const trimmed = secret.trim();
+  const raw = trimmed.startsWith(SECRET_PREFIX) ? trimmed.slice(SECRET_PREFIX.length) : "";
+  const bytes = raw && STRICT_BASE64.test(raw) ? fromBase64(raw) : null;
+  if (!bytes || bytes.length < MIN_SECRET_BYTES || bytes.length > MAX_SECRET_BYTES) {
+    throw new Error(`invalid webhook secret: expected whsec_ followed by ${MIN_SECRET_BYTES} to ${MAX_SECRET_BYTES} bytes in base64`);
+  }
+  return bytes;
+}
+
+/** A new webhook signing secret: `whsec_` followed by 32 random bytes in base64. */
+export function generateWebhookSecret(): string {
+  return SECRET_PREFIX + toBase64(crypto.getRandomValues(new Uint8Array(SECRET_BYTES)));
+}
+
+/** Signs `id.timestamp.body` with HMAC-SHA256 and returns the `v1,<base64>` signature header value. */
+export async function signWebhook(secret: string, messageId: string, timestampSec: number, body: string): Promise<string> {
+  if (!MESSAGE_ID_PATTERN.test(messageId)) throw new Error("invalid webhook message id");
+  const key = await crypto.subtle.importKey("raw", webhookSecretKey(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${messageId}.${timestampSec}.${body}`));
+  return `v1,${toBase64(new Uint8Array(mac))}`;
+}
+
+function hasLogin(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.username !== "" || parsed.password !== "";
+  } catch {
+    return false;
+  }
+}
+
+function safeError(err: unknown, url: string): Error {
+  const message = err instanceof Error ? err.message : String(err);
+  return new Error(redactAddressesInText(message, url));
+}
 
 export async function deliverWebhook(
   url: string,
@@ -37,14 +100,31 @@ export async function deliverWebhook(
 ): Promise<WebhookDeliverResult> {
   const retryDelays = opts.retryDelays ?? DEFAULT_RETRY_DELAYS;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const body = JSON.stringify(payload);
+  const messageId = opts.messageId ?? `msg_${crypto.randomUUID()}`;
+  try {
+    if (opts.secret !== undefined) webhookSecretKey(opts.secret);
+    if (!MESSAGE_ID_PATTERN.test(messageId)) throw new Error("invalid webhook message id");
+    if (hasLogin(url)) throw new Error("invalid webhook url: a login in the address is not supported");
+  } catch (err) {
+    opts.onFailure?.(safeError(err, url));
+    return { delivered: false, attempts: 0 };
+  }
 
   let attempt = 0;
   for (;;) {
     try {
+      const timestampSec = Math.floor(Date.now() / 1000);
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "webhook-id": messageId,
+        "webhook-timestamp": String(timestampSec),
+      };
+      if (opts.secret !== undefined) headers["webhook-signature"] = await signWebhook(opts.secret, messageId, timestampSec, body);
       const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        headers,
+        body,
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (!response.ok) {
@@ -53,7 +133,7 @@ export async function deliverWebhook(
       opts.onSuccess?.(attempt);
       return { delivered: true, attempts: attempt + 1 };
     } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
+      const error = safeError(err, url);
       opts.onAttemptFailed?.(attempt, error);
       if (attempt >= retryDelays.length) {
         opts.onFailure?.(error);

@@ -39,9 +39,10 @@ import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
 import { bootstrapProfiles, ProfileBootstrapError } from "./profile/bootstrap.js";
 import { ReplayRetention, ReplayStore } from "./replay/index.js";
+import { SessionHistory } from "./history/session-history.js";
 import { resolveDataDir } from "./setup/data-dir.js";
 import { resolveEncryptionKey } from "./setup/encryption-key.js";
-import { resolvePort, resolveHost, resolvePublicUrl } from "./setup/port.js";
+import { bindsBeyondLoopback, resolvePort, resolveHost, resolvePublicUrl } from "./setup/port.js";
 import { parseAllowedOrigins } from "./util/request.js";
 import { isHostAllowed, isOriginAllowed, parseAllowedHosts } from "./util/origin.js";
 import { createMcpServer, createSessionManager } from "./mcp/server.js";
@@ -106,7 +107,7 @@ Environment:
   BG_DATA_DIR           Data directory (default: /data in Docker, ~/.browser-gateway otherwise)
   BG_CONFIG_PATH        gateway.yml location (default: $BG_DATA_DIR/gateway.yml)
   BG_ALLOWED_ORIGINS    CORS allowlist (comma-separated; default: same-origin only)
-  BG_ALLOWED_HOSTS      Extra Host values accepted on /mcp when BG_TOKEN is unset
+  BG_ALLOWED_HOSTS      Extra Host values accepted when BG_TOKEN is unset
   BG_PUBLIC_URL         Public base URL this gateway advertises to agents
   PORT                  Server port (default: 9500). 12-factor convention.
   HOST                  Bind interface (default: 0.0.0.0 with BG_TOKEN, else 127.0.0.1).
@@ -256,6 +257,9 @@ async function startServer() {
   const reconnectRegistry = new ReconnectRegistry(reconnectTtl);
   reconnectRegistry.startCleanup();
 
+  const sessionHistory = new SessionHistory(resolveDataDir(), logger);
+  sessionHistory.attach(gateway);
+
   const webDir = findWebDir();
   const app = createApp(
     gateway,
@@ -274,6 +278,7 @@ async function startServer() {
     replayStore,
     resolveDataDir(),
     reconnectRegistry,
+    sessionHistory,
   );
 
   if (token) {
@@ -305,7 +310,7 @@ async function startServer() {
 
   const mcpTransports = new Map<string, StreamableHTTPServerTransport>();
   const mcpAllowedOrigins = parseAllowedOrigins(process.env.BG_ALLOWED_ORIGINS);
-  const mcpAllowedHosts = parseAllowedHosts(process.env.BG_ALLOWED_HOSTS);
+  const allowedHosts = parseAllowedHosts(process.env.BG_ALLOWED_HOSTS);
 
   const server = createServer(async (req, res) => {
     const reqUrl = new URL(req.url ?? "/", `http://localhost`);
@@ -317,7 +322,7 @@ async function startServer() {
         return;
       }
 
-      if (!token && !isHostAllowed(req, mcpAllowedHosts)) {
+      if (!token && !isHostAllowed(req, allowedHosts)) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           error: "Forbidden host",
@@ -409,6 +414,15 @@ async function startServer() {
       return;
     }
 
+    if (!token && reqUrl.pathname !== "/health" && !isHostAllowed(req, allowedHosts)) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        error: "Forbidden host",
+        message: "Set BG_TOKEN to reach the gateway on a non-loopback host, or add the host to BG_ALLOWED_HOSTS.",
+      }));
+      return;
+    }
+
     const url = `http://localhost${req.url}`;
     const headers = req.headers as Record<string, string>;
     const method = req.method ?? "GET";
@@ -453,11 +467,13 @@ async function startServer() {
       `browser-gateway running on http://localhost:${config.gateway.port}`,
     );
 
-    if (!token) {
+    if (!token && bindsBeyondLoopback(bindHost)) {
       logger.warn(
         { host: bindHost },
-        "BG_TOKEN is not set: /v1/* is unauthenticated. Set BG_TOKEN before exposing this gateway beyond loopback.",
+        `BG_TOKEN is not set and the gateway listens on ${bindHost}: anyone who can reach port ${config.gateway.port} can drive your browsers, export saved profile logins and use your provider keys. Set BG_TOKEN.`,
       );
+    } else if (!token) {
+      logger.info({ host: bindHost }, "BG_TOKEN is not set: only this machine can reach the gateway.");
     }
 
     // Human-readable boxed banner for the TTY
@@ -496,6 +512,7 @@ async function startServer() {
     }
 
     replayRetention.stop();
+    sessionHistory.flush();
 
     logger.info("server stopped");
     process.exit(0);

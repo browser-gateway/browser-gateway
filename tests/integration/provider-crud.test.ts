@@ -188,12 +188,10 @@ describe("Provider CRUD - Delete", () => {
 });
 
 describe("Config Endpoints", () => {
-  it("should read config as YAML", async () => {
+  it("hides the config file from callers without a dashboard session", async () => {
     const res = await fetch(`${BASE}/v1/config`);
     const data = await res.json() as any;
-    expect(data.exists).toBe(true);
-    expect(data.yaml).toContain("providers");
-    expect(data.path).toBe(CONFIG_PATH);
+    expect(data).toEqual({ yaml: "", path: null, exists: true, hidden: true });
   });
 
   it("should validate valid YAML", async () => {

@@ -73,19 +73,19 @@ A web dashboard ships with every install. Open `http://localhost:9500/web` after
 **Overview.** Active sessions, queue depth, provider health, connection endpoint, and a copy-paste quickstart for Puppeteer, Playwright, Stagehand, browser-use, and raw CDP.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/overview.png" alt="Dashboard overview page showing active sessions, queue depth, provider health, masked connection endpoint, and a tabbed quickstart with Puppeteer code" width="860" />
+  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/overview.png" alt="Dashboard overview with a sessions-per-day chart, running and all-time counts, and a Connect card that gives a ready prompt to add the gateway to Claude Code, Codex, Cursor and other agents" width="860" />
 </p>
 
 **REST API.** Run screenshot, content extraction, and structured scraping endpoints from a form-driven UI, with profile selection and parameter reference inline.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/api.png" alt="REST API page in the dashboard with three tabs (screenshot, content, scrape) and a form to capture a screenshot of a target URL with format and profile options" width="860" />
+  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/api.png" alt="REST API page in the dashboard with the screenshot, content and scrape endpoints, a form to try a request, and the matching curl code" width="860" />
 </p>
 
 **Playground.** Drive any provider live from the browser. Pick a provider and profile, type into the canvas as if it were a local browser, and watch the remote session in real time.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/playground.jpg" alt="Live playground page streaming a remote Chrome session showing yahoo.com loaded inside the dashboard canvas" width="860" />
+  <img src="https://raw.githubusercontent.com/browser-gateway/browser-gateway/main/docs/assets/playground.jpg" alt="Live playground streaming a remote Chrome session with a Wikipedia article loaded, beside the session details and an activity log" width="860" />
 </p>
 
 ---
@@ -111,6 +111,7 @@ A web dashboard ships with every install. Open `http://localhost:9500/web` after
 - **Scrape** - `POST /v1/scrape` extracts structured data via CSS selectors or full-page formats
 - **Pooled sessions** - browser connections are reused across requests, like a database pool
 - **Automatic retry** - failed requests retry against a fresh page
+- **Cloudflare Workers** - to extract markdown with `browser-gateway/rest-schemas/helpers` inside a Worker, add `import "browser-gateway/rest-schemas/workers";` as the first import of the Worker
 
 ### Profiles — persistent browser state
 
@@ -261,8 +262,13 @@ BG_TOKEN=my-secret-token browser-gateway serve
 
 Without `BG_TOKEN` every `/v1/*` route is unauthenticated, so the gateway binds to
 `127.0.0.1` instead of all interfaces. Set a token (or set `HOST` explicitly) to
-serve other machines. `BG_ALLOWED_HOSTS` allows extra `Host` values on `/mcp`
-when no token is set.
+serve other machines. Without a token the gateway also refuses requests and
+WebSocket upgrades whose `Host` is not a loopback name, which blocks DNS-rebinding
+pages; `BG_ALLOWED_HOSTS` adds extra hostnames to that list.
+
+The Docker image sets `HOST=0.0.0.0`, so a container started without `BG_TOKEN`
+accepts connections from any network that can reach its port. Set `BG_TOKEN`
+whenever the port is published beyond the local machine.
 
 ---
 

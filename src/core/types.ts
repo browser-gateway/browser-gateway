@@ -2,6 +2,7 @@ import { z } from "zod";
 import { PoolConfigSchema } from "./pool/types.js";
 import { ProxyConfigSchema, RESERVED_NONE_NAME } from "./proxy-config.js";
 import { SessionDefaultsSchema } from "./session-defaults.js";
+import { webhookSecretKey } from "./notifications/deliver.js";
 
 export const ProviderConfigSchema = z
   .object({
@@ -81,6 +82,17 @@ const LoggingSchema = z.object({
 export const WebhookSchema = z.object({
   url: z.string().url(),
   events: z.array(z.string()).optional(),
+  secret: z
+    .string()
+    .refine((v) => {
+      try {
+        webhookSecretKey(v);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "Webhook secret must be whsec_ followed by 24 to 64 bytes in base64")
+    .optional(),
 });
 
 const ProfilesFilesystemSchema = z.object({

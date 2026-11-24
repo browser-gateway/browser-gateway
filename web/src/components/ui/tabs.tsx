@@ -1,82 +1,123 @@
-"use client"
+"use client";
 
-import { Tabs as TabsPrimitive } from "@base-ui/react/tabs"
-import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react";
+import Link from "next/link";
+import { cn } from "@/lib/utils";
 
-import { cn } from "@/lib/utils"
-
-function Tabs({
-  className,
-  orientation = "horizontal",
-  ...props
-}: TabsPrimitive.Root.Props) {
-  return (
-    <TabsPrimitive.Root
-      data-slot="tabs"
-      data-orientation={orientation}
-      className={cn(
-        "group/tabs flex gap-2 data-horizontal:flex-col",
-        className
-      )}
-      {...props}
-    />
-  )
+export interface TabItem<T extends string = string> {
+  value: T;
+  label: React.ReactNode;
+  count?: React.ReactNode;
+  href?: string;
+  tone?: "danger";
+  icon?: React.ReactNode;
 }
 
-const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
-  {
-    variants: {
-      variant: {
-        default: "bg-muted",
-        line: "gap-1 bg-transparent",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-    },
-  }
-)
-
-function TabsList({
-  className,
-  variant = "default",
-  ...props
-}: TabsPrimitive.List.Props & VariantProps<typeof tabsListVariants>) {
-  return (
-    <TabsPrimitive.List
-      data-slot="tabs-list"
-      data-variant={variant}
-      className={cn(tabsListVariants({ variant }), className)}
-      {...props}
-    />
-  )
+interface TabsProps<T extends string> {
+  value: T;
+  items: TabItem<T>[];
+  onChange?: (v: T) => void;
+  label: string;
+  className?: string;
 }
 
-function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
+/** Sections of a page. Items with an `href` are links, so each tab keeps its own URL. */
+export function Tabs<T extends string>({ value, items, onChange, label, className }: TabsProps<T>) {
   return (
-    <TabsPrimitive.Tab
-      data-slot="tabs-trigger"
-      className={cn(
-        "relative inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-1.5 py-0.5 text-sm font-medium whitespace-nowrap text-foreground/60 transition-all group-data-vertical/tabs:w-full group-data-vertical/tabs:justify-start hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 dark:text-muted-foreground dark:hover:text-foreground group-data-[variant=default]/tabs-list:data-active:shadow-sm group-data-[variant=line]/tabs-list:data-active:shadow-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-        "group-data-[variant=line]/tabs-list:bg-transparent group-data-[variant=line]/tabs-list:data-active:bg-transparent dark:group-data-[variant=line]/tabs-list:data-active:border-transparent dark:group-data-[variant=line]/tabs-list:data-active:bg-transparent",
-        "data-active:bg-background data-active:text-foreground dark:data-active:border-input dark:data-active:bg-input/30 dark:data-active:text-foreground",
-        "after:absolute after:bg-foreground after:opacity-0 after:transition-opacity group-data-horizontal/tabs:after:inset-x-0 group-data-horizontal/tabs:after:bottom-[-5px] group-data-horizontal/tabs:after:h-0.5 group-data-vertical/tabs:after:inset-y-0 group-data-vertical/tabs:after:-right-1 group-data-vertical/tabs:after:w-0.5 group-data-[variant=line]/tabs-list:data-active:after:opacity-100",
-        className
-      )}
-      {...props}
-    />
-  )
+    <div role="tablist" aria-label={label} className={cn("ui-tabs", className)}>
+      {items.map((item) => {
+        const selected = item.value === value;
+        const inner = (
+          <>
+            {item.icon}
+            <span>{item.label}</span>
+            {item.count !== undefined && item.count !== null ? <span className="count">{item.count}</span> : null}
+          </>
+        );
+        return item.href ? (
+          <Link
+            key={item.value}
+            href={item.href}
+            role="tab"
+            aria-selected={selected}
+            aria-current={selected ? "page" : undefined}
+            data-tone={item.tone}
+            scroll={false}
+          >
+            {inner}
+          </Link>
+        ) : (
+          <button
+            key={item.value}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            data-tone={item.tone}
+            onClick={() => onChange?.(item.value)}
+          >
+            {inner}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
-function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
-  return (
-    <TabsPrimitive.Panel
-      data-slot="tabs-content"
-      className={cn("flex-1 text-sm outline-none", className)}
-      {...props}
-    />
-  )
+interface SegmentedProps<T extends string> {
+  value: T;
+  options: Array<{ value: T; label: React.ReactNode; icon?: React.ReactNode; disabled?: boolean }>;
+  onChange: (v: T) => void;
+  label: string;
+  className?: string;
+  /** Items share the width equally. */
+  stretch?: boolean;
 }
 
-export { Tabs, TabsList, TabsTrigger, TabsContent, tabsListVariants }
+/** Two to four fixed choices that will never grow. */
+export function Segmented<T extends string>({ value, options, onChange, label, className, stretch }: SegmentedProps<T>) {
+  return (
+    <div role="group" aria-label={label} className={cn("ui-seg", stretch && "w-full", className)}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={o.value === value}
+          disabled={o.disabled}
+          onClick={() => onChange(o.value)}
+          className={cn(stretch && "flex-1 justify-center")}
+        >
+          {o.icon}
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface PillsProps<T extends string> {
+  value: T;
+  options: Array<{ value: T; label: React.ReactNode; count?: React.ReactNode }>;
+  onChange: (v: T) => void;
+  label: string;
+  className?: string;
+}
+
+/** A short fixed set of category filters above a list. */
+export function Pills<T extends string>({ value, options, onChange, label, className }: PillsProps<T>) {
+  return (
+    <div role="group" aria-label={label} className={cn("flex flex-wrap gap-1.5 max-[860px]:flex-nowrap max-[860px]:overflow-x-auto", className)}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={o.value === value}
+          onClick={() => onChange(o.value)}
+          className="ui-pill"
+        >
+          {o.label}
+          {o.count !== undefined ? <span className="t-mono text-xs font-medium opacity-70">{o.count}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}

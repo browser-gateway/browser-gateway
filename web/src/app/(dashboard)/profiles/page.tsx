@@ -1,466 +1,531 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, ChevronRight, Copy, Download, Eye, Info, Power, Trash2, Upload } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { ChevronDown, CircleUser, KeyRound, Link2, Lock, Plus, Star, Upload } from "lucide-react";
+import { toast } from "sonner";
+import { PageHeader } from "@/components/page-header";
+import { Alert } from "@/components/ui/alert";
+import { Card } from "@/components/ui/card";
+import { CopyButton } from "@/components/ui/copy-row";
+import { DataChip, StatusBadge } from "@/components/ui/badge";
+import { Dialog, DialogActions, DialogHeader } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import type { ProfileListResponse } from "@/lib/api";
+import { RowMenu } from "@/components/ui/row-menu";
+import { Segmented } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { ProfileListResponse, ProfileMetaItem } from "@/lib/api";
 import {
   deleteProfile,
+  disableProfiles,
   exportProfileUrl,
   fetchProfiles,
+  fetchSettings,
   importProfile,
+  importProfilePlaywright,
 } from "@/lib/api";
 import { IntegrationTabs } from "@/components/integration-tabs";
-import { NewProfileDialog } from "@/components/new-profile-dialog";
-import { ProfileSettingsSheet } from "@/components/profile-settings-sheet";
+import { NewProfileDialog, type NewProfileMode } from "@/components/new-profile-dialog";
 import { RestartNotice } from "@/components/restart-notice";
 import { SetupEncryptionKeyDialog } from "@/components/setup-encryption-key-dialog";
-import { disableProfiles } from "@/lib/api";
+import { ProfileSettingsDialog } from "@/components/profile-settings-dialog";
 import { useGatewayToken, useAuthEnabled } from "@/components/token-autofill";
 import { buildConnectUrl } from "@/lib/connect-url";
 import { formatBytes } from "@/lib/format-bytes";
 
+const REFRESH_MS = 5000;
+const LARGE_PROFILE_BYTES = 5 * 1024 * 1024;
+
 function formatWhen(iso: string): string {
   const d = new Date(iso);
-  const now = Date.now();
-  const ageMs = now - d.getTime();
+  const ageMs = Date.now() - d.getTime();
   if (ageMs < 60_000) return "just now";
   if (ageMs < 60 * 60_000) return `${Math.floor(ageMs / 60_000)}m ago`;
   if (ageMs < 24 * 60 * 60_000) return `${Math.floor(ageMs / (60 * 60_000))}h ago`;
-  return d.toISOString().slice(0, 10);
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function derivePlaywrightId(fileName: string): string {
+  return fileName
+    .replace(/\.storagestate\.json$|\.json$/i, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "-")
+    .replace(/^[-_.]+|[-_.]+$/g, "");
 }
 
 export default function ProfilesPage() {
   const [data, setData] = useState<ProfileListResponse | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-  // The intro is collapsed by default to save space for return visitors —
-  // first-time users have the empty-state hint inside the table.
-  const [introOpen, setIntroOpen] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [defaultProfile, setDefaultProfile] = useState<string | null | undefined>(undefined);
+  const [dialogMode, setDialogMode] = useState<NewProfileMode>("empty");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState<ProfileMetaItem | null>(null);
+  const [editing, setEditing] = useState<ProfileMetaItem | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [disableOpen, setDisableOpen] = useState(false);
+  const [disableBusy, setDisableBusy] = useState(false);
   const [restartNotice, setRestartNotice] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [howOpen, setHowOpen] = useState(false);
   const authEnabled = useAuthEnabled();
-
-  async function handleDisableProfiles() {
-    if (!confirm("Disable profiles? Existing profiles stay on disk. Restart required.")) return;
-    setBusy("disable-profiles");
-    try {
-      const r = await disableProfiles();
-      if (r.restartRequired) {
-        setRestartNotice("Profiles disabled in gateway.yml.");
-      }
-    } catch (e: unknown) {
-      setMessage({ type: "error", text: `Disable failed: ${e instanceof Error ? e.message : String(e)}` });
-    } finally {
-      setBusy(null);
-    }
-  }
   const realToken = useGatewayToken();
 
-  async function handleCopyUrl(profileId: string, readOnly = false) {
-    const url = buildConnectUrl(profileId, authEnabled ? realToken : null, readOnly);
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopiedId(readOnly ? `${profileId}:ro` : profileId);
-      setTimeout(() => setCopiedId(null), 1500);
-    } catch {
-      setMessage({ type: "error", text: "Could not copy to clipboard" });
-    }
-  }
-
-  async function reload() {
+  const reload = useCallback(async () => {
     try {
       setData(await fetchProfiles());
+      setLoadError(null);
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Failed to load profiles",
-      });
+      setLoadError(err instanceof Error ? err.message : "Failed to load profiles.");
     }
-  }
-
-  useEffect(() => {
-    reload();
-    const t = setInterval(reload, 5000);
-    return () => clearInterval(t);
   }, []);
 
-  async function handleDelete(id: string) {
-    if (!confirm(`Delete profile "${id}"? This permanently removes the saved cookies and storage. This cannot be undone.`)) return;
-    setBusy(id);
-    try {
-      await deleteProfile(id);
-      setMessage({ type: "success", text: `Deleted ${id}` });
-      await reload();
-    } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Delete failed",
-      });
-    } finally {
-      setBusy(null);
-    }
+  useEffect(() => {
+    const t0 = setTimeout(() => void reload(), 0);
+    fetchSettings()
+      .then((s) => setDefaultProfile(s.sessionDefaults.profile))
+      .catch(() => setDefaultProfile(null));
+    const t = setInterval(() => void reload(), REFRESH_MS);
+    return () => {
+      clearTimeout(t0);
+      clearInterval(t);
+    };
+  }, [reload]);
+
+  function openDialog(mode: NewProfileMode) {
+    setDialogMode(mode);
+    setDialogOpen(true);
   }
 
   async function handleImport(file: File) {
-    setBusy("__import__");
-    try {
-      const isJson =
-        file.type.includes("json") || file.name.toLowerCase().endsWith(".json");
-      if (isJson) {
-        const text = await file.text();
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          throw new Error("File is not valid JSON.");
-        }
-        const looksPlaywrightObject =
-          parsed !== null &&
-          typeof parsed === "object" &&
-          !Array.isArray(parsed) &&
-          Array.isArray((parsed as { cookies?: unknown }).cookies);
-        const looksBareArray = Array.isArray(parsed);
-        if (!looksPlaywrightObject && !looksBareArray) {
-          throw new Error(
-            "JSON did not look like a Playwright storageState or a cookie array. For encrypted profile blobs, upload the .bgp file.",
-          );
-        }
-        const id = file.name
-          .replace(/\.storagestate\.json$|\.json$/i, "")
-          .toLowerCase()
-          .replace(/[^a-z0-9._-]/g, "-")
-          .replace(/^[-_.]+|[-_.]+$/g, "");
-        if (!id) {
-          throw new Error(
-            `Cannot derive a profile id from filename "${file.name}". Rename it (e.g. github.storagestate.json).`,
-          );
-        }
-        const { importProfilePlaywright } = await import("@/lib/api");
-        const result = await importProfilePlaywright(id, parsed);
-        setMessage({
-          type: "success",
-          text: `Imported ${result.imported} (${result.bytes} bytes, Playwright)`,
-        });
-      } else {
-        const result = await importProfile(file);
-        setMessage({ type: "success", text: `Imported ${result.imported} (${result.bytes} bytes)` });
+    const isJson = file.type.includes("json") || file.name.toLowerCase().endsWith(".json");
+    if (isJson) {
+      const text = await file.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        throw new Error("File is not valid JSON.");
       }
+      const looksPlaywrightObject =
+        parsed !== null &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        Array.isArray((parsed as { cookies?: unknown }).cookies);
+      if (!looksPlaywrightObject && !Array.isArray(parsed)) {
+        throw new Error(
+          "JSON did not look like a Playwright storageState or a cookie array. For encrypted profile files, upload the .bgp file.",
+        );
+      }
+      const id = derivePlaywrightId(file.name);
+      if (!id) {
+        throw new Error(`A profile ID cannot be made from "${file.name}". Rename it, for example github.storagestate.json.`);
+      }
+      const result = await importProfilePlaywright(id, parsed);
+      toast.success(`Imported ${result.imported}.`, { description: `${formatBytes(result.bytes)} from a Playwright file.` });
+    } else {
+      const result = await importProfile(file);
+      toast.success(`Imported ${result.imported}.`, { description: formatBytes(result.bytes) });
+    }
+    await reload();
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setDeleteBusy(true);
+    try {
+      await deleteProfile(deleting.id);
+      toast.success(`Deleted ${deleting.id}.`);
+      setDeleting(null);
       await reload();
     } catch (err) {
-      setMessage({
-        type: "error",
-        text: err instanceof Error ? err.message : "Import failed",
-      });
+      toast.error(err instanceof Error ? err.message : "Delete failed.");
     } finally {
-      setBusy(null);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setDeleteBusy(false);
+    }
+  }
+
+  async function confirmDisable() {
+    setDisableBusy(true);
+    try {
+      const r = await disableProfiles();
+      if (r.restartRequired) setRestartNotice("Profiles turned off in gateway.yml.");
+      setDisableOpen(false);
+    } catch (e: unknown) {
+      toast.error(`Turning off profiles failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setDisableBusy(false);
     }
   }
 
   const enabled = data?.enabled ?? true;
+  const profiles = data?.profiles ?? [];
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Profiles</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Reusable logins for your sessions. Cookies and site storage are saved when a session ends and loaded on the next one with the same id, encrypted at rest. Use read-only mode to share one profile across many sessions at once.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {data && enabled && (
-            <span className="text-sm font-mono text-muted-foreground tabular-nums">
-              {data.count} total
-            </span>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".bgp,application/octet-stream"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleImport(f);
-            }}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy !== null || !enabled}
-            title={enabled ? "Upload an encrypted .bgp file exported from this gateway" : "Profiles feature is disabled"}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Upload className="size-3.5 mr-1.5" />
-            Import
-          </Button>
-          {enabled && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDisableProfiles}
-              disabled={busy !== null || restartNotice !== null}
-              title="Disable profiles in gateway.yml. Restart required."
+    <>
+      <PageHeader
+        title="Profiles"
+        description="Reusable logins for your sessions. Cookies and site storage are saved when a session ends and loaded on the next one with the same ID, encrypted at rest."
+        actions={
+          data && enabled ? (
+            <>
+              <Link href="/settings" className="ui-btn">
+                Session defaults
+              </Link>
+              <Button variant="outline" onClick={() => openDialog("import")}>
+                <Upload strokeWidth={2} />
+                Import
+              </Button>
+              <Button variant="accent" className="px-[18px]" onClick={() => openDialog("empty")}>
+                <Plus strokeWidth={2.4} />
+                New profile
+              </Button>
+            </>
+          ) : null
+        }
+      />
+
+      {restartNotice ? <RestartNotice message={restartNotice} /> : null}
+
+      {data && !enabled ? (
+        <section aria-label="Enable profiles" className="ui-card ui-card--hero flex flex-col items-start gap-3 rounded-[28px] px-7 py-8">
+          <span className="ui-iconcircle size-[52px]">
+            <KeyRound className="size-[22px]" strokeWidth={2} aria-hidden="true" />
+          </span>
+          <h2 className="m-0 text-2xl font-bold leading-[1.2] tracking-[-0.02em]">Profiles are not enabled on this gateway</h2>
+          <span className="max-w-[620px] text-[15px] text-fg-2">
+            Profiles save cookies and site storage between sessions, encrypted at rest. Enabling them makes an encryption key in your
+            browser, then writes it to <span className="t-mono">.env</span> and turns on the profiles block in{" "}
+            <span className="t-mono">gateway.yml</span>, or gives you the snippets to do it by hand. Restart the gateway afterwards.
+          </span>
+          <div className="mt-1">
+            <SetupEncryptionKeyDialog />
+          </div>
+        </section>
+      ) : (
+        <>
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(250px,100%),1fr))] gap-3">
+            <InfoCard icon={<Lock className="size-4" strokeWidth={2} />} title="Encrypted at rest">
+              <span className="text-xs text-fg-3">Cookies and storage are unreadable without the gateway&apos;s key.</span>
+            </InfoCard>
+            <InfoCard icon={<Link2 className="size-4" strokeWidth={2} />} title="Pass it on the connect URL" gap="gap-1">
+              <DataChip mono className="w-fit">
+                profile=&lt;id&gt;
+              </DataChip>
+            </InfoCard>
+            <InfoCard
+              icon={<Star className="size-4" strokeWidth={2} />}
+              title={`Default profile: ${defaultProfile === undefined ? "" : (defaultProfile ?? "None")}`}
+              href="/settings"
+              quiet
             >
-              <Power className="size-3.5 mr-1.5" />
-              Disable
-            </Button>
+              <span className="text-xs text-fg-3">Sessions without a profile on the URL start with the default. Change it in Settings.</span>
+            </InfoCard>
+          </div>
+
+          {!data && !loadError ? (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(460px,100%),1fr))] gap-4">
+              <Skeleton className="h-[300px] rounded-card" />
+              <Skeleton className="h-[300px] rounded-card" />
+            </div>
+          ) : loadError && !data ? (
+            <Alert title="Profiles did not load">
+              {loadError}{" "}
+              <button type="button" className="t-link" onClick={() => void reload()}>
+                Retry
+              </button>
+            </Alert>
+          ) : profiles.length === 0 ? (
+            <EmptyState
+              className="ui-card--hero"
+              icon={CircleUser}
+              title="No profiles yet"
+              hint="Add profile=<id> to the connect URL and one is saved when the session ends. Or reserve an ID up front. Saved profiles show here."
+              action={
+                <Button variant="primary" onClick={() => openDialog("empty")}>
+                  New profile
+                </Button>
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(min(460px,100%),1fr))] gap-4">
+              {profiles.map((p) => (
+                <ProfileCard
+                  key={p.id}
+                  profile={p}
+                  isDefault={p.id === defaultProfile}
+                  connectUrl={(readOnly) => buildConnectUrl(p.id, authEnabled ? realToken : null, readOnly)}
+                  onDelete={() => setDeleting(p)}
+                  onEdit={() => setEditing(p)}
+                />
+              ))}
+            </div>
           )}
-          {enabled && <NewProfileDialog authEnabled={authEnabled} onCreated={reload} />}
-        </div>
-      </div>
-      {restartNotice && <RestartNotice message={restartNotice} />}
 
-
-      {message && (
-        <div
-          className={`text-[13px] px-3 py-2 rounded border ${
-            message.type === "error"
-              ? "bg-destructive/10 border-destructive/40 text-destructive-foreground"
-              : "bg-muted/40 border-border text-foreground"
-          }`}
-        >
-          {message.text}
-        </div>
-      )}
-
-      {!enabled && (
-        <Card className="border-border/40">
-          <CardContent className="py-4 space-y-4">
-            <div className="flex items-start gap-3">
-              <Info className="size-4 text-muted-foreground shrink-0 mt-0.5" />
-              <div className="space-y-1 text-sm">
-                <p className="font-medium">Profiles are not enabled on this gateway</p>
-                <p className="text-muted-foreground text-[13px]">
-                  Profiles save cookies and per-origin storage between sessions, encrypted at rest. Click <em className="not-italic font-medium text-foreground">Enable Profiles</em> to generate an encryption key and apply the config.
-                </p>
-              </div>
-            </div>
-            <div>
-              <SetupEncryptionKeyDialog />
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              The wizard generates a strong key in your browser. Choose to apply it automatically (writes <code className="font-mono text-foreground/80 bg-muted px-1 py-0.5 rounded text-[10.5px]">.env</code> + <code className="font-mono text-foreground/80 bg-muted px-1 py-0.5 rounded text-[10.5px]">gateway.yml</code>) or copy the snippets and do it manually. Restart the gateway afterwards.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      {enabled && (
-        <Card className="border-border/40">
-          <CardContent className={introOpen ? "py-3" : "py-1"}>
-            <button
-              onClick={() => setIntroOpen((v) => !v)}
-              className="flex items-center justify-between w-full py-2 px-1 group"
-              aria-expanded={introOpen}
-              aria-controls="profiles-howto"
-            >
-              <div className="flex items-center gap-2">
-                <Info className="size-4 text-muted-foreground" />
-                <span className="text-[13px] font-medium text-foreground">
-                  How profiles work + quick start examples
-                </span>
-              </div>
-              {introOpen ? (
-                <ChevronDown className="size-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-              ) : (
-                <ChevronRight className="size-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-              )}
-            </button>
-            {introOpen && (
-              <div id="profiles-howto" className="pt-2 pl-6 text-[13px] text-muted-foreground space-y-3">
-                <p>
-                  <span className="text-foreground font-medium">What it does.</span>{" "}
-                  Add{" "}
-                  <code className="bg-muted px-1.5 py-0.5 rounded text-[12px] text-foreground">?profile=&lt;id&gt;</code>{" "}
-                  to the connect URL. The gateway saves the session login when you disconnect, and loads it again on the next connection with the same id. Saved data is encrypted at rest with your key.
-                </p>
-                <p>
-                  <span className="text-foreground font-medium">What gets saved.</span>{" "}
-                  Cookies and site storage (localStorage) on any provider. On <span className="text-foreground">browserserve</span>, a profile also keeps IndexedDB and service workers, the full logged-in state that apps like Firebase or Supabase rely on.
-                </p>
-                <p>
-                  <span className="text-foreground font-medium">Read-only mode.</span>{" "}
-                  Add{" "}
-                  <code className="bg-muted px-1.5 py-0.5 rounded text-[12px] text-foreground">&amp;readOnly=1</code>{" "}
-                  to load a profile without locking it. Any number of sessions can use the same profile at the same time, and nothing is written back. Use it to run many workers from one logged-in profile. The <span className="text-foreground">Copy URL</span> menu on each row gives you a read-only link.
-                </p>
-                <p>
-                  <span className="text-foreground font-medium">One writer at a time.</span>{" "}
-                  Without read-only, a profile is used by one session at a time so saved changes do not clash. A second session waits a few seconds for the first to finish, then takes over.
-                </p>
-                <p>
-                  <span className="text-foreground font-medium">Create.</span>{" "}
-                  Click <em className="not-italic font-medium text-foreground">+ New Profile</em>, or just connect with a new id. The profile appears in this list after the first session ends.{" "}
-                  <span className="text-foreground font-medium">Rename.</span>{" "}
-                  Not supported. Export it, then import under a new id and delete the old one.
-                </p>
-                <div className="pt-1">
-                  <p className="text-foreground/90 font-medium text-[12px] mb-2">
-                    Quick start by client
-                  </p>
-                  <IntegrationTabs authEnabled={authEnabled} />
+          {data ? (
+            <Card variant="plain" className="flex flex-col gap-0 p-0">
+              <button
+                type="button"
+                onClick={() => setHowOpen((v) => !v)}
+                aria-expanded={howOpen}
+                aria-controls="profiles-howto"
+                className="flex w-full items-center justify-between gap-3 px-[22px] py-4 text-left"
+              >
+                <span className="t-h3">How profiles work, with client examples</span>
+                <ChevronDown
+                  className={`size-4 flex-none text-fg-3 transition-transform ${howOpen ? "rotate-180" : ""}`}
+                  strokeWidth={2}
+                  aria-hidden="true"
+                />
+              </button>
+              {howOpen ? (
+                <div id="profiles-howto" className="flex flex-col gap-4 border-t border-line-divider px-[22px] py-5">
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-2.5">
+                    <HowWell title="What it does">
+                      Add <span className="t-mono">?profile=&lt;id&gt;</span> to the connect URL. The gateway saves the login when the session
+                      ends and loads it on the next connection with the same ID.
+                    </HowWell>
+                    <HowWell title="What gets saved">
+                      Cookies and site storage on any provider. On browserserve a profile also keeps IndexedDB and service workers, the full
+                      signed-in state that apps like Firebase or Supabase rely on.
+                    </HowWell>
+                    <HowWell title="Read-only mode">
+                      Add <span className="t-mono">&amp;readOnly=1</span> to load a profile without locking it. Any number of sessions can use
+                      it at once and nothing is written back.
+                    </HowWell>
+                    <HowWell title="One writer at a time">
+                      Without read-only, one session uses a profile at a time so saved changes do not clash. A second session waits a few
+                      seconds for the first to finish, then takes over.
+                    </HowWell>
+                    <HowWell title="Create and rename">
+                      Use New profile, or connect with a new ID and it shows here after the first session ends. Renaming is not supported:
+                      export, import under a new ID, then delete the old one.
+                    </HowWell>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <span className="t-label">Quick start by client</span>
+                    <IntegrationTabs authEnabled={authEnabled} />
+                  </div>
                 </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              ) : null}
+            </Card>
+          ) : null}
+
+          {data ? (
+            <section aria-label="Turn off profiles" className="ui-card ui-card--danger flex flex-wrap items-center gap-4 px-[22px] py-5">
+              <span className="flex min-w-0 flex-[1_1_300px] flex-col gap-0.5">
+                <span className="t-h3">Turn off profiles</span>
+                <span className="t-small">Saved profiles stay on disk. The gateway needs a restart.</span>
+              </span>
+              <Button variant="destructive-outline" onClick={() => setDisableOpen(true)} disabled={restartNotice !== null}>
+                Turn off profiles
+              </Button>
+            </section>
+          ) : null}
+        </>
       )}
 
-      <Card className="overflow-hidden">
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="text-[11px] uppercase tracking-wider h-9">Profile</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider h-9">Proxy</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider h-9">Updated</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider h-9 text-right">Size</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider h-9 text-right">DEK</TableHead>
-                <TableHead className="text-[11px] uppercase tracking-wider h-9 text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {!data ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="text-center text-[13px] text-muted-foreground py-12">
-                    Loading...
-                  </TableCell>
-                </TableRow>
-              ) : data.count === 0 ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={6} className="py-12">
-                    <div className="flex flex-col items-center gap-2 text-center px-4">
-                      <p className="text-[13px] text-muted-foreground">
-                        No profiles saved yet.
-                      </p>
-                      {enabled && (
-                        <p className="text-[12px] text-muted-foreground/80 max-w-xl">
-                          Connect with{" "}
-                          <code className="bg-muted px-1.5 py-0.5 rounded text-[11px] text-foreground">?profile=&lt;id&gt;</code>{" "}
-                          on the WebSocket URL. One will be created automatically when your session ends.
-                        </p>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                data.profiles.map((p) => (
-                  <TableRow key={p.id} className="hover:bg-muted/30">
-                    <TableCell className="font-mono text-[13px]">{p.id}</TableCell>
-                    <TableCell className="font-mono text-[12px] text-muted-foreground">{p.proxy ?? "None"}</TableCell>
-                    <TableCell className="text-[12px] text-muted-foreground">
-                      {formatWhen(p.updatedAt)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-[12px] tabular-nums">
-                      <span
-                        className={p.sizeBytes > 5 * 1024 * 1024 ? "text-foreground" : ""}
-                        title={
-                          p.sizeBytes > 5 * 1024 * 1024
-                            ? `Above 5 MB soft-warn threshold. The lifecycle evicts the oldest origins above 50 MB.`
-                            : undefined
-                        }
-                      >
-                        {formatBytes(p.sizeBytes)}
-                        {p.sizeBytes > 5 * 1024 * 1024 && (
-                          <span className="ml-1.5 inline-flex items-center rounded-sm bg-muted px-1 py-0 text-[10px] uppercase tracking-wider text-muted-foreground">
-                            large
-                          </span>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Badge
-                        variant="secondary"
-                        className="font-mono text-[10px] h-5 px-1.5 font-normal"
-                        title="Data encryption key version this profile was encrypted with"
-                      >
-                        v{p.dekVersion}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1.5">
-                        <ProfileSettingsSheet id={p.id} proxy={p.proxy ?? null} disabled={busy !== null} onSaved={reload} />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busy !== null}
-                          onClick={() => handleCopyUrl(p.id)}
-                          title={`Loads ${p.id} and saves changes back on disconnect. One session at a time.`}
-                        >
-                          {copiedId === p.id ? (
-                            <><Check className="size-3.5 mr-1.5" />Copied</>
-                          ) : (
-                            <><Copy className="size-3.5 mr-1.5" />Copy read-write</>
-                          )}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={busy !== null}
-                          onClick={() => handleCopyUrl(p.id, true)}
-                          title={`Loads ${p.id} without locking. Many sessions can share it. Nothing saves back.`}
-                        >
-                          {copiedId === `${p.id}:ro` ? (
-                            <><Check className="size-3.5 mr-1.5" />Copied</>
-                          ) : (
-                            <><Eye className="size-3.5 mr-1.5" />Copy read-only</>
-                          )}
-                        </Button>
-                        <a
-                          href={exportProfileUrl(p.id, "bgp")}
-                          download
-                          title={`Export ${p.id} as an encrypted .bgp file`}
-                        >
-                          <Button variant="ghost" size="sm" disabled={busy !== null} aria-label="Export">
-                            <Download className="size-3.5" />
-                          </Button>
-                        </a>
-                        <a
-                          href={exportProfileUrl(p.id, "playwright")}
-                          download={`${p.id}.storagestate.json`}
-                          title={`Export ${p.id} as a Playwright storageState JSON`}
-                        >
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={busy !== null}
-                            aria-label="Export as Playwright storageState"
-                          >
-                            <span className="text-xs">PW</span>
-                          </Button>
-                        </a>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={busy !== null}
-                          onClick={() => handleDelete(p.id)}
-                          title={`Delete ${p.id} (permanent)`}
-                          aria-label="Delete"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <NewProfileDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        mode={dialogMode}
+        authEnabled={authEnabled}
+        onImport={handleImport}
+        onCreated={(id) => {
+          toast.success(`Created ${id}.`);
+          void reload();
+        }}
+      />
+
+      <ProfileSettingsDialog
+        id={editing?.id ?? ""}
+        proxy={editing?.proxy ?? null}
+        open={editing !== null}
+        onOpenChange={(o) => !o && setEditing(null)}
+        onSaved={() => {
+          toast.success("Profile saved.");
+          void reload();
+        }}
+      />
+
+      <Dialog open={deleting !== null} onOpenChange={(o) => !o && setDeleting(null)} width={560} label="Delete profile">
+        <DialogHeader
+          title={deleting ? `Delete ${deleting.id}?` : "Delete profile"}
+          description="The saved cookies and site storage are removed permanently. This cannot be undone."
+          onClose={() => setDeleting(null)}
+        />
+        <DialogActions>
+          <Button variant="outline" size="lg" onClick={() => setDeleting(null)}>
+            Cancel
+          </Button>
+          <Button variant="destructive" size="lg" onClick={() => void confirmDelete()} loading={deleteBusy}>
+            Delete profile
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={disableOpen} onOpenChange={setDisableOpen} width={560} label="Turn off profiles">
+        <DialogHeader
+          title="Turn off profiles?"
+          description="Profiles are turned off in gateway.yml. Existing profiles stay on disk. Restart the gateway for it to apply."
+          onClose={() => setDisableOpen(false)}
+        />
+        <DialogActions>
+          <Button variant="outline" size="lg" onClick={() => setDisableOpen(false)}>
+            Cancel
+          </Button>
+          <Button variant="destructive" size="lg" onClick={() => void confirmDisable()} loading={disableBusy}>
+            Turn off profiles
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}
+
+function HowWell({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="ui-well flex flex-col gap-1 px-4 py-3.5">
+      <span className="text-sm font-bold">{title}</span>
+      <span className="text-xs leading-relaxed text-fg-2">{children}</span>
     </div>
+  );
+}
+
+function InfoCard({
+  icon,
+  title,
+  children,
+  href,
+  quiet,
+  gap = "gap-0.5",
+}: {
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+  href?: string;
+  quiet?: boolean;
+  gap?: string;
+}) {
+  const body = (
+    <>
+      <span
+        className={`flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full ${quiet ? "bg-track text-fg-2" : "bg-brand-soft text-brand-text"}`}
+      >
+        {icon}
+      </span>
+      <span className={`flex min-w-0 flex-col ${gap}`}>
+        <span className="text-sm font-bold">{title}</span>
+        {children}
+      </span>
+    </>
+  );
+  const cls = "ui-card flex items-start gap-3 rounded-row px-[18px] py-4 text-fg";
+  return href ? (
+    <Link href={href} className={cls}>
+      {body}
+    </Link>
+  ) : (
+    <div className={cls}>{body}</div>
+  );
+}
+
+type CopyMode = "rw" | "ro";
+
+const SMALL_BTN = "ui-btn ui-btn--sm";
+
+function ProfileCard({
+  profile: p,
+  isDefault,
+  connectUrl,
+  onDelete,
+  onEdit,
+}: {
+  profile: ProfileMetaItem;
+  isDefault: boolean;
+  connectUrl: (readOnly: boolean) => string;
+  onDelete: () => void;
+  onEdit: () => void;
+}) {
+  const [copyMode, setCopyMode] = useState<CopyMode>("rw");
+  const param = `profile=${p.id}${copyMode === "ro" ? "&readOnly=1" : ""}`;
+  const large = p.sizeBytes > LARGE_PROFILE_BYTES;
+  return (
+    <article className="ui-card flex flex-col gap-4 p-5">
+      <div className="flex items-center gap-3">
+        <span className="flex h-11 w-11 flex-none items-center justify-center rounded-input border border-line-strong bg-track text-[15px] font-bold text-brand-text">
+          {p.id.replace(/[^a-zA-Z0-9]/g, "").slice(0, 2).toUpperCase()}
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="t-mono truncate text-[17px] font-medium" title={p.id}>
+              {p.id}
+            </span>
+            {isDefault ? <StatusBadge tone="accent">Default</StatusBadge> : null}
+            {large ? (
+              <span title="Above 5 MB. Above 50 MB the oldest sites are dropped when it saves.">
+                <StatusBadge tone="warn">Large</StatusBadge>
+              </span>
+            ) : null}
+          </span>
+          <span className="text-xs text-fg-3" title={new Date(p.updatedAt).toLocaleString()}>
+            Updated {formatWhen(p.updatedAt)}
+          </span>
+        </div>
+        <Button variant="outline" size="sm" onClick={onEdit}>
+          Edit
+        </Button>
+        <RowMenu items={[{ label: "Delete", danger: true, onSelect: onDelete }]} />
+      </div>
+      <div className="grid grid-cols-2 gap-2 min-[560px]:grid-cols-4">
+        {[
+          [formatBytes(p.sizeBytes), "stored"],
+          [formatWhen(p.updatedAt), "last saved"],
+          [p.proxy ?? "None", "proxy"],
+          [`v${p.dekVersion}`, "key version"],
+        ].map(([value, label]) => (
+          <div
+            key={label}
+            className="ui-well flex min-w-0 flex-col gap-px px-3 py-2.5"
+            title={label === "key version" ? "Data encryption key version this profile was encrypted with" : undefined}
+          >
+            <span className="t-mono truncate text-[15px] font-medium">{value}</span>
+            <span className="text-xs text-fg-3">{label}</span>
+          </div>
+        ))}
+      </div>
+      <div className="ui-well flex flex-wrap items-center gap-2 py-1.5 pl-3.5 pr-1.5">
+        <span className="flex min-w-0 flex-[1_1_160px] items-center gap-1.5">
+          <span className="t-mono min-w-0 flex-1 text-[12.5px] text-[var(--text-code)] [overflow-wrap:anywhere]">{param}</span>
+          <CopyButton value={connectUrl(copyMode === "ro")} label="Copy connect URL" iconOnly />
+        </span>
+        <Segmented
+          label="How the session uses it"
+          value={copyMode}
+          onChange={setCopyMode}
+          options={[
+            { value: "rw", label: "Read-write" },
+            { value: "ro", label: "Read-only" },
+          ]}
+        />
+      </div>
+      <span className="-mt-1.5 text-xs text-fg-3">
+        {copyMode === "rw"
+          ? "Copy gives the full connect URL. Cookies and storage are written back when the session closes. One session at a time."
+          : "Copy gives the full connect URL. Many sessions can share it at once and nothing is written back."}
+      </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <a href={exportProfileUrl(p.id, "bgp")} download className={SMALL_BTN} title={`Export ${p.id} as an encrypted .bgp file`}>
+          Export .bgp
+        </a>
+        <a
+          href={exportProfileUrl(p.id, "playwright")}
+          download={`${p.id}.storagestate.json`}
+          className={SMALL_BTN}
+          title={`Export ${p.id} as a Playwright storageState JSON`}
+        >
+          Export for Playwright
+        </a>
+      </div>
+    </article>
   );
 }

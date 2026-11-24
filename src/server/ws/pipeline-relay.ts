@@ -131,6 +131,7 @@ export async function handlePipelineRelay(opts: PipelineRelayOpts): Promise<Pipe
 
   const startTime = Date.now();
   gateway.sessions.create(sessionId, provider.id, opts.profileId, opts.proxyName);
+  gateway.recordConnected(provider.id);
   gateway.emit("session.created", { sessionId, providerId: provider.id });
   logger.info({ sessionId, providerId: provider.id }, "session established");
 

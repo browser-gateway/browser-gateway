@@ -2,15 +2,14 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown } from "lucide-react";
+import Link from "next/link";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useDismissible } from "@/lib/use-dismissible";
 
 export interface SelectOption<T extends string = string> {
   value: T;
   label: string;
   hint?: string;
-  /** Shown but not selectable; put the reason in `hint`. */
   disabled?: boolean;
 }
 
@@ -19,17 +18,29 @@ interface Props<T extends string> {
   options: SelectOption<T>[];
   onChange: (v: T) => void;
   disabled?: boolean;
+  /** Grey prefix inside an inline trigger ("Provider"), and the accessible name. */
   label?: string;
   className?: string;
   align?: "left" | "right";
   width?: string;
+  /** Block variant for forms and dialogs: full width, the menu opens in the flow. */
   fullWidth?: boolean;
+  /** A link at the bottom of the menu to the page that creates one of these. */
+  footer?: { label: string; href: string };
+  placeholder?: string;
+  mono?: boolean;
+  id?: string;
+  /** Keep `label` as the accessible name only, when the value already says what it is ("Any provider"). */
+  hideLabel?: boolean;
+  /** Extra classes for the trigger, for the few places it is drawn larger. */
+  triggerClassName?: string;
+  /** Replaces the plain chevron. */
+  chevron?: React.ReactNode;
 }
 
-/** Custom Select matching SaaS `WorkspacePicker` and `RouterPicker`. The menu
- *  renders via a portal to `document.body` so it's never clipped by an
- *  ancestor's `overflow: hidden` (e.g. a Card). Replaces the native `<select>`
- *  which renders using OS chrome. */
+const SEARCH_ABOVE = 6;
+
+/** The dropdown for any list that can grow. Never a native select. A pill in toolbars, a full-width field in forms, a bottom sheet on phones. */
 export function Select<T extends string>({
   value,
   options,
@@ -38,121 +49,185 @@ export function Select<T extends string>({
   label,
   className,
   align = "left",
-  width = "min-w-[14rem]",
   fullWidth = false,
+  footer,
+  placeholder,
+  mono,
+  id,
+  hideLabel,
+  triggerClassName,
+  chevron,
 }: Props<T>) {
   const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const [cursor, setCursor] = React.useState(0);
   const [rect, setRect] = React.useState<DOMRect | null>(null);
   const wrapperRef = React.useRef<HTMLDivElement>(null);
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
-  const close = React.useCallback(() => {
-    setOpen(false);
-    setRect(null);
-  }, []);
-  const dismissRefs = React.useMemo(() => [wrapperRef, menuRef], []);
-  useDismissible(open, dismissRefs, close);
+
   const active = options.find((o) => o.value === value) ?? null;
+  const shown = query
+    ? options.filter((o) => `${o.label} ${o.hint ?? ""}`.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  const close = React.useCallback((refocus = false) => {
+    setOpen(false);
+    setQuery("");
+    setRect(null);
+    if (refocus) triggerRef.current?.focus();
+  }, []);
 
   function toggle() {
     if (open) {
       close();
       return;
     }
-    if (triggerRef.current) {
-      setRect(triggerRef.current.getBoundingClientRect());
-    }
+    if (!fullWidth && triggerRef.current) setRect(triggerRef.current.getBoundingClientRect());
+    setCursor(Math.max(0, options.findIndex((o) => o.value === value)));
     setOpen(true);
   }
 
   React.useEffect(() => {
     if (!open) return;
-    const onScroll = () => close();
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onScroll);
-    return () => {
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, [open, close]);
-
-  const menuStyle: React.CSSProperties | undefined = rect
-    ? {
-        position: "fixed",
-        top: rect.bottom + 4,
-        left: align === "right" ? undefined : rect.left,
-        right: align === "right" ? window.innerWidth - rect.right : undefined,
-        minWidth: fullWidth ? rect.width : undefined,
+    function onDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (wrapperRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      close();
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close(true);
       }
-    : undefined;
+    }
+    function onMove(e: Event) {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      if (!fullWidth) close();
+    }
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey, true);
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [open, close, fullWidth]);
+
+  function pick(o: SelectOption<T>) {
+    if (o.disabled) return;
+    onChange(o.value);
+    close(true);
+  }
+
+  function onMenuKey(e: React.KeyboardEvent) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setCursor((c) => Math.min(shown.length - 1, c + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setCursor((c) => Math.max(0, c - 1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const o = shown[cursor];
+      if (o) pick(o);
+    }
+  }
+
+  const menu = open ? (
+    <div
+      ref={menuRef}
+      role="listbox"
+      aria-label={label}
+      tabIndex={-1}
+      onKeyDown={onMenuKey}
+      className={cn("ui-dd__menu", mono && "t-mono")}
+      style={
+        !fullWidth && rect
+          ? {
+              position: "fixed",
+              top: rect.bottom + 6,
+              left: align === "right" ? undefined : rect.left,
+              right: align === "right" ? window.innerWidth - rect.right : undefined,
+              minWidth: Math.max(230, rect.width),
+              zIndex: 130,
+            }
+          : undefined
+      }
+    >
+      {options.length > SEARCH_ABOVE ? (
+        <input
+          className="ui-dd__search"
+          type="search"
+          placeholder="Search"
+          aria-label={label ? `Search ${label}` : "Search"}
+          value={query}
+          autoFocus
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setCursor(0);
+          }}
+        />
+      ) : null}
+      {shown.length === 0 ? <span className="px-3 py-2 text-xs text-fg-3">Nothing matches.</span> : null}
+      {shown.map((o, i) => (
+        <button
+          key={o.value}
+          type="button"
+          role="option"
+          aria-selected={o.value === value}
+          data-active={i === cursor}
+          disabled={o.disabled}
+          autoFocus={options.length <= SEARCH_ABOVE && i === cursor}
+          onMouseEnter={() => setCursor(i)}
+          onClick={() => pick(o)}
+          className="ui-dd__opt"
+        >
+          <span className="flex min-w-0 flex-1 flex-col gap-px">
+            <span className="name">{o.label}</span>
+            {o.hint ? <span className="note">{o.hint}</span> : null}
+          </span>
+          {o.value === value ? <span className="check">✓</span> : null}
+        </button>
+      ))}
+      {footer ? (
+        <Link className="ui-dd__footer" href={footer.href} onClick={() => close()}>
+          {footer.label} →
+        </Link>
+      ) : null}
+    </div>
+  ) : null;
 
   return (
-    <div ref={wrapperRef} className={cn("relative", fullWidth && "w-full", className)}>
+    <div
+      ref={wrapperRef}
+      data-dd-open={open || undefined}
+      className={cn("ui-dd", fullWidth && "ui-dd--block", className)}
+    >
       <button
         ref={triggerRef}
+        id={id}
         type="button"
-        aria-haspopup="menu"
+        aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={fullWidth || hideLabel ? label : undefined}
         onClick={toggle}
         disabled={disabled}
-        className={cn(
-          "inline-flex items-center gap-2 h-9 px-3 rounded-md border border-input bg-background text-sm font-medium hover:bg-muted/40 disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-ring",
-          fullWidth && "w-full justify-between",
-        )}
+        className={cn("ui-dd__btn", mono && fullWidth && "t-mono", triggerClassName)}
       >
-        <span className="inline-flex items-center gap-2 min-w-0">
-          {label ? (
-            <span className="text-muted-foreground text-xs shrink-0">{label}</span>
-          ) : null}
-          <span className="truncate">{active?.label ?? value}</span>
+        {!fullWidth && label && !hideLabel ? <span className="label">{label}</span> : null}
+        <span className={cn("value", !active && "font-normal text-fg-3")}>
+          {active?.label ?? placeholder ?? value}
         </span>
-        <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" strokeWidth={1.75} />
+        {chevron ?? <ChevronDown className="h-3.5 w-3.5 flex-none text-fg-3" strokeWidth={2} />}
       </button>
-      {open && rect && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              ref={menuRef}
-              role="menu"
-              style={menuStyle}
-              className={cn(
-                "bg-card border border-border rounded-[10px] p-1.5 shadow-lg z-[100]",
-                !fullWidth && width,
-              )}
-            >
-              {options.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  role="menuitem"
-                  disabled={o.disabled}
-                  aria-disabled={o.disabled}
-                  onClick={() => {
-                    if (o.disabled) return;
-                    onChange(o.value);
-                    close();
-                  }}
-                  className={cn(
-                    "w-full flex items-start gap-2 px-2.5 py-1.5 rounded-md text-sm text-left",
-                    o.disabled ? "opacity-50 cursor-not-allowed" : "hover:bg-muted",
-                  )}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{o.label}</span>
-                      {o.value === value ? (
-                        <Check className="h-3.5 w-3.5" strokeWidth={2} />
-                      ) : null}
-                    </div>
-                    {o.hint ? (
-                      <p className="text-xs text-muted-foreground mt-0.5">{o.hint}</p>
-                    ) : null}
-                  </div>
-                </button>
-              ))}
-            </div>,
-            document.body,
-          )
-        : null}
+      {fullWidth ? menu : menu && typeof document !== "undefined" ? createPortal(menu, document.body) : null}
     </div>
   );
 }
+
+export { Select as Dropdown };
+export type { SelectOption as DropdownOption };

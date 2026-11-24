@@ -1,11 +1,5 @@
 "use client";
 
-/**
- * Renders an endpoint's reference documentation: headers, parameters table,
- * request body example, response example, error codes. Driven by a structured
- * `EndpointDoc` object so each endpoint section on the API page stays
- * consistent in layout.
- */
 import { CodeBlock } from "./code-block";
 
 export interface DocParameter {
@@ -31,68 +25,50 @@ export interface EndpointDoc {
   description: string;
   headers: DocHeader[];
   parameters: DocParameter[];
-  /** JSON sample of the request body. */
   requestExample: string;
-  /** Plain-language description of what's returned. */
   responseDescription: string;
-  /** JSON sample of the response, or `null` for binary responses. */
+  /** `null` for binary responses. */
   responseExample: string | null;
-  /** Optional list of response headers worth documenting (e.g. X-Response-Code). */
   responseHeaders?: { name: string; description: string }[];
   errors: DocError[];
 }
 
 export function EndpointReference({ doc }: { doc: EndpointDoc }) {
   return (
-    <div className="space-y-6">
-      <p className="text-[13px] text-muted-foreground leading-relaxed">{doc.description}</p>
+    <div className="flex flex-col gap-5">
+      <p className="t-sub m-0">{doc.description}</p>
 
       <Section title="Headers">
         <KvTable
-          rows={doc.headers.map((h) => ({
-            name: h.name,
-            type: h.value,
-            description: h.note ?? "",
-          }))}
+          label="Headers"
+          rows={doc.headers.map((h) => ({ name: h.name, type: h.value, description: h.note ?? "" }))}
           nameLabel="Header"
           typeLabel="Value"
         />
       </Section>
 
       <Section title="Request body">
-        <KvTable rows={doc.parameters.map(parameterRow)} />
-        <p className="text-[11.5px] text-muted-foreground pt-2">Example:</p>
+        <KvTable label="Request body" rows={doc.parameters.map(parameterRow)} />
         <CodeBlock code={doc.requestExample} lang="json" filename="request.json" />
       </Section>
 
       <Section title="Response">
-        <p className="text-[13px] text-muted-foreground">{doc.responseDescription}</p>
-        {doc.responseExample && (
-          <CodeBlock code={doc.responseExample} lang="json" filename="response.json" />
-        )}
-        {doc.responseHeaders && doc.responseHeaders.length > 0 && (
-          <>
-            <p className="text-[11.5px] text-muted-foreground pt-2">Response headers:</p>
-            <KvTable
-              rows={doc.responseHeaders.map((h) => ({
-                name: h.name,
-                type: "",
-                description: h.description,
-              }))}
-              nameLabel="Header"
-              typeLabel=""
-            />
-          </>
-        )}
+        <p className="t-sub m-0">{doc.responseDescription}</p>
+        {doc.responseExample ? <CodeBlock code={doc.responseExample} lang="json" filename="response.json" maxHeight="320px" /> : null}
+        {doc.responseHeaders && doc.responseHeaders.length > 0 ? (
+          <KvTable
+            label="Response headers"
+            rows={doc.responseHeaders.map((h) => ({ name: h.name, type: "", description: h.description }))}
+            nameLabel="Response header"
+            typeLabel=""
+          />
+        ) : null}
       </Section>
 
       <Section title="Status codes">
         <KvTable
-          rows={doc.errors.map((e) => ({
-            name: String(e.status),
-            type: "",
-            description: e.meaning,
-          }))}
+          label="Status codes"
+          rows={doc.errors.map((e) => ({ name: String(e.status), type: "", description: e.meaning }))}
           nameLabel="Status"
           typeLabel=""
         />
@@ -102,16 +78,14 @@ export function EndpointReference({ doc }: { doc: EndpointDoc }) {
 }
 
 function parameterRow(p: DocParameter): KvRow {
-  const typePart = p.required ? `${p.type} • required` : p.default ? `${p.type} • default: ${p.default}` : p.type;
+  const typePart = p.required ? `${p.type} · required` : p.default ? `${p.type} · default ${p.default}` : p.type;
   return { name: p.name, type: typePart, description: p.description };
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-2">
-      <h3 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {title}
-      </h3>
+    <div className="flex flex-col gap-[7px]">
+      <h3 className="t-label m-0">{title}</h3>
       {children}
     </div>
   );
@@ -124,46 +98,32 @@ interface KvRow {
 }
 
 function KvTable({
+  label,
   rows,
   nameLabel = "Field",
   typeLabel = "Type",
 }: {
+  label: string;
   rows: KvRow[];
   nameLabel?: string;
   typeLabel?: string;
 }) {
   return (
-    <div className="rounded border border-border/40 overflow-hidden">
-      <table className="w-full text-[12.5px]">
-        <thead>
-          <tr className="border-b border-border/40 bg-muted/20">
-            <th className="text-left font-medium text-[11px] uppercase tracking-wider text-muted-foreground px-3 py-2 w-1/4">
-              {nameLabel}
-            </th>
-            {typeLabel && (
-              <th className="text-left font-medium text-[11px] uppercase tracking-wider text-muted-foreground px-3 py-2 w-1/4">
-                {typeLabel}
-              </th>
-            )}
-            <th className="text-left font-medium text-[11px] uppercase tracking-wider text-muted-foreground px-3 py-2">
-              Description
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-b border-border/30 last:border-b-0">
-              <td className="px-3 py-1.5 font-mono text-foreground/90 align-top">{r.name}</td>
-              {typeLabel && (
-                <td className="px-3 py-1.5 font-mono text-[11.5px] text-muted-foreground align-top">
-                  {r.type}
-                </td>
-              )}
-              <td className="px-3 py-1.5 text-muted-foreground align-top">{r.description}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div role="table" aria-label={label} className="flex flex-col rounded-2xl border border-line bg-ground px-3">
+      <div role="row" className="t-th flex gap-3 border-b border-line-divider py-2 max-[860px]:hidden">
+        <span role="columnheader" className="flex-[1_1_140px]">{nameLabel}</span>
+        {typeLabel ? <span role="columnheader" className="flex-[1_1_160px]">{typeLabel}</span> : null}
+        <span role="columnheader" className="flex-[2_1_220px]">Description</span>
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} role="row" className="flex flex-wrap gap-x-3 gap-y-1 border-b border-line-faint py-2.5 last:border-b-0">
+          <span role="cell" className="flex-[1_1_140px] font-mono text-[12.5px] font-medium text-fg [overflow-wrap:anywhere]">{r.name}</span>
+          {typeLabel ? (
+            <span role="cell" className="flex-[1_1_160px] font-mono text-xs text-fg-2 [overflow-wrap:anywhere]">{r.type}</span>
+          ) : null}
+          <span role="cell" className="flex-[2_1_220px] text-[13px] text-fg-2">{r.description}</span>
+        </div>
+      ))}
     </div>
   );
 }

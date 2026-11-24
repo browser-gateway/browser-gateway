@@ -1,34 +1,23 @@
 "use client";
 
-/**
- * Playground page. Live, interactive remote browser view powered by CDP
- * `Page.startScreencast` over WS /v1/live.
- *
- * Flow:
- *   1. User picks a provider + clicks Start
- *   2. We open a WS to /v1/live?provider=...&token=...
- *   3. Server attaches to a page target on that provider, starts the
- *      screencast, forwards binary JPEG frames + JSON control messages
- *   4. Page renders each frame to a canvas, forwards mouse/key events back
- *
- * Spec decisions baked in:
- *   - Required `?provider=<id>` (no auto-routing in v0.3.0)
- *   - Single page target, no multi-tab UI
- *   - No automatic reconnect — user clicks Reconnect manually
- */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Loader2, Maximize2, Minimize2, Pause, Play, RefreshCw, X } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, ArrowRight, CornerDownLeft, Loader2, Maximize2, Minimize2, MonitorPlay, RefreshCw, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Alert } from "@/components/ui/alert";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { toast } from "sonner";
+import { PageHeader } from "@/components/page-header";
+import { CodeBlock } from "@/components/code-block";
+import { NavGuard } from "@/components/nav-guard";
 import { formatBytes } from "@/lib/format-bytes";
 import { proxyPickerOptions } from "@/lib/proxy-options";
+import { buildConnectUrl, maskUrlToken } from "@/lib/connect-url";
 import { canSaveToProfile, fetchProfiles, fetchProviders, fetchProxies, fetchSettings, routableProviders, type ProfileMetaItem, type ProviderConfigItem, type ProxySummary } from "@/lib/api";
 import { LiveClient, eventModifiers, mouseButton, type FrameMeta } from "@/lib/live-client";
 import { useAuthEnabled, useGatewayToken } from "@/components/token-autofill";
-import { NavGuard } from "@/components/nav-guard";
+import { cn } from "@/lib/utils";
 
 type Status = "idle" | "connecting" | "live" | "error" | "closed";
 
@@ -42,8 +31,18 @@ const DEFAULT_KEEP_ALIVE_SECONDS = 300;
 const SAVE_TOAST_ID = "profile-save";
 const SAVE_CHECK_INTERVAL_MS = 1500;
 const SAVE_CHECK_TIMEOUT_MS = 15_000;
+const ACTIVITY_LIMIT = 12;
 
 const PROVIDER_BLOCK_CODES = new Set(["ERR_BLOCKED_BY_ADMINISTRATOR", "ERR_BLOCKED_BY_CLIENT"]);
+
+const NAV_BUTTON = "h-8 px-3 text-xs";
+const SIDE_TITLE = "m-0 text-[15px] font-bold tracking-[-0.01em]";
+const LEAVE_MESSAGE = "A live browser session is open. Leaving this page will end it. Continue?";
+
+interface ActivityEvent {
+  at: number;
+  text: string;
+}
 
 function navErrorText(url: string, reason?: string): string {
   const code = reason?.replace(/^net::/, "");
@@ -53,8 +52,11 @@ function navErrorText(url: string, reason?: string): string {
 
 function formatMinutesLeft(seconds: number): string {
   if (seconds <= 60) return "<1 min left";
-  const mins = Math.ceil(seconds / 60);
-  return `${mins} min left`;
+  return `${Math.ceil(seconds / 60)} min left`;
+}
+
+function formatClock(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 export default function PlaygroundPage() {
@@ -81,14 +83,9 @@ export default function PlaygroundPage() {
     scrollX: 0,
     scrollY: 0,
   });
-  // Track the URL the server says the page is on. The input may be in the
-  // middle of being typed — we sync it only when the server-reported URL
-  // changes AND it doesn't match what the user has typed mid-edit.
   const lastServerUrlRef = useRef<string>("");
   const urlInputRef = useRef(urlInput);
   useEffect(() => { urlInputRef.current = urlInput; }, [urlInput]);
-  // Last mouse position INSIDE the canvas (in model coords). Used for the
-  // cursor overlay. null when the mouse is outside.
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [navNotice, setNavNotice] = useState<string | null>(null);
@@ -100,6 +97,13 @@ export default function PlaygroundPage() {
   const clientRef = useRef<LiveClient | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const [activity, setActivity] = useState<ActivityEvent[]>([]);
+  const startedAtRef = useRef(0);
+  const log = useCallback((text: string) => {
+    const at = startedAtRef.current ? Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)) : 0;
+    setActivity((prev) => [...prev.slice(-(ACTIVITY_LIMIT - 1)), { at, text }]);
+  }, []);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -141,19 +145,28 @@ export default function PlaygroundPage() {
 
   useEffect(() => {
     if (status !== "live") {
-      setRemainingSeconds(null);
+      queueMicrotask(() => setRemainingSeconds(null));
       return;
     }
-    setRemainingSeconds(keepAliveSeconds);
+    queueMicrotask(() => setRemainingSeconds(keepAliveSeconds));
     const tick = setInterval(() => {
       setRemainingSeconds((prev) => (prev === null ? null : Math.max(0, prev - 15)));
     }, 15000);
     return () => clearInterval(tick);
   }, [status, keepAliveSeconds]);
+
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (status !== "live") return;
+    const startedAt = Date.now();
+    queueMicrotask(() => setElapsedSeconds(0));
+    const tick = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(tick);
+  }, [status]);
+
   const authEnabled = useAuthEnabled();
   const realToken = useGatewayToken();
 
-  // Load provider list.
   useEffect(() => {
     fetchProviders()
       .then((r) => {
@@ -190,7 +203,6 @@ export default function PlaygroundPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Acquire canvas context once.
   useEffect(() => {
     if (canvasRef.current) {
       ctxRef.current = canvasRef.current.getContext("2d", { alpha: false });
@@ -231,6 +243,8 @@ export default function PlaygroundPage() {
       clientRef.current.close();
       clientRef.current = null;
     }
+    startedAtRef.current = Date.now();
+    setActivity([]);
     setStatus("connecting");
     setStatusMsg("");
     setNavNotice(null);
@@ -246,14 +260,21 @@ export default function PlaygroundPage() {
       : null;
 
     const client = new LiveClient({
-      onOpen: () => setStatus("live"),
-      onNavError: (url, reason) => setNavNotice(navErrorText(url, reason)),
+      onOpen: () => {
+        setStatus("live");
+        log(`Browser opened on ${selectedProvider}`);
+      },
+      onNavError: (url, reason) => {
+        setNavNotice(navErrorText(url, reason));
+        log(navErrorText(url, reason));
+      },
       onRefresh: (state) => setRefreshing(state === "started"),
       onClose: ({ code, reason }) => {
         setRefreshing(false);
         reportSave();
         setStatus("closed");
         setStatusMsg(`connection closed (${code}${reason ? `: ${reason}` : ""})`);
+        log("Browser closed");
       },
       onError: (code, message) => {
         setStatus("error");
@@ -265,11 +286,11 @@ export default function PlaygroundPage() {
       onExpired: () => {
         setStatus("closed");
         setStatusMsg("Session ended after keep-alive limit.");
+        log("Session ended when its time ran out");
       },
       onUrl: (url) => {
         setNavNotice(null);
-        // Sync the address bar with the actual page URL unless the user is
-        // actively editing (input != the last URL we set).
+        if (url !== lastServerUrlRef.current) log(`Loaded ${url.replace(/^https?:\/\//, "").replace(/\/$/, "")}`);
         if (urlInputRef.current === lastServerUrlRef.current || lastServerUrlRef.current === "") {
           setUrlInput(url);
         }
@@ -304,9 +325,10 @@ export default function PlaygroundPage() {
       keepAliveSeconds,
     });
     clientRef.current = client;
-  }, [selectedProvider, selectedProfile, saveProfile, profileSavable, profiles, reportSave, authEnabled, realToken, urlInput, keepAliveSeconds, selectedProxy]);
+  }, [selectedProvider, selectedProfile, saveProfile, profileSavable, profiles, reportSave, authEnabled, realToken, keepAliveSeconds, selectedProxy, log]);
 
   const handleStop = useCallback(() => {
+    if (clientRef.current) log("Session stopped");
     clientRef.current?.close();
     clientRef.current = null;
     setStatus("idle");
@@ -315,11 +337,8 @@ export default function PlaygroundPage() {
     lastServerUrlRef.current = "";
     setCursorPos(null);
     reportSave();
-  }, [reportSave]);
+  }, [reportSave, log]);
 
-  // Tear down on unmount. Also warn the user when they refresh / close the
-  // tab while live — losing the session also means the page they're on
-  // disappears server-side (the bridge closes the tab on disconnect).
   useEffect(
     () => () => {
       clientRef.current?.close();
@@ -338,16 +357,6 @@ export default function PlaygroundPage() {
     return () => window.removeEventListener("pagehide", onPageHide);
   }, [status]);
 
-  /**
-   * Translate a DOM mouse event on the canvas (display coords) to the model
-   * coordinates the page is rendered at (frame meta coords). The canvas is
-   * displayed scaled-to-fit; the renderer needs viewport-relative pixels.
-   *
-   * CRITICAL: coords are CLAMPED to [0, deviceW-1] × [0, deviceH-1] so we
-   * never send negative or out-of-bounds values to the server (Zod rejects
-   * them, which spammed the log). The clamp also keeps the cursor overlay
-   * pinned to the canvas edge when the mouse drifts slightly outside.
-   */
   function canvasToFrameCoords(ev: { clientX: number; clientY: number }): { x: number; y: number } {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -363,19 +372,17 @@ export default function PlaygroundPage() {
     };
   }
 
-  // mousemove throttle: max ~30 Hz
   const lastMoveSent = useRef(0);
 
   const onCanvasMouseMove = useCallback((ev: React.MouseEvent<HTMLCanvasElement>) => {
     if (status !== "live") return;
     const { x, y } = canvasToFrameCoords(ev);
-    // Update overlay cursor every frame so the user always knows where they are.
     setCursorPos({ x, y });
-    // Throttle the network send to ~30 Hz.
     const now = performance.now();
     if (now - lastMoveSent.current < 33) return;
     lastMoveSent.current = now;
     clientRef.current?.sendMouse({ kind: "move", x, y, modifiers: eventModifiers(ev.nativeEvent) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, meta]);
 
   const onCanvasMouseLeave = useCallback(() => {
@@ -394,6 +401,7 @@ export default function PlaygroundPage() {
       clickCount: ev.detail || 1,
       modifiers: eventModifiers(ev.nativeEvent),
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, meta]);
 
   const onCanvasMouseUp = useCallback((ev: React.MouseEvent<HTMLCanvasElement>) => {
@@ -407,14 +415,10 @@ export default function PlaygroundPage() {
       clickCount: ev.detail || 1,
       modifiers: eventModifiers(ev.nativeEvent),
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, meta]);
 
-  /**
-   * Non-passive wheel listener. React's onWheel is passive by default in
-   * modern React, so calling preventDefault() in a React handler doesn't
-   * actually stop the dashboard from scrolling. We attach the listener via
-   * useEffect with `{passive: false}` to get the right behavior.
-   */
+  // React's onWheel is passive, so preventDefault only works on a listener added with passive: false.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -436,7 +440,6 @@ export default function PlaygroundPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, meta]);
 
-  /** Draw the cursor overlay whenever cursorPos changes. */
   useEffect(() => {
     const overlay = overlayRef.current;
     if (!overlay) return;
@@ -446,7 +449,6 @@ export default function PlaygroundPage() {
     if (!ctx) return;
     ctx.clearRect(0, 0, overlay.width, overlay.height);
     if (!cursorPos) return;
-    // A small arrow cursor anchored at (cursorPos.x, cursorPos.y).
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.strokeStyle = "rgba(0,0,0,0.95)";
     ctx.lineWidth = 1.5;
@@ -466,20 +468,13 @@ export default function PlaygroundPage() {
   const onCanvasKeyDown = useCallback((ev: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (status !== "live") return;
     ev.preventDefault();
-    if (ev.repeat) return; // suppress browser autorepeat — CDP autoRepeat: false on the receiver
+    if (ev.repeat) return;
     const mods = eventModifiers(ev.nativeEvent);
 
-    // Cmd+V (mac) / Ctrl+V (others): read the host clipboard and send as a
-    // paste message. The native key event reaches Chrome, but Chrome's OS
-    // clipboard on the remote machine is empty — so we have to ship the text
-    // ourselves. The browser onPaste handler below catches the same intent
-    // when the user uses the right-click menu.
+    // The remote machine's clipboard is empty, so a paste shortcut ships the host clipboard text itself.
     const isPasteShortcut =
       ev.key.toLowerCase() === "v" && (ev.metaKey || ev.ctrlKey) && !ev.altKey && !ev.shiftKey;
     if (isPasteShortcut) {
-      // Some browsers / iframes block clipboard.readText() without explicit
-      // permission. If it fails, we silently no-op and let the native paste
-      // event take over.
       void navigator.clipboard
         ?.readText()
         .then((text) => clientRef.current?.sendPaste(text))
@@ -487,11 +482,7 @@ export default function PlaygroundPage() {
       return;
     }
 
-    // Printable character with NO modifier keys (other than shift): send text
-    // so Chrome injects the character. A separate "char" event would be a
-    // duplicate — Chrome already produces the character from the keyDown when
-    // `text` is set. With Ctrl/Meta/Alt down, we omit text so the keypress
-    // is interpreted as a shortcut, not text input.
+    // With Ctrl/Meta/Alt down, text is omitted so Chrome reads the key as a shortcut.
     const isShortcut = ev.ctrlKey || ev.metaKey || ev.altKey;
     const printable = ev.key.length === 1 && !isShortcut;
     clientRef.current?.sendKey({
@@ -533,21 +524,18 @@ export default function PlaygroundPage() {
     [urlInput, status],
   );
 
-  const providerOptions = useMemo(() => providers ?? [], [providers]);
-  const profileOptions = useMemo(() => profiles ?? [], [profiles]);
   const providerSelectOptions = useMemo<SelectOption[]>(
-    () => providerOptions.map((p) => ({ value: p.id, label: p.id })),
-    [providerOptions],
+    () => (providers ?? []).map((p) => ({ value: p.id, label: p.id })),
+    [providers],
   );
   const profileSelectOptions = useMemo<SelectOption[]>(
-    () => [{ value: "", label: "(no profile)" }, ...profileOptions.map((p) => ({ value: p.id, label: p.id }))],
-    [profileOptions],
+    () => [{ value: "", label: "None", hint: "Sessions start signed out" }, ...profiles.map((p) => ({ value: p.id, label: p.id }))],
+    [profiles],
   );
-
   const profileProxy = profiles.find((p) => p.id === selectedProfile)?.proxy ?? null;
   const proxySelectOptions = useMemo<SelectOption[]>(
     () => [
-      { value: "", label: "(no proxy)", hint: proxies.length === 0 ? "No proxies saved. Add one in Proxies." : undefined },
+      { value: "", label: "None", hint: proxies.length === 0 ? "No proxies saved. Add one in Proxies." : undefined },
       ...proxyPickerOptions(proxies).map((o) => (o.value === profileProxy ? { ...o, hint: "This profile's proxy" } : o)),
     ],
     [proxies, profileProxy],
@@ -558,238 +546,307 @@ export default function PlaygroundPage() {
     const keep = profiles.find((p) => p.id === id)?.proxy;
     if (keep) setSelectedProxy(keep);
   }
-  const providerAppliesProxy = providers?.find((p) => p.id === selectedProvider)?.injectProxy === true;
 
-  const rootClass = isFullscreen
-    ? "fixed inset-0 z-50 bg-background flex flex-col p-4 gap-4"
-    : "flex flex-col h-[calc(100dvh-6rem)] min-h-[28rem] gap-6";
+  const provider = providers?.find((p) => p.id === selectedProvider);
+  const providerAppliesProxy = provider?.injectProxy === true;
+  const isLiveOrConnecting = status === "live" || status === "connecting";
+  const navDisabled = status !== "live";
+  const showCover = status === "idle" || status === "connecting" || status === "error";
+  const providerName = selectedProvider || "None";
+  const profileName = selectedProfile || "None";
+  const noProviders = providers !== null && providers.length === 0;
+
+  const connectParams = [
+    selectedProvider ? `provider=${encodeURIComponent(selectedProvider)}` : null,
+    selectedProfile ? `profile=${encodeURIComponent(selectedProfile)}` : null,
+    selectedProfile && !(saveProfile && profileSavable) ? "readOnly=1" : null,
+    selectedProxy ? `proxy=${encodeURIComponent(selectedProxy)}` : null,
+    authEnabled && realToken ? `token=${realToken}` : null,
+  ].filter(Boolean);
+  const connectUrl = `${buildConnectUrl()}${connectParams.length > 0 ? `?${connectParams.join("&")}` : ""}`;
+  const snippetFor = (url: string) => `const browser = await puppeteer.connect({\n  browserWSEndpoint:\n    '${url}'\n});`;
+
+  const startButton = (
+    <Button variant="primary" className="h-11 px-[22px]" onClick={handleStart} disabled={!selectedProvider || isLiveOrConnecting} loading={status === "connecting"} loadingLabel="Opening">
+      Start session
+    </Button>
+  );
+
+  const setupBar = (
+    <section aria-label="Session setup" className="ui-card relative flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[24px] px-4 py-3.5">
+      <div className="flex flex-wrap items-center gap-2">
+        {providerSelectOptions.length > 0 ? (
+          <Select label="Provider" value={selectedProvider} options={providerSelectOptions} onChange={setSelectedProvider} disabled={isLiveOrConnecting} footer={{ label: "Manage providers", href: "/providers/" }} />
+        ) : (
+          <span className="text-xs text-fg-3">{providers === null ? "Loading providers" : "No providers configured."}</span>
+        )}
+        {profilesEnabled ? (
+          <Select label="Profile" value={selectedProfile} options={profileSelectOptions} onChange={chooseProfile} disabled={isLiveOrConnecting} footer={{ label: "Manage profiles", href: "/profiles/" }} />
+        ) : null}
+        <Select label="Proxy" value={selectedProxy} options={proxySelectOptions} onChange={setSelectedProxy} disabled={isLiveOrConnecting} footer={{ label: "Manage proxies", href: "/proxies/" }} />
+        <Select label="Length" value={String(keepAliveSeconds)} options={KEEP_ALIVE_OPTIONS} onChange={(v) => setKeepAliveSeconds(Number(v))} disabled={isLiveOrConnecting} />
+        {profilesEnabled && selectedProfile ? (
+          <span className="flex select-none items-center gap-2 pl-1 text-[13px] font-semibold text-fg-soft">
+            <Switch label="Save to profile" checked={saveProfile && profileSavable} onCheckedChange={setSaveProfile} disabled={isLiveOrConnecting || !profileSavable} />
+            Save to profile
+          </span>
+        ) : null}
+      </div>
+      <span className="flex-[1_1_0]" />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" onClick={() => setIsFullscreen((v) => !v)} aria-label={isFullscreen ? "Exit full screen" : "Full screen"}>
+          {isFullscreen ? <Minimize2 strokeWidth={2} /> : <Maximize2 strokeWidth={2} />}
+        </Button>
+        {isLiveOrConnecting ? (
+          <Button variant="destructive-outline" className="bg-bad-bg px-[18px] font-bold" onClick={handleStop}>
+            Stop session
+          </Button>
+        ) : (
+          startButton
+        )}
+      </div>
+    </section>
+  );
+
+  const browser = (
+    <section aria-label="Browser" className={cn("flex min-w-0 flex-col gap-2.5 rounded-[24px] border border-line bg-card p-2.5", isFullscreen ? "min-h-0 flex-1" : "flex-[3_1_640px]")}>
+      <form onSubmit={onSubmitUrl} className="flex items-center gap-1.5">
+        <Button variant="outline" className={NAV_BUTTON} onClick={() => clientRef.current?.navAction("back")} disabled={navDisabled} aria-label="Back">
+          <ArrowLeft strokeWidth={2} />
+        </Button>
+        <Button variant="outline" className={NAV_BUTTON} onClick={() => clientRef.current?.navAction("forward")} disabled={navDisabled} aria-label="Forward">
+          <ArrowRight strokeWidth={2} />
+        </Button>
+        <Button variant="outline" className={NAV_BUTTON} onClick={() => clientRef.current?.navAction("reload")} disabled={navDisabled} aria-label="Reload">
+          <RefreshCw strokeWidth={2} />
+        </Button>
+        <label htmlFor="playground-address" className="sr-only">
+          Page address
+        </label>
+        <input
+          id="playground-address"
+          type="text"
+          value={urlInput}
+          onChange={(e) => setUrlInput(e.target.value)}
+          placeholder="https://en.wikipedia.org"
+          disabled={navDisabled}
+          autoComplete="off"
+          spellCheck={false}
+          className="h-[38px] min-w-0 flex-[1_1_0] rounded-[19px] border border-line-strong bg-ground px-4 font-mono text-[13px] text-fg outline-none placeholder:text-fg-3 focus-visible:border-brand-line disabled:opacity-60"
+        />
+        <Button type="submit" variant="outline" className={NAV_BUTTON} disabled={navDisabled} aria-label="Go">
+          <CornerDownLeft strokeWidth={2} />
+        </Button>
+      </form>
+      <div
+        ref={containerRef}
+        className={cn("relative overflow-hidden rounded-2xl bg-ground", isFullscreen ? "min-h-0 flex-1" : "h-[620px] max-[860px]:h-[60dvh]")}
+        style={{ overscrollBehavior: "contain", touchAction: "none" }}
+      >
+        <canvas
+          ref={canvasRef}
+          tabIndex={0}
+          width={DEFAULT_VIEWPORT.width}
+          height={DEFAULT_VIEWPORT.height}
+          onMouseMove={onCanvasMouseMove}
+          onMouseLeave={onCanvasMouseLeave}
+          onMouseDown={onCanvasMouseDown}
+          onMouseUp={onCanvasMouseUp}
+          onContextMenu={(e) => e.preventDefault()}
+          onKeyDown={onCanvasKeyDown}
+          onKeyUp={onCanvasKeyUp}
+          onPaste={onCanvasPaste}
+          className="absolute inset-0 block h-full w-full focus:outline-none"
+        />
+        <canvas ref={overlayRef} width={DEFAULT_VIEWPORT.width} height={DEFAULT_VIEWPORT.height} className="pointer-events-none absolute inset-0 h-full w-full" />
+        {showCover ? (
+          <div className="ui-card ui-card--hero absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-2xl border-dashed border-line-strong bg-ground p-6 text-center">
+            <span className="flex size-14 items-center justify-center rounded-full bg-brand-soft text-brand-text">
+              {status === "connecting" ? <Loader2 className="size-6 animate-spin" strokeWidth={2} /> : <MonitorPlay className="size-6" strokeWidth={2} />}
+            </span>
+            <span className="text-lg font-bold">
+              {status === "connecting" ? "Opening the browser" : status === "error" ? "The browser did not open" : "No browser open"}
+            </span>
+            <span className="max-w-[420px] text-sm text-fg-2 [overflow-wrap:anywhere]">
+              {status === "connecting"
+                ? `Connecting to ${providerName}.`
+                : status === "error"
+                  ? statusMsg
+                  : noProviders
+                    ? "Add a provider before starting a live session."
+                    : `Pick a profile and proxy above, then start. The browser opens on ${providerName} and closes itself when the time runs out.`}
+            </span>
+            {status === "connecting" ? null : noProviders ? (
+              <Link href="/providers/" className="ui-btn ui-btn--primary h-11 px-[22px]">
+                Add a provider
+              </Link>
+            ) : (
+              startButton
+            )}
+          </div>
+        ) : null}
+        {status === "live" ? (
+          <span className="pointer-events-none absolute bottom-3 left-3 max-w-[calc(100%-24px)] truncate rounded-[10px] bg-[rgba(11,10,16,0.82)] px-2.5 py-[5px] text-[11px] font-semibold text-fg" title={statusMsg || undefined}>
+            {statusMsg || "Click the page to control it"}
+          </span>
+        ) : null}
+        {status === "closed" ? (
+          <span className="absolute bottom-3 left-3 max-w-[calc(100%-24px)] truncate rounded-[10px] bg-[rgba(11,10,16,0.82)] px-2.5 py-[5px] text-[11px] font-semibold text-fg" title={statusMsg}>
+            Session ended{statusMsg ? ` · ${statusMsg}` : ""}
+          </span>
+        ) : null}
+        {navNotice ? (
+          <div className="absolute left-3 right-3 top-3 flex items-start gap-2 rounded-[14px] border border-line-strong bg-raised px-3.5 py-2.5 text-xs text-fg">
+            <span className="flex-1">{navNotice}</span>
+            <button type="button" onClick={() => setNavNotice(null)} className="text-fg-3 hover:text-fg" aria-label="Dismiss">
+              <X className="size-3.5" strokeWidth={2} />
+            </button>
+          </div>
+        ) : null}
+        {refreshing ? (
+          <div className="absolute inset-0 flex items-center justify-center gap-2 bg-[rgba(11,10,16,0.6)] text-[13px] text-fg backdrop-blur-sm">
+            <Loader2 className="size-4 animate-spin text-fg-3" />
+            Updating browser
+          </div>
+        ) : null}
+      </div>
+    </section>
+  );
+
+  const notices = (
+    <>
+      {profilesEnabled && selectedProfile && !profileSavable ? (
+        <Alert variant="muted">
+          {selectedProvider} only serves profile {provider?.profile}. Change it on{" "}
+          <Link href="/providers/" className="t-link">
+            Providers
+          </Link>
+          , or pick another provider.
+        </Alert>
+      ) : null}
+      {selectedProxy && !providerAppliesProxy ? (
+        <Alert variant="muted">
+          {selectedProvider} does not apply proxies. Turn on Apply proxies on{" "}
+          <Link href="/providers/" className="t-link">
+            Providers
+          </Link>
+          , or pick another provider.
+        </Alert>
+      ) : null}
+    </>
+  );
 
   return (
-    <div className={rootClass}>
-      <NavGuard
-        active={status === "live" || status === "connecting"}
-        message="A live browser session is open. Leaving this page will end it. Continue?"
-      />
-      {!isFullscreen && (
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Playground</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Live remote browser view. Pick a provider, click Start, then click and type into the canvas as if it were a local browser.
-          </p>
-        </div>
+    <div className={isFullscreen ? "fixed inset-0 z-50 flex flex-col gap-3 bg-ground p-4" : "contents"}>
+      <NavGuard active={isLiveOrConnecting} message={LEAVE_MESSAGE} />
+      {isFullscreen ? null : (
+        <PageHeader
+          title="Playground"
+          description="Open a live browser on one of your providers. Click into the page to focus it, then type or click as if it were a local browser."
+          actions={<StatusPill status={status} remainingSeconds={remainingSeconds} />}
+        />
       )}
-
-      <div className="flex-1 min-h-0 flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-3">
-            {providerSelectOptions.length > 0 ? (
-              <Select
-                label="Provider"
-                value={selectedProvider}
-                options={providerSelectOptions}
-                onChange={setSelectedProvider}
-                disabled={status === "live" || status === "connecting"}
-              />
-            ) : (
-              <span className="text-[12px] text-muted-foreground">No providers configured.</span>
-            )}
-
-            {profilesEnabled && (
-              <Select
-                label="Profile"
-                value={selectedProfile}
-                options={profileSelectOptions}
-                onChange={chooseProfile}
-                disabled={status === "live" || status === "connecting"}
-              />
-            )}
-
-            {profilesEnabled && selectedProfile && (
-              <label className="flex items-center gap-2 text-[12px] text-muted-foreground select-none">
-                <Switch
-                  size="sm"
-                  checked={saveProfile && profileSavable}
-                  onCheckedChange={(checked) => setSaveProfile(checked)}
-                  disabled={status === "live" || status === "connecting" || !profileSavable}
-                />
-                Save to profile
-              </label>
-            )}
-
-            <Select
-              label="Proxy"
-              value={selectedProxy}
-              options={proxySelectOptions}
-              onChange={setSelectedProxy}
-              disabled={status === "live" || status === "connecting"}
-            />
-
-            <Select
-              label="Duration"
-              value={String(keepAliveSeconds)}
-              options={KEEP_ALIVE_OPTIONS}
-              onChange={(v) => setKeepAliveSeconds(Number(v))}
-              disabled={status === "live" || status === "connecting"}
-              width="min-w-[8rem]"
-            />
-
-            <StatusBadge status={status} message={statusMsg} remainingSeconds={remainingSeconds} />
-
-            <div className="ml-auto flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() => setIsFullscreen((v) => !v)}
-                title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-              >
-                {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-              </Button>
-              {status === "live" || status === "connecting" ? (
-                <Button variant="outline" onClick={handleStop} size="sm">
-                  <Pause className="size-3.5 mr-1.5" />
-                  Stop
-                </Button>
+      {setupBar}
+      {notices}
+      <div className={isFullscreen ? "flex min-h-0 flex-1 flex-col" : "flex flex-wrap items-start gap-4"}>
+        {browser}
+        {isFullscreen ? null : (
+        <aside aria-label="This session" className="flex min-w-0 flex-[1_1_300px] flex-col gap-4">
+          <section className="ui-card ui-card--corner flex flex-col gap-3 rounded-[24px] p-5">
+            <h2 className={SIDE_TITLE}>{status === "live" ? "This session" : "Ready to start"}</h2>
+            <div className="grid grid-cols-2 gap-2">
+              <SideFact label="Provider" value={providerName} />
+              {status === "live" ? (
+                <>
+                  <SideFact label="Running for" value={formatClock(elapsedSeconds)} />
+                  <SideFact label="Profile" value={profileName} />
+                  <SideFact label="Proxy" value={selectedProxy || "None"} />
+                </>
               ) : (
-                <Button onClick={handleStart} size="sm" disabled={!selectedProvider}>
-                  <Play className="size-3.5 mr-1.5" />
-                  Start
-                </Button>
+                <>
+                  <SideFact label="Length" value={`${Math.round(keepAliveSeconds / 60)} min`} />
+                  <SideFact label="Profile" value={profileName} />
+                  <SideFact label="Proxy" value={selectedProxy || "None"} />
+                </>
               )}
             </div>
-          </div>
-
-          {profilesEnabled && selectedProfile && !profileSavable && (
-            <p className="text-[12px] text-muted-foreground -mt-2">
-              {selectedProvider} only serves profile {providers?.find((p) => p.id === selectedProvider)?.profile}. Change it on{" "}
-              <a href="/web/providers/" className="text-foreground underline underline-offset-4 hover:text-foreground/80">Providers</a>
-              , or pick another provider.
-            </p>
-          )}
-
-          {selectedProxy && !providerAppliesProxy && (
-            <p className="text-[12px] text-muted-foreground -mt-2">
-              {selectedProvider} does not apply proxies. Turn on Apply proxies on{" "}
-              <a href="/web/providers/" className="text-foreground underline underline-offset-4 hover:text-foreground/80">Providers</a>
-              , or pick another provider.
-            </p>
-          )}
-
-          {/* Address bar — visible whenever a session is open */}
-          {(status === "live" || status === "connecting" || status === "closed") && (
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon-sm" onClick={() => clientRef.current?.navAction("back")} title="Back" disabled={status !== "live"}>
-                <ArrowLeft className="size-3.5" />
-              </Button>
-              <Button variant="ghost" size="icon-sm" onClick={() => clientRef.current?.navAction("forward")} title="Forward" disabled={status !== "live"}>
-                <ArrowRight className="size-3.5" />
-              </Button>
-              <Button variant="ghost" size="icon-sm" onClick={() => clientRef.current?.navAction("reload")} title="Reload" disabled={status !== "live"}>
-                <RefreshCw className="size-3.5" />
-              </Button>
-              <form onSubmit={onSubmitUrl} className="flex-1 flex items-center gap-2">
-                <Input
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="https://example.com"
-                  className="font-mono text-[13px]"
-                  disabled={status !== "live"}
-                />
-                <Button type="submit" variant="secondary" size="sm" disabled={status !== "live"}>
-                  Go
-                </Button>
-              </form>
-            </div>
-          )}
-
-          <div
-            ref={containerRef}
-            className="flex-1 min-h-0 relative rounded-lg border border-border/40 bg-black/40 overflow-hidden"
-            style={{ overscrollBehavior: "contain", touchAction: "none" }}
-          >
-            <canvas
-              ref={canvasRef}
-              tabIndex={0}
-              width={DEFAULT_VIEWPORT.width}
-              height={DEFAULT_VIEWPORT.height}
-              onMouseMove={onCanvasMouseMove}
-              onMouseLeave={onCanvasMouseLeave}
-              onMouseDown={onCanvasMouseDown}
-              onMouseUp={onCanvasMouseUp}
-              onContextMenu={(e) => e.preventDefault()}
-              onKeyDown={onCanvasKeyDown}
-              onKeyUp={onCanvasKeyUp}
-              onPaste={onCanvasPaste}
-              className="absolute inset-0 w-full h-full block bg-black focus:outline-none"
-            />
-            <canvas
-              ref={overlayRef}
-              width={DEFAULT_VIEWPORT.width}
-              height={DEFAULT_VIEWPORT.height}
-              className="absolute inset-0 w-full h-full pointer-events-none"
-            />
-            {navNotice && (
-              <div className="absolute left-3 right-3 top-3 flex items-start gap-2 rounded-md border bg-background/95 px-3 py-2 text-[12px] text-foreground shadow-sm">
-                <span className="flex-1">{navNotice}</span>
-                <button type="button" onClick={() => setNavNotice(null)} className="text-muted-foreground hover:text-foreground" aria-label="Dismiss">
-                  <X className="size-3.5" />
-                </button>
-              </div>
-            )}
-            {refreshing && (
-              <div className="absolute inset-0 flex items-center justify-center gap-2 bg-background/60 backdrop-blur-sm text-[13px] text-foreground">
-                <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                Updating browser
-              </div>
-            )}
-          </div>
-
-          {status === "idle" && (
-            <p className="text-[12px] text-muted-foreground">
-              Click <em className="not-italic font-medium text-foreground">Start</em> to open a live browser on the selected provider. Click into the canvas to focus it before typing.
-            </p>
-          )}
+            <span className="text-xs text-fg-3">The session closes itself when the time runs out. Leaving this page ends it.</span>
+          </section>
+          {activity.length > 0 || status === "live" ? (
+            <section className="ui-card flex flex-col gap-2.5 rounded-[24px] p-5">
+              <h2 className={SIDE_TITLE}>Activity</h2>
+              {activity.length === 0 ? (
+                <span className="text-[13px] text-fg-3">Pages you open show here.</span>
+              ) : (
+                activity.map((e, i) => (
+                  <div key={`${e.at}-${i}`} className="flex items-baseline gap-2.5">
+                    <span className="w-[34px] flex-none font-mono text-[11px] text-fg-3">{formatClock(e.at)}</span>
+                    <span className="min-w-0 text-[13px] text-fg-soft [overflow-wrap:anywhere]">{e.text}</span>
+                  </div>
+                ))
+              )}
+            </section>
+          ) : null}
+          <section className="ui-card flex flex-col gap-2.5 rounded-[24px] p-5">
+            <h2 className={SIDE_TITLE}>Same setup from code</h2>
+            <CodeBlock code={snippetFor(maskUrlToken(connectUrl))} copyValue={snippetFor(connectUrl)} lang="typescript" filename="puppeteer" />
+            <span className="text-xs text-fg-3">
+              {authEnabled ? "Copy includes your gateway token. " : null}
+              <Link href="/" className="text-xs font-bold text-brand-text hover:underline">
+                More examples on Overview →
+              </Link>
+            </span>
+          </section>
+        </aside>
+        )}
       </div>
     </div>
   );
 }
 
-function StatusBadge({
-  status,
-  message,
-  remainingSeconds,
-}: {
-  status: Status;
-  message: string;
-  remainingSeconds: number | null;
-}) {
-  const labelMap: Record<Status, string> = {
-    idle: "Not connected",
-    connecting: "Connecting",
-    live: "Live",
-    closed: "Closed",
-    error: "Error",
-  };
+function SideFact({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center gap-2 text-[12px]">
-      <span
-        className={`inline-block size-2 rounded-full ${
-          status === "live" ? "bg-foreground" :
-          status === "connecting" ? "bg-muted-foreground animate-pulse" :
-          status === "error" ? "bg-destructive" :
-          "bg-muted-foreground/40"
-        }`}
-      />
-      <span className="text-foreground">{labelMap[status]}</span>
-      {status === "live" && remainingSeconds !== null && (
-        <span className="text-[11px] text-muted-foreground rounded-full border border-border/40 bg-muted/30 px-2 py-0.5">
-          {formatMinutesLeft(remainingSeconds)}
-        </span>
-      )}
-      {status === "connecting" && <Loader2 className="size-3 animate-spin text-muted-foreground" />}
-      {message && (
-        <span className="text-muted-foreground font-mono text-[11px]" title={message}>
-          · {message.length > 60 ? `${message.slice(0, 60)}…` : message}
-        </span>
-      )}
+    <div className="flex min-w-0 flex-col gap-px rounded-2xl border border-line bg-ground px-3 py-2.5">
+      <span className="text-[11px] text-fg-3">{label}</span>
+      <span className="truncate text-sm font-semibold">{value}</span>
     </div>
   );
+}
+
+function StatusPill({ status, remainingSeconds }: { status: Status; remainingSeconds: number | null }) {
+  const base = "inline-flex h-10 items-center gap-2 rounded-[20px] px-3.5 text-[13px] font-bold";
+  if (status === "live") {
+    return (
+      <span className={cn(base, "bg-good-bg text-good")}>
+        <span className="size-2 animate-pulse rounded-full bg-good" />
+        Live
+        {remainingSeconds !== null ? (
+          <>
+            {" ·"}
+            <span className="font-mono font-medium">{formatMinutesLeft(remainingSeconds)}</span>
+          </>
+        ) : null}
+      </span>
+    );
+  }
+  if (status === "connecting") {
+    return (
+      <span className={cn(base, "border border-line-strong text-fg-2")}>
+        <Loader2 className="size-3.5 animate-spin" strokeWidth={2.2} />
+        Connecting
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className={cn(base, "bg-bad-bg text-bad")}>
+        <span className="size-2 rounded-full bg-bad" />
+        Error
+      </span>
+    );
+  }
+  if (status === "closed") {
+    return <span className={cn(base, "border border-line-strong text-fg-2")}>Closed</span>;
+  }
+  return null;
 }

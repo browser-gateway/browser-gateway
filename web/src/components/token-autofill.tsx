@@ -51,10 +51,7 @@ async function fetchAuthInfo(): Promise<{ token: string | null; authEnabled: boo
 export function useGatewayToken(): string | null {
   const [token, setToken] = useState<string | null>(cached?.token ?? null);
   useEffect(() => {
-    if (cached) {
-      setToken(cached.token);
-      return;
-    }
+    if (cached) return;
     fetchAuthInfo().then((info) => setToken(info.token));
   }, []);
   return token;
@@ -63,10 +60,7 @@ export function useGatewayToken(): string | null {
 export function useAuthEnabled(): boolean {
   const [enabled, setEnabled] = useState<boolean>(cached?.authEnabled ?? false);
   useEffect(() => {
-    if (cached) {
-      setEnabled(cached.authEnabled);
-      return;
-    }
+    if (cached) return;
     fetchAuthInfo().then((info) => setEnabled(info.authEnabled));
   }, []);
   return enabled;

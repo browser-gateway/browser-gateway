@@ -123,6 +123,7 @@ export class GeminiExecutor {
       try {
         await this.dispatch(call.name, call.args);
         await this.collapsePopups();
+        await this.session.enforceUrlPolicy();
       } catch (err) {
         result.error = err instanceof Error ? err.message : String(err);
       }

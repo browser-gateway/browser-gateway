@@ -54,6 +54,7 @@ export class Gateway extends EventEmitter {
   private onIdleSession?: (sessionId: string) => void;
   private queue: QueueEntry[] = [];
   private _shuttingDown = false;
+  private readonly troubledProviders = new Set<string>();
 
   get shuttingDown(): boolean {
     return this._shuttingDown;
@@ -124,6 +125,18 @@ export class Gateway extends EventEmitter {
     return this.concurrency.acquire(providerId, sessionId, provider);
   }
 
+  /** Takes a provider out of routing and forgets its trouble state. */
+  removeProvider(id: string): void {
+    this.troubledProviders.delete(id);
+    this.cooldown.forget(id);
+    this.registry.remove(id);
+  }
+
+  /** Marks a fresh connection to a provider as working; announces provider.up after trouble. */
+  recordConnected(providerId: string): void {
+    if (this.troubledProviders.delete(providerId)) this.emit("provider.up", { providerId });
+  }
+
   /** Applies a new or changed provider config, moving it in or out of routing. */
   applyProviderConfig(id: string, config: ProviderConfig): void {
     if (config.enabled === false) {
@@ -159,6 +172,10 @@ export class Gateway extends EventEmitter {
     const wasCooledDown = !!provider.cooldownUntil;
     this.cooldown.recordFailure(provider);
 
+    if (!this.troubledProviders.has(providerId)) {
+      this.troubledProviders.add(providerId);
+      this.emit("provider.down", { providerId, reason: "connection failed" });
+    }
     if (provider.cooldownUntil && !wasCooledDown) {
       this.emit("provider.cooldown", {
         providerId,

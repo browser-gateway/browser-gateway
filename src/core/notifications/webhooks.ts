@@ -1,10 +1,12 @@
 import type { Logger } from "pino";
 import type { Gateway } from "../gateway.js";
+import { addressOrigin } from "../redact.js";
 import { deliverWebhook, type WebhookPayload } from "./deliver.js";
 
 interface WebhookConfig {
   url: string;
   events?: string[];
+  secret?: string;
 }
 
 export class WebhookNotifier {
@@ -53,18 +55,19 @@ export class WebhookNotifier {
       if (webhook.events && !webhook.events.includes(event)) continue;
 
       deliverWebhook(webhook.url, payload, {
+        ...(webhook.secret !== undefined ? { secret: webhook.secret } : {}),
         onSuccess: () => {
-          this.logger.debug({ url: webhook.url.slice(0, 50), event }, "webhook delivered");
+          this.logger.debug({ url: addressOrigin(webhook.url), event }, "webhook delivered");
         },
         onAttemptFailed: (attempt, err) => {
           this.logger.debug(
-            { url: webhook.url.slice(0, 50), attempt: attempt + 1, error: err.message },
+            { url: addressOrigin(webhook.url), attempt: attempt + 1, error: err.message },
             "webhook retry",
           );
         },
         onFailure: (err) => {
           this.logger.warn(
-            { url: webhook.url.slice(0, 50), event, error: err.message },
+            { url: addressOrigin(webhook.url), event, error: err.message },
             "webhook delivery failed after retries",
           );
         },

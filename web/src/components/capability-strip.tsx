@@ -9,6 +9,7 @@ import {
   type ProviderCapabilities,
   type ProviderCapabilitiesResponse,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface Props {
   providerId: string;
@@ -26,6 +27,8 @@ const FEATURES: { key: FeatureKey; label: string; description: string }[] = [
   { key: "pageScreencast", label: "Live view", description: "Streams the screen for the live playground." },
 ];
 
+const CHIP = "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[10px] border border-line bg-ground px-[9px] py-[3px] text-xs font-semibold";
+
 function FeatureItem({
   label,
   state,
@@ -36,12 +39,11 @@ function FeatureItem({
   title: string;
 }) {
   const Icon = state === "supported" ? Check : state === "unsupported" ? X : Minus;
+  const supported = state === "supported";
   return (
-    <span title={title} className="inline-flex items-center gap-1.5">
-      <Icon
-        className={`size-3.5 shrink-0 ${state === "supported" ? "text-foreground" : "text-muted-foreground/40"}`}
-      />
-      <span className={state === "supported" ? "text-foreground/90" : "text-muted-foreground"}>{label}</span>
+    <span title={title} className={cn(CHIP, supported ? "text-fg-2" : "text-fg-3")}>
+      <Icon className={cn("size-3 shrink-0", supported ? "text-good" : "text-fg-3")} strokeWidth={2.4} />
+      {label}
     </span>
   );
 }
@@ -60,16 +62,13 @@ export function CapabilityStrip({ providerId }: Props) {
     };
   }, [providerId]);
 
-  // Poll while probing.
   useEffect(() => {
     if (data?.status !== "probing") return;
     const t = setInterval(async () => {
       try {
         const r = await fetchProviderCapabilities(providerId);
         setData(r);
-      } catch {
-        // ignore
-      }
+      } catch {}
     }, 1500);
     return () => clearInterval(t);
   }, [data?.status, providerId]);
@@ -80,7 +79,6 @@ export function CapabilityStrip({ providerId }: Props) {
       const r = await revalidateProviderCapabilities(providerId);
       setData(r);
     } catch {
-      // ignore
     } finally {
       setBusy(false);
     }
@@ -88,7 +86,7 @@ export function CapabilityStrip({ providerId }: Props) {
 
   if (!data) {
     return (
-      <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap text-xs">
+      <div className="flex flex-wrap items-center gap-1.5">
         {FEATURES.map((f) => (
           <FeatureItem key={f.key} label={f.label} state="unknown" title={`${f.label}: not tested yet`} />
         ))}
@@ -98,9 +96,9 @@ export function CapabilityStrip({ providerId }: Props) {
 
   if (data.status === "pending" || data.status === "probing") {
     return (
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-xs text-fg-3">
         <Loader2 className="size-3 animate-spin" />
-        Checking…
+        Checking what this provider supports
       </div>
     );
   }
@@ -109,7 +107,7 @@ export function CapabilityStrip({ providerId }: Props) {
   const failureNote = data.capabilities?.errors?.length ? data.capabilities.errors.join("; ") : null;
 
   return (
-    <div className="flex items-center gap-x-4 gap-y-1.5 flex-wrap text-xs">
+    <div className="flex flex-wrap items-center gap-1.5">
       {FEATURES.map((f) => {
         const state = data.capabilities?.[f.key];
         return (
@@ -122,7 +120,7 @@ export function CapabilityStrip({ providerId }: Props) {
         );
       })}
       {noResult && (
-        <span className="text-muted-foreground" title={failureNote ?? "Try again, or use Test to check the connection."}>
+        <span className="text-xs text-fg-3" title={failureNote ?? "Try again, or use Test to check the connection."}>
           Could not check
         </span>
       )}
@@ -130,11 +128,11 @@ export function CapabilityStrip({ providerId }: Props) {
         type="button"
         onClick={onRevalidate}
         disabled={busy}
-        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+        className="t-link inline-flex items-center gap-1 text-xs disabled:opacity-50"
         title="Check again what this provider supports"
       >
         {busy ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
-        <span>Check again</span>
+        Check again
       </button>
     </div>
   );

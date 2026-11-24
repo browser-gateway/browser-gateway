@@ -1,5 +1,5 @@
 import { CdpProtocolClient, type CdpTransport } from "../../core/cdp/protocol.js";
-import { AgentSession, type AgentSessionOptions } from "../session.js";
+import { AgentSession, type AgentSessionOptions, type TabInfo } from "../session.js";
 import type { Point } from "../types.js";
 import { fitFrame, frameToPage, fromGeminiGrid, type Frame, type Vendor } from "./frame.js";
 import { checkUrl, type UrlPolicy } from "./url-policy.js";
@@ -73,6 +73,21 @@ export class ComputerUseSession {
 
   get urlPolicy(): ComputerUseOptions["urls"] {
     return this.opts.urls;
+  }
+
+  /** Blanks every tab that is on an address the policy forbids, however it got there, and reports it. */
+  async enforceUrlPolicy(tabs?: TabInfo[]): Promise<void> {
+    for (const tab of tabs ?? (await this.agent.tabInventory())) {
+      if (!tab.url || tab.url === "about:blank") continue;
+      try {
+        checkUrl(tab.url, this.opts.urls);
+      } catch (err) {
+        await this.agent.navigate("about:blank", tab.tabId).catch(() => undefined);
+        throw new Error(`tab ${tab.tabId} reached an address this session may not open: ${(err as Error).message}`, {
+          cause: err,
+        });
+      }
+    }
   }
 
   get settleMs(): number {

@@ -46,6 +46,13 @@ export async function fetchParkedSessions(): Promise<ParkedSessionsResponse> {
   return res.json();
 }
 
+export async function fetchSessionHistory(limit = 10): Promise<SessionHistoryResponse> {
+  const res = await fetch(`${API_BASE}/v1/sessions/history?limit=${limit}`, fetchOpts);
+  if (res.status === 401) throw new AuthError();
+  if (!res.ok) throw new Error(`Session history API error: ${res.status}`);
+  return res.json();
+}
+
 export async function fetchProviders(): Promise<ProviderListResponse> {
   const res = await fetch(`${API_BASE}/v1/providers`, fetchOpts);
   if (res.status === 401) throw new AuthError();
@@ -371,7 +378,7 @@ export async function fetchHealth() {
   return res.json();
 }
 
-export async function fetchConfig(): Promise<{ yaml: string; path: string | null; exists: boolean }> {
+export async function fetchConfig(): Promise<{ yaml: string; path: string | null; exists: boolean; hidden?: boolean }> {
   const res = await fetch(`${API_BASE}/v1/config`, fetchOpts);
   if (res.status === 401) throw new AuthError();
   return res.json();
@@ -455,6 +462,23 @@ export interface SessionInfo {
   lastActivity: string;
   durationMs: number;
   messageCount: number;
+}
+
+export interface SessionHistoryEntry {
+  id: string;
+  providerId: string;
+  profileId: string | null;
+  proxyName: string | null;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  messageCount: number;
+}
+
+export interface SessionHistoryResponse {
+  total: number;
+  days: { date: string; count: number }[];
+  sessions: SessionHistoryEntry[];
 }
 
 export interface ParkedSessionInfo {

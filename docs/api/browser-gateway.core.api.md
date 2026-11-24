@@ -26,6 +26,7 @@ export class ConcurrencyTracker {
 export class CooldownTracker {
     // Warning: (ae-forgotten-export) The symbol "CooldownConfig" needs to be exported by the entry point index.d.ts
     constructor(config: CooldownConfig);
+    forget(providerId: string): void;
     // (undocumented)
     isInCooldown(provider: ProviderState): boolean;
     // (undocumented)
@@ -62,6 +63,7 @@ export class Gateway extends EventEmitter {
     readonly logger: Logger;
     // (undocumented)
     get queueSize(): number;
+    recordConnected(providerId: string): void;
     // (undocumented)
     recordFailure(providerId: string): void;
     // (undocumented)
@@ -70,6 +72,7 @@ export class Gateway extends EventEmitter {
     readonly registry: ProviderRegistry;
     // (undocumented)
     releaseSlot(sessionId: string, providerId: string): void;
+    removeProvider(id: string): void;
     // (undocumented)
     readonly selector: ProviderSelector;
     // (undocumented)
@@ -147,6 +150,7 @@ export const GatewayConfigSchema: z.ZodObject<{
     webhooks: z.ZodDefault<z.ZodArray<z.ZodObject<{
         url: z.ZodString;
         events: z.ZodOptional<z.ZodArray<z.ZodString>>;
+        secret: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>>;
     dashboard: z.ZodDefault<z.ZodObject<{
         enabled: z.ZodDefault<z.ZodBoolean>;

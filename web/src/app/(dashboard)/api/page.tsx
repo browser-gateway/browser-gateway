@@ -1,415 +1,268 @@
 "use client";
 
-/**
- * REST API page. One tab per endpoint. Inside each: Reference docs and an
- * interactive Try-it form, separated as inner tabs.
- *
- * Reference docs are driven by structured data in `./docs.ts` so they stay
- * consistent across endpoints. The forms hit the real /v1 endpoints with the
- * dashboard's auth cookie.
- */
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Play } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Braces, Camera, ChevronDown, ChevronRight, FileText, Play, type LucideIcon } from "lucide-react";
+import { PageHeader } from "@/components/page-header";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CodeBlock } from "@/components/code-block";
-import { EndpointReference } from "@/components/endpoint-reference";
-import { fetchProfiles, type ProfileMetaItem, fetchProviders, fetchProxies, fetchSettings, routableProviders, type ProxySummary } from "@/lib/api";
+import { Alert } from "@/components/ui/alert";
+import { Field } from "@/components/ui/field";
+import { Select, type SelectOption } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Segmented } from "@/components/ui/tabs";
+import { CodeBlock, type CodeLang } from "@/components/code-block";
+import { EndpointReference, type EndpointDoc } from "@/components/endpoint-reference";
+import { useAuthEnabled } from "@/components/token-autofill";
+import { fetchProfiles, fetchProviders, fetchProxies, fetchSettings, routableProviders, type ProfileMetaItem, type ProxySummary } from "@/lib/api";
+import { formatBytes } from "@/lib/format-bytes";
 import { proxyPickerOptions } from "@/lib/proxy-options";
+import { cn } from "@/lib/utils";
 import { contentDoc, scrapeDoc, screenshotDoc } from "./docs";
 
-export default function ApiPage() {
-  const [profiles, setProfiles] = useState<ProfileMetaItem[] | null>(null);
-  const [profilesEnabled, setProfilesEnabled] = useState<boolean>(false);
-  const [providers, setProviders] = useState<{ id: string }[]>([]);
-  const [proxies, setProxies] = useState<ProxySummary[]>([]);
-  const [defaultProxy, setDefaultProxy] = useState<string | null>(null);
+type Endpoint = "screenshot" | "content" | "scrape";
+type ShotFormat = "png" | "jpeg";
+type ContentFormat = "html" | "markdown" | "text" | "readability";
+type CodeLanguage = "curl" | "node" | "python";
 
-  useEffect(() => {
-    fetchProxies().then((r) => setProxies(r.proxies)).catch(() => setProxies([]));
-    fetchSettings().then((r) => setDefaultProxy(r.sessionDefaults.proxy)).catch(() => setDefaultProxy(null));
-    fetchProfiles()
-      .then((r) => {
-        setProfilesEnabled(r.enabled);
-        setProfiles(r.profiles);
-      })
-      .catch(() => {
-        setProfilesEnabled(false);
-        setProfiles([]);
-      });
-    fetchProviders()
-      .then((r) => setProviders(routableProviders(r.providers).map((p) => ({ id: p.id }))))
-      .catch(() => setProviders([]));
-  }, []);
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">REST API</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Three HTTP endpoints for screenshots, content extraction, and structured scraping. Try each one from the dashboard or read its reference.
-        </p>
-      </div>
-
-      <Tabs defaultValue="screenshot" className="w-full">
-        <TabsList variant="line" className="border-b border-border/40 rounded-none gap-4 px-0 mb-4">
-          <EndpointTab value="screenshot" method="POST" path="/v1/screenshot" />
-          <EndpointTab value="content" method="POST" path="/v1/content" />
-          <EndpointTab value="scrape" method="POST" path="/v1/scrape" />
-        </TabsList>
-
-        <TabsContent value="screenshot" className="mt-2 space-y-4">
-          <EndpointSection
-            featureTitle="Capture a screenshot"
-            featureDescription="Render any URL as a PNG or JPEG image, optionally full-page or scoped to a single element."
-            method="POST"
-            path="/v1/screenshot"
-            doc={screenshotDoc}
-            actionPanel={<ScreenshotForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} proxies={proxies} defaultProxy={defaultProxy} />}
-          />
-        </TabsContent>
-
-        <TabsContent value="content" className="mt-2 space-y-4">
-          <EndpointSection
-            featureTitle="Extract page content"
-            featureDescription="Fetch a page and return its content as markdown, plain text, HTML, or a Readability-style article."
-            method="POST"
-            path="/v1/content"
-            doc={contentDoc}
-            actionPanel={<ContentForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} proxies={proxies} defaultProxy={defaultProxy} />}
-          />
-        </TabsContent>
-
-        <TabsContent value="scrape" className="mt-2 space-y-4">
-          <EndpointSection
-            featureTitle="Scrape with selectors"
-            featureDescription="Extract structured data from a page using named CSS selectors. Combine with content formats for one-shot capture."
-            method="POST"
-            path="/v1/scrape"
-            doc={scrapeDoc}
-            actionPanel={<ScrapeForm profiles={profiles ?? []} profilesEnabled={profilesEnabled} providers={providers} proxies={proxies} defaultProxy={defaultProxy} />}
-          />
-        </TabsContent>
-      </Tabs>
-    </div>
-  );
+interface ScrapeSelector {
+  name: string;
+  selector: string;
 }
 
-function EndpointTab({ value, method, path }: { value: string; method: string; path: string }) {
-  return (
-    <TabsTrigger value={value} className="px-1 pb-2 data-active:!text-foreground gap-2">
-      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border/40 text-muted-foreground tabular-nums">
-        {method}
-      </span>
-      <code className="font-mono text-[12.5px]">{path}</code>
-    </TabsTrigger>
-  );
+interface ResponseMeta {
+  status: number;
+  ms: number;
+  type: string | null;
+  bytes: number | null;
 }
 
-function EndpointSection(props: {
-  featureTitle: string;
-  featureDescription: string;
-  method: string;
-  path: string;
-  doc: typeof screenshotDoc;
-  actionPanel: React.ReactNode;
-}) {
-  const [docsOpen, setDocsOpen] = useState(false);
+type RunResult =
+  | { kind: "image"; url: string; format: ShotFormat }
+  | { kind: "content"; content: Record<string, string> }
+  | { kind: "json"; content: string };
 
-  return (
-    <>
-      {/* Primary feature panel. Elevated styling and dense content to read as
-          the real product surface, not a sandbox. */}
-      <Card className="border-border/60">
-        <CardContent className="px-5 py-5 space-y-4">
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold tracking-tight">{props.featureTitle}</h2>
-            <p className="text-[13px] text-muted-foreground">{props.featureDescription}</p>
-          </div>
-          <div className="space-y-3">{props.actionPanel}</div>
-        </CardContent>
-      </Card>
-
-      {/* Secondary, collapsible reference docs. Flat container, no Card so
-          the visual weight stays on the feature panel above. */}
-      <div className="rounded-lg border border-border/30 bg-muted/10">
-        <button
-          onClick={() => setDocsOpen((v) => !v)}
-          className="flex items-center justify-between w-full px-4 py-2.5 group"
-          aria-expanded={docsOpen}
-        >
-          <div className="flex items-center gap-2.5">
-            <span className="text-[11px] font-mono px-1.5 py-0.5 rounded border border-border/40 text-muted-foreground tabular-nums">
-              {props.method}
-            </span>
-            <code className="font-mono text-[12.5px] text-foreground/90">{props.path}</code>
-            <span className="text-[11px] text-muted-foreground ml-2">API reference</span>
-          </div>
-          {docsOpen ? (
-            <ChevronDown className="size-3.5 text-muted-foreground group-hover:text-foreground" />
-          ) : (
-            <ChevronRight className="size-3.5 text-muted-foreground group-hover:text-foreground" />
-          )}
-        </button>
-        {docsOpen && (
-          <div className="px-4 pb-4 pt-1 border-t border-border/20">
-            <EndpointReference doc={props.doc} />
-          </div>
-        )}
-      </div>
-    </>
-  );
-}
-
-// ---------- shared form helpers (kept identical to the previous page so the
-// forms continue to behave the same) ----------
-
-interface FormSectionProps {
+interface Pickers {
   profiles: ProfileMetaItem[];
   profilesEnabled: boolean;
-  providers: { id: string }[];
+  providers: string[];
   proxies: ProxySummary[];
   defaultProxy: string | null;
 }
 
-function ScreenshotForm({ profiles, profilesEnabled, providers, proxies, defaultProxy }: FormSectionProps) {
-  const [url, setUrl] = useState("https://example.com");
-  const [format, setFormat] = useState<"png" | "jpeg">("png");
-  const [fullPage, setFullPage] = useState(false);
-  const [profile, setProfile] = useState("");
-  const [provider, setProvider] = useState("");
-  const [proxy, setProxy] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageSize, setImageSize] = useState<number | null>(null);
+const ENDPOINTS: Array<{ value: Endpoint; icon: LucideIcon; blurb: string; run: string; doc: EndpointDoc }> = [
+  { value: "screenshot", icon: Camera, blurb: "An image of the page, visible area or full length.", run: "Take screenshot", doc: screenshotDoc },
+  { value: "content", icon: FileText, blurb: "The text of the page as markdown, plain text, HTML or an article.", run: "Get content", doc: contentDoc },
+  { value: "scrape", icon: Braces, blurb: "Only the elements you name, as JSON.", run: "Scrape page", doc: scrapeDoc },
+];
 
-  async function handleRun() {
-    if (!url) return;
-    setLoading(true);
-    setError(null);
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
-    setImageUrl(null);
-    setImageSize(null);
-    try {
-      const body: Record<string, unknown> = { url, format, fullPage };
-      if (profile) body.profile = profile;
-      if (provider) body.provider = provider;
-      if (proxy) body.proxy = proxy;
-      const res = await fetch("/v1/screenshot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text.slice(0, 400) || `HTTP ${res.status}`);
-      }
-      const blob = await res.blob();
-      setImageSize(blob.size);
-      setImageUrl(URL.createObjectURL(blob));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
+const SHOT_FORMATS: Array<{ value: ShotFormat; label: string }> = [
+  { value: "png", label: "PNG" },
+  { value: "jpeg", label: "JPEG" },
+];
 
-  return (
-    <>
-      <FormRow label="URL">
-        <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" className="font-mono text-[13px]" />
-      </FormRow>
-      <FormRow label="Format">
-        <Select
-          value={format}
-          options={[
-            { value: "png", label: "PNG" },
-            { value: "jpeg", label: "JPEG" },
-          ]}
-          onChange={setFormat}
-          fullWidth
-        />
-      </FormRow>
-      <FormRow label="Full page">
-        <label className="text-[13px] text-muted-foreground flex items-center gap-2">
-          <input type="checkbox" checked={fullPage} onChange={(e) => setFullPage(e.target.checked)} className="accent-foreground" />
-          Scroll and stitch the entire page
-        </label>
-      </FormRow>
-      <ProfileDropdown profiles={profiles} profilesEnabled={profilesEnabled} value={profile} onChange={setProfile} />
-      <ProviderDropdown providers={providers} value={provider} onChange={setProvider} />
-      <ProxyDropdown proxies={proxies} defaultProxy={defaultProxy} value={proxy} onChange={setProxy} />
+const CONTENT_FORMATS: ContentFormat[] = ["html", "markdown", "text", "readability"];
 
-      <RunButton loading={loading} onClick={handleRun} label="Run screenshot" />
-      {error && <ErrorBlock message={error} />}
+const CODE_LANGUAGES: Array<{ value: CodeLanguage; label: string }> = [
+  { value: "curl", label: "curl" },
+  { value: "node", label: "Node" },
+  { value: "python", label: "Python" },
+];
 
-      {imageUrl && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-[12px] font-medium text-foreground/80">Response</p>
-            <a href={imageUrl} download={`screenshot.${format}`} className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2">
-              Download
-            </a>
-          </div>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imageUrl} alt="Screenshot result" className="max-w-full rounded border border-border/40" />
-          <p className="text-[11px] text-muted-foreground tabular-nums">
-            {format.toUpperCase()} · {imageSize ? formatBytes(imageSize) : ""}
-          </p>
-        </div>
-      )}
-    </>
-  );
+const CODE_LANG: Record<CodeLanguage, CodeLang> = { curl: "bash", node: "typescript", python: "python" };
+
+const PAGE_DESCRIPTION = "Screenshots, page content and structured scraping over HTTP, with no browser code.";
+
+const TIMEOUT_MIN_MS = 1000;
+const TIMEOUT_MAX_MS = 120_000;
+const TIMEOUT_DEFAULT_MS = 30_000;
+
+const TOKEN_ENV = "BG_TOKEN";
+
+function gatewayHttpBase(): string {
+  if (typeof window === "undefined") return "http://localhost:9500";
+  const host = window.location.host.includes("9501") ? window.location.host.replace("9501", "9500") : window.location.host;
+  return `${window.location.protocol}//${host}`;
 }
 
-function ContentForm({ profiles, profilesEnabled, providers, proxies, defaultProxy }: FormSectionProps) {
-  const [url, setUrl] = useState("https://example.com");
-  const [formats, setFormats] = useState<string[]>(["markdown"]);
-  const [profile, setProfile] = useState("");
-  const [provider, setProvider] = useState("");
-  const [proxy, setProxy] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ content: Record<string, string> } | null>(null);
-  const [activeFormat, setActiveFormat] = useState("markdown");
+export default function ApiPage() {
+  const [tab, setTab] = useState<Endpoint>("screenshot");
+  const [pickers, setPickers] = useState<Pickers | null>(null);
+  const authEnabled = useAuthEnabled();
 
-  async function handleRun() {
-    if (!url) return;
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    try {
-      const body: Record<string, unknown> = { url, formats };
-      if (profile) body.profile = profile;
-      if (provider) body.provider = provider;
-      if (proxy) body.proxy = proxy;
-      const res = await fetch("/v1/content", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetchProfiles().catch(() => ({ enabled: false, profiles: [] as ProfileMetaItem[] })),
+      fetchProviders().catch(() => ({ providers: [] })),
+      fetchProxies().catch(() => ({ proxies: [] as ProxySummary[] })),
+      fetchSettings().catch(() => null),
+    ]).then(([profiles, providers, proxies, settings]) => {
+      if (cancelled) return;
+      setPickers({
+        profiles: profiles.profiles,
+        profilesEnabled: profiles.enabled,
+        providers: routableProviders(providers.providers).map((p) => p.id),
+        proxies: proxies.proxies,
+        defaultProxy: settings?.sessionDefaults.proxy ?? null,
       });
-      const json = (await res.json()) as { success?: boolean; data?: { content: Record<string, string> }; error?: string };
-      if (!res.ok || json.success === false) {
-        throw new Error(json.error ?? `HTTP ${res.status}`);
-      }
-      setResult(json.data ?? null);
-      setActiveFormat(formats[0] ?? "markdown");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  function toggleFormat(fmt: string) {
-    setFormats((prev) => (prev.includes(fmt) ? prev.filter((f) => f !== fmt) : [...prev, fmt]));
-  }
-
-  const availableFormats = result ? Object.keys(result.content) : [];
+  const config = ENDPOINTS.find((e) => e.value === tab)!;
 
   return (
     <>
-      <FormRow label="URL">
-        <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" className="font-mono text-[13px]" />
-      </FormRow>
-      <FormRow label="Formats">
-        <div className="flex flex-wrap gap-3 text-[13px] text-muted-foreground">
-          {(["html", "markdown", "text", "readability"] as const).map((fmt) => (
-            <label key={fmt} className="flex items-center gap-1.5">
-              <input type="checkbox" checked={formats.includes(fmt)} onChange={() => toggleFormat(fmt)} className="accent-foreground" />
-              <span className="font-mono text-foreground/80">{fmt}</span>
-            </label>
-          ))}
-        </div>
-      </FormRow>
-      <ProfileDropdown profiles={profiles} profilesEnabled={profilesEnabled} value={profile} onChange={setProfile} />
-      <ProviderDropdown providers={providers} value={provider} onChange={setProvider} />
-      <ProxyDropdown proxies={proxies} defaultProxy={defaultProxy} value={proxy} onChange={setProxy} />
+      <PageHeader
+        title="REST API"
+        description={PAGE_DESCRIPTION}
+        actions={
+          <a href="https://docs.browsergateway.com/rest-api" target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}>
+            API reference ↗
+          </a>
+        }
+      />
 
-      <RunButton loading={loading} onClick={handleRun} label="Run content" />
-      {error && <ErrorBlock message={error} />}
-
-      {result && availableFormats.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center gap-1 flex-wrap">
-            {availableFormats.map((fmt) => (
-              <button
-                key={fmt}
-                onClick={() => setActiveFormat(fmt)}
-                className={`px-2 py-0.5 rounded text-[11px] font-mono border ${
-                  activeFormat === fmt
-                    ? "bg-foreground/10 border-foreground/30 text-foreground"
-                    : "bg-transparent border-border/30 text-muted-foreground hover:text-foreground"
-                }`}
+      <nav aria-label="Endpoints" className="grid grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-3">
+        {ENDPOINTS.map((e) => {
+          const active = e.value === tab;
+          return (
+            <button
+              key={e.value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setTab(e.value)}
+              className={cn(
+                "ui-card flex items-start gap-3 rounded-[22px] px-[18px] py-4 text-left text-fg transition-colors",
+                active ? "ui-card--selected" : "hover:border-line-strong",
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "flex h-10 w-10 flex-none items-center justify-center rounded-[13px]",
+                  active ? "bg-brand-soft text-brand-text" : "bg-ground text-fg-2",
+                )}
               >
-                {fmt}
-              </button>
-            ))}
-          </div>
-          <CodeBlock
-            code={result.content[activeFormat] ?? ""}
-            lang={activeFormat === "html" ? "typescript" : "bash"}
-            filename={activeFormat}
-            maxHeight="400px"
-          />
+                <e.icon className="size-[18px]" strokeWidth={2} />
+              </span>
+              <span className="flex min-w-0 flex-col gap-1">
+                <span className="flex flex-wrap items-center gap-2">
+                  <MethodChip />
+                  <span className="font-mono text-sm font-medium">/v1/{e.value}</span>
+                </span>
+                <span className="text-xs text-fg-2">{e.blurb}</span>
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {pickers ? (
+        <TrySection key={tab} tab={tab} run={config.run} pickers={pickers} authEnabled={authEnabled} />
+      ) : (
+        <div role="status" aria-label="Loading" className="flex flex-wrap gap-4">
+          <Skeleton className="h-[420px] min-w-0 flex-[1_1_440px] rounded-[28px]" />
+          <Skeleton className="h-[420px] min-w-0 flex-[1_1_440px] rounded-[24px]" />
         </div>
       )}
+
+      <Reference tab={tab} doc={config.doc} />
     </>
   );
 }
 
-function ScrapeForm({ profiles, profilesEnabled, providers, proxies, defaultProxy }: FormSectionProps) {
+function MethodChip() {
+  return <span className="rounded-md border border-line-strong px-[5px] py-px font-mono text-[10px] font-medium text-fg-2">POST</span>;
+}
+
+function TrySection({ tab, run, pickers, authEnabled }: { tab: Endpoint; run: string; pickers: Pickers; authEnabled: boolean }) {
   const [url, setUrl] = useState("https://example.com");
-  const [selectors, setSelectors] = useState<{ name: string; selector: string }[]>([
-    { name: "title", selector: "h1" },
-  ]);
+  const [shotFormat, setShotFormat] = useState<ShotFormat>("png");
+  const [fullPage, setFullPage] = useState(false);
+  const [formats, setFormats] = useState<ContentFormat[]>(["markdown"]);
+  const [selectors, setSelectors] = useState<ScrapeSelector[]>([{ name: "title", selector: "h1" }]);
   const [profile, setProfile] = useState("");
   const [provider, setProvider] = useState("");
   const [proxy, setProxy] = useState("");
+  const [timeoutMs, setTimeoutMs] = useState(TIMEOUT_DEFAULT_MS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<unknown>(null);
+  const [result, setResult] = useState<RunResult | null>(null);
+  const [activeFormat, setActiveFormat] = useState<string>("markdown");
+  const [meta, setMeta] = useState<ResponseMeta | null>(null);
+  const [language, setLanguage] = useState<CodeLanguage>("curl");
 
-  function setSel(i: number, field: "name" | "selector", value: string) {
+  const endpointPath = `/v1/${tab}`;
+
+  function requestBody(): Record<string, unknown> {
+    const body: Record<string, unknown> =
+      tab === "screenshot"
+        ? { url, format: shotFormat, fullPage }
+        : tab === "content"
+          ? { url, formats }
+          : { url, selectors: selectors.filter((s) => s.name && s.selector) };
+    if (timeoutMs !== TIMEOUT_DEFAULT_MS) body.timeout = timeoutMs;
+    if (profile) body.profile = profile;
+    if (provider) body.provider = provider;
+    if (proxy) body.proxy = proxy;
+    return body;
+  }
+
+  function setSel(i: number, field: keyof ScrapeSelector, value: string) {
     setSelectors((prev) => prev.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)));
   }
 
-  function addRow() {
-    setSelectors((prev) => [...prev, { name: "", selector: "" }]);
-  }
-
-  function removeRow(i: number) {
-    setSelectors((prev) => prev.filter((_, idx) => idx !== i));
+  function toggleFormat(fmt: ContentFormat) {
+    setFormats((prev) => (prev.includes(fmt) ? prev.filter((f) => f !== fmt) : [...prev, fmt]));
   }
 
   async function handleRun() {
     if (!url) return;
     setLoading(true);
     setError(null);
+    if (result?.kind === "image") URL.revokeObjectURL(result.url);
     setResult(null);
+    setMeta(null);
+    const started = performance.now();
+    const elapsed = () => Math.round(performance.now() - started);
     try {
-      const cleaned = selectors.filter((s) => s.name && s.selector);
-      const body: Record<string, unknown> = { url, selectors: cleaned };
-      if (profile) body.profile = profile;
-      if (provider) body.provider = provider;
-      if (proxy) body.proxy = proxy;
-      const res = await fetch("/v1/scrape", {
+      const res = await fetch(endpointPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify(body),
+        body: JSON.stringify(requestBody()),
       });
-      const json = (await res.json()) as { success?: boolean; data?: unknown; error?: string };
-      if (!res.ok || json.success === false) {
-        throw new Error(json.error ?? `HTTP ${res.status}`);
+      const type = res.headers.get("Content-Type");
+
+      if (tab === "screenshot") {
+        if (!res.ok) {
+          const text = await res.text();
+          setMeta({ status: res.status, ms: elapsed(), type, bytes: null });
+          throw new Error(text.slice(0, 400) || `HTTP ${res.status}`);
+        }
+        const blob = await res.blob();
+        setMeta({ status: res.status, ms: elapsed(), type: blob.type || type, bytes: blob.size });
+        setResult({ kind: "image", url: URL.createObjectURL(blob), format: shotFormat });
+        return;
       }
-      setResult(json.data ?? null);
+
+      const raw = await res.text();
+      setMeta({ status: res.status, ms: elapsed(), type, bytes: new Blob([raw]).size });
+      const json = JSON.parse(raw) as { success?: boolean; data?: unknown; error?: string };
+      if (!res.ok || json.success === false) throw new Error(json.error ?? `HTTP ${res.status}`);
+      if (tab === "content") {
+        const data = json.data as { content: Record<string, string> } | null | undefined;
+        if (data) {
+          setResult({ kind: "content", content: data.content });
+          setActiveFormat(formats[0] ?? "markdown");
+        }
+      } else {
+        setResult({ kind: "json", content: JSON.stringify(json.data ?? null, null, 2) });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -417,155 +270,350 @@ function ScrapeForm({ profiles, profilesEnabled, providers, proxies, defaultProx
     }
   }
 
+  const code = buildCode(language, `${gatewayHttpBase()}${endpointPath}`, tab === "screenshot", requestBody(), authEnabled);
+  const urlId = `rest-url-${tab}`;
+  const timeoutId = `rest-timeout-${tab}`;
+  const contentFormats = result?.kind === "content" ? Object.keys(result.content) : [];
+
   return (
-    <>
-      <FormRow label="URL">
-        <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" className="font-mono text-[13px]" />
-      </FormRow>
-      <FormRow label="Selectors">
-        <div className="space-y-2 w-full">
-          {selectors.map((sel, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <Input
-                value={sel.name}
-                onChange={(e) => setSel(i, "name", e.target.value)}
-                placeholder="name (e.g. title)"
-                className="font-mono text-[12.5px] flex-1"
-              />
-              <Input
-                value={sel.selector}
-                onChange={(e) => setSel(i, "selector", e.target.value)}
-                placeholder="CSS selector (e.g. h1)"
-                className="font-mono text-[12.5px] flex-1"
-              />
-              {selectors.length > 1 && (
-                <Button variant="ghost" size="icon-sm" onClick={() => removeRow(i)} className="text-muted-foreground">
-                  ×
-                </Button>
-              )}
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-stretch gap-4">
+        <section aria-label="Request" className="ui-card ui-card--hero flex min-w-0 flex-[1_1_440px] flex-col gap-[18px] px-6 py-[22px] max-[860px]:px-5">
+          <h2 className="t-h2">Try it</h2>
+
+          <Field id={urlId} label="Page address" help="The page to load. Example: https://en.wikipedia.org/wiki/Main_Page">
+            <Input id={urlId} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" className="font-mono text-[13px]" />
+          </Field>
+
+          {tab === "screenshot" ? (
+            <div className="flex flex-wrap items-end gap-[18px]">
+              <div className="flex flex-col gap-[7px]">
+                <span className="t-label">Format</span>
+                <Segmented<ShotFormat> label="Format" value={shotFormat} options={SHOT_FORMATS} onChange={setShotFormat} />
+              </div>
+              <div className="flex min-h-10 items-center gap-3">
+                <Switch checked={fullPage} onCheckedChange={setFullPage} label="Full page" />
+                <span className="flex flex-col gap-px">
+                  <span className="text-sm font-bold">Full page</span>
+                  <span className="text-xs text-fg-3">Scroll and capture the whole page</span>
+                </span>
+              </div>
             </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={addRow}>
-            + Add selector
-          </Button>
+          ) : null}
+
+          {tab === "content" ? (
+            <div className="flex flex-col gap-[7px]">
+              <span className="t-label">Formats</span>
+              <div role="group" aria-label="Formats" className="flex flex-wrap gap-1.5">
+                {CONTENT_FORMATS.map((fmt) => (
+                  <button key={fmt} type="button" aria-pressed={formats.includes(fmt)} onClick={() => toggleFormat(fmt)} className="ui-pill font-mono">
+                    {fmt}
+                  </button>
+                ))}
+              </div>
+              <p className="t-small">Pick one or more. Example: markdown for an LLM, text for a search index.</p>
+            </div>
+          ) : null}
+
+          {tab === "scrape" ? (
+            <div className="flex flex-col gap-[7px]">
+              <span className="t-label">Elements</span>
+              <div className="flex flex-col gap-2">
+                {selectors.map((sel, i) => (
+                  <div key={i} className="flex flex-wrap items-center gap-2">
+                    <Input
+                      aria-label={`Element ${i + 1} name`}
+                      value={sel.name}
+                      onChange={(e) => setSel(i, "name", e.target.value)}
+                      placeholder="name"
+                      className="min-w-[120px] flex-1 font-mono text-[13px]"
+                    />
+                    <Input
+                      aria-label={`Element ${i + 1} CSS selector`}
+                      value={sel.selector}
+                      onChange={(e) => setSel(i, "selector", e.target.value)}
+                      placeholder="CSS selector"
+                      className="min-w-[120px] flex-1 font-mono text-[13px]"
+                    />
+                    {selectors.length > 1 ? (
+                      <Button variant="outline" size="sm" onClick={() => setSelectors((prev) => prev.filter((_, idx) => idx !== i))}>
+                        Remove
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+                <div>
+                  <Button variant="outline" size="sm" onClick={() => setSelectors((prev) => [...prev, { name: "", selector: "" }])}>
+                    Add element
+                  </Button>
+                </div>
+              </div>
+              <p className="t-small">A name for each value and the CSS selector that finds it. Example: title and h1.</p>
+            </div>
+          ) : null}
+
+          <RoutingFields
+            pickers={pickers}
+            profile={profile}
+            onProfile={setProfile}
+            provider={provider}
+            onProvider={setProvider}
+            proxy={proxy}
+            onProxy={setProxy}
+          />
+
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor={timeoutId} className="t-label">
+              Give up after
+            </label>
+            <div className="flex items-center gap-2.5">
+              <Input
+                id={timeoutId}
+                type="number"
+                inputMode="numeric"
+                min={TIMEOUT_MIN_MS / 1000}
+                max={TIMEOUT_MAX_MS / 1000}
+                step={1}
+                value={timeoutMs / 1000}
+                onChange={(e) => {
+                  const raw = Number(e.target.value) * 1000;
+                  setTimeoutMs(Math.max(TIMEOUT_MIN_MS, Math.min(TIMEOUT_MAX_MS, Number.isFinite(raw) ? raw : TIMEOUT_DEFAULT_MS)));
+                }}
+                className="w-[120px] font-mono"
+              />
+              <span className="text-sm text-fg-2">seconds</span>
+            </div>
+            <span className="t-small">
+              {TIMEOUT_MIN_MS / 1000} to {TIMEOUT_MAX_MS / 1000} seconds. Default {TIMEOUT_DEFAULT_MS / 1000}. Raise it for slow pages or providers.
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 border-t border-line-divider pt-[18px]">
+            <Button variant="primary" size="lg" onClick={() => void handleRun()} loading={loading} disabled={!url}>
+              {loading ? null : <Play strokeWidth={2.2} />}
+              {run}
+            </Button>
+            <span className="flex-[1_1_200px] text-xs text-fg-3">Runs on this gateway with your dashboard login.</span>
+          </div>
+        </section>
+
+        <section aria-label="Code" className="ui-card flex min-w-0 flex-[1_1_440px] flex-col gap-3 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="m-0 text-[15px] font-bold tracking-[-0.01em]">Code</h2>
+            <Segmented label="Language" value={language} options={CODE_LANGUAGES} onChange={setLanguage} />
+          </div>
+          <CodeBlock code={code} lang={CODE_LANG[language]} filename={language === "curl" ? "shell" : language} />
+          <span className="text-xs text-fg-3">
+            {authEnabled
+              ? `Reads your gateway token from the ${TOKEN_ENV} environment variable and sends it as a Bearer token.`
+              : "This gateway has no token set, so requests need no auth header."}
+          </span>
+        </section>
+      </div>
+
+      <section aria-label="Response" className="ui-card flex flex-col gap-3 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="m-0 text-[15px] font-bold tracking-[-0.01em]">Response</h2>
+          {meta ? (
+            <span className="flex flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  "rounded-[10px] px-[9px] py-[3px] text-xs font-bold",
+                  meta.status >= 200 && meta.status < 300 && !error ? "bg-good-bg text-good" : "bg-bad-bg text-bad",
+                )}
+              >
+                {meta.status}
+              </span>
+              <span className="font-mono text-xs text-fg-2">{metaLine(meta)}</span>
+            </span>
+          ) : null}
         </div>
-      </FormRow>
-      <ProfileDropdown profiles={profiles} profilesEnabled={profilesEnabled} value={profile} onChange={setProfile} />
-      <ProviderDropdown providers={providers} value={provider} onChange={setProvider} />
-      <ProxyDropdown proxies={proxies} defaultProxy={defaultProxy} value={proxy} onChange={setProxy} />
 
-      <RunButton loading={loading} onClick={handleRun} label="Run scrape" />
-      {error && <ErrorBlock message={error} />}
-
-      {result !== null && (
-        <div className="space-y-2">
-          <p className="text-[12px] font-medium text-foreground/80">Response</p>
-          <CodeBlock code={JSON.stringify(result, null, 2)} lang="json" filename="result.json" maxHeight="400px" />
-        </div>
-      )}
-    </>
-  );
-}
-
-function FormRow(props: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-2 sm:gap-3 items-start">
-      <label className="text-[12px] font-medium text-foreground/80 pt-2">{props.label}</label>
-      <div className="min-w-0">{props.children}</div>
+        {loading ? (
+          <Skeleton className="mx-auto aspect-[16/10] w-full max-w-[640px] rounded-[14px]" />
+        ) : error ? (
+          <Alert variant="destructive" title="The request failed">
+            <span className="font-mono text-xs [overflow-wrap:anywhere]">{error}</span>
+          </Alert>
+        ) : result?.kind === "image" ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={result.url} alt="Screenshot result" className="mx-auto block max-w-full rounded-[14px] border border-line" />
+            <div className="flex justify-end">
+              <a href={result.url} download={`screenshot.${result.format}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                Download
+              </a>
+            </div>
+          </>
+        ) : result?.kind === "content" && contentFormats.length > 0 ? (
+          <>
+            {contentFormats.length > 1 ? (
+              <Segmented
+                label="Format"
+                value={activeFormat}
+                options={contentFormats.map((f) => ({ value: f, label: f }))}
+                onChange={setActiveFormat}
+                className="w-fit max-w-full"
+              />
+            ) : null}
+            <CodeBlock code={result.content[activeFormat] ?? ""} lang={activeFormat === "html" ? "typescript" : "bash"} filename={activeFormat} maxHeight="400px" />
+          </>
+        ) : result?.kind === "json" ? (
+          <CodeBlock code={result.content} lang="json" filename="result.json" maxHeight="400px" />
+        ) : (
+          <div className="flex min-h-[160px] items-center justify-center rounded-2xl border border-dashed border-line-strong bg-ground p-6 text-center text-sm text-fg-3">
+            Run the request and the result shows here.
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-function ProfileDropdown(props: {
-  profiles: ProfileMetaItem[];
-  profilesEnabled: boolean;
-  value: string;
-  onChange: (v: string) => void;
+function RoutingFields({
+  pickers,
+  profile,
+  onProfile,
+  provider,
+  onProvider,
+  proxy,
+  onProxy,
+}: {
+  pickers: Pickers;
+  profile: string;
+  onProfile: (v: string) => void;
+  provider: string;
+  onProvider: (v: string) => void;
+  proxy: string;
+  onProxy: (v: string) => void;
 }) {
-  if (!props.profilesEnabled) return null;
-  return (
-    <FormRow label="Profile">
-      <div className="space-y-1">
-        <Select
-          value={props.value}
-          options={[{ value: "", label: "(no profile)" }, ...props.profiles.map((p) => ({ value: p.id, label: p.id }))]}
-          onChange={props.onChange}
-          fullWidth
-        />
-        <p className="text-[11px] text-muted-foreground">
-          Optional. Runs with the saved cookies and storage of this profile.
-        </p>
-      </div>
-    </FormRow>
-  );
-}
+  const showProfile = pickers.profilesEnabled;
+  const showProvider = pickers.providers.length > 1;
+  const showProxy = pickers.proxies.length > 0;
+  if (!showProfile && !showProvider && !showProxy) return null;
 
-function ProviderDropdown(props: {
-  providers: { id: string }[];
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  if (props.providers.length <= 1) return null;
-  return (
-    <FormRow label="Provider">
-      <div className="space-y-1">
-        <Select
-          value={props.value}
-          options={[{ value: "", label: "Auto (gateway picks)" }, ...props.providers.map((p) => ({ value: p.id, label: p.id }))]}
-          onChange={props.onChange}
-          fullWidth
-        />
-        <p className="text-[11px] text-muted-foreground">
-          Optional. Pin this request to one backend. No failover when pinned.
-        </p>
-      </div>
-    </FormRow>
-  );
-}
-
-function ProxyDropdown(props: {
-  proxies: ProxySummary[];
-  defaultProxy: string | null;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  if (props.proxies.length === 0) return null;
-  const options = [
-    { value: "", label: props.defaultProxy ? `Default (${props.defaultProxy})` : "Default (no proxy)" },
-    ...(props.defaultProxy ? [{ value: "none", label: "(no proxy)" }] : []),
-    ...proxyPickerOptions(props.proxies),
+  const profileOptions: SelectOption[] = [{ value: "", label: "None" }, ...pickers.profiles.map((p) => ({ value: p.id, label: p.id }))];
+  const providerOptions: SelectOption[] = [{ value: "", label: "Any provider" }, ...pickers.providers.map((id) => ({ value: id, label: id }))];
+  const proxyOptions: SelectOption[] = [
+    { value: "", label: pickers.defaultProxy ? `Default (${pickers.defaultProxy})` : "Default (no proxy)" },
+    ...(pickers.defaultProxy ? [{ value: "none", label: "None" }] : []),
+    ...proxyPickerOptions(pickers.proxies),
   ];
-  return (
-    <FormRow label="Proxy">
-      <div className="space-y-1">
-        <Select value={props.value} options={options} onChange={props.onChange} fullWidth />
-        <p className="text-[11px] text-muted-foreground">
-          Optional. Loads the page through this proxy, on a provider with Apply proxies on.
-        </p>
-      </div>
-    </FormRow>
-  );
-}
 
-function RunButton(props: { loading: boolean; onClick: () => void; label: string }) {
   return (
-    <Button onClick={props.onClick} disabled={props.loading} size="sm" className="gap-1.5">
-      {props.loading ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-      {props.label}
-    </Button>
-  );
-}
-
-function ErrorBlock({ message }: { message: string }) {
-  return (
-    <div className="text-[12.5px] text-destructive bg-destructive/10 border border-destructive/30 rounded px-3 py-2 font-mono break-all">
-      {message}
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-[18px]">
+      {showProfile ? (
+        <Field label="Profile" optional help="Runs with the saved cookies and storage of this profile.">
+          <Select label="Profile" value={profile} options={profileOptions} onChange={onProfile} fullWidth />
+        </Field>
+      ) : null}
+      {showProvider ? (
+        <Field label="Provider" optional help="Pins the request to one provider. No failover when pinned.">
+          <Select label="Provider" value={provider} options={providerOptions} onChange={onProvider} fullWidth />
+        </Field>
+      ) : null}
+      {showProxy ? (
+        <Field label="Proxy" optional help="Loads the page through this proxy, on a provider with Apply proxies on.">
+          <Select label="Proxy" value={proxy} options={proxyOptions} onChange={onProxy} fullWidth />
+        </Field>
+      ) : null}
     </div>
   );
 }
 
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+function metaLine(meta: ResponseMeta): string {
+  const parts = [`${meta.ms.toLocaleString()} ms`];
+  if (meta.type) parts.push(meta.type.split(";")[0]!.trim());
+  if (meta.bytes !== null) parts.push(formatBytes(meta.bytes));
+  return parts.join(" · ");
+}
+
+function indent(text: string, spaces: number): string {
+  const pad = " ".repeat(spaces);
+  return text
+    .split("\n")
+    .map((line, i) => (i === 0 ? line : pad + line))
+    .join("\n");
+}
+
+function toPython(value: unknown, depth = 1): string {
+  if (value === null || value === undefined) return "None";
+  if (typeof value === "boolean") return value ? "True" : "False";
+  if (typeof value === "number") return String(value);
+  if (typeof value === "string") return JSON.stringify(value);
+  const pad = "    ".repeat(depth);
+  const end = "    ".repeat(depth - 1);
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "[]";
+    return `[\n${value.map((v) => pad + toPython(v, depth + 1)).join(",\n")},\n${end}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return "{}";
+  return `{\n${entries.map(([k, v]) => `${pad}${JSON.stringify(k)}: ${toPython(v, depth + 1)}`).join(",\n")},\n${end}}`;
+}
+
+function buildCode(language: CodeLanguage, endpoint: string, isImage: boolean, body: Record<string, unknown>, auth: boolean): string {
+  const json = JSON.stringify(body, null, 2);
+  const file = `screenshot.${body.format === "jpeg" ? "jpeg" : "png"}`;
+  if (language === "curl") {
+    const lines = [
+      `curl -X POST "${endpoint}" \\`,
+      ...(auth ? [`  -H "Authorization: Bearer $${TOKEN_ENV}" \\`] : []),
+      `  -H "Content-Type: application/json" \\`,
+      `  -d '${indent(json.replaceAll("'", "'\\''"), 2)}'${isImage ? " \\" : ""}`,
+    ];
+    if (isImage) lines.push(`  --output ${file}`);
+    return lines.join("\n");
+  }
+  if (language === "node") {
+    return [
+      `const res = await fetch("${endpoint}", {`,
+      `  method: "POST",`,
+      `  headers: {`,
+      ...(auth ? [`    Authorization: \`Bearer \${process.env.${TOKEN_ENV}}\`,`] : []),
+      `    "Content-Type": "application/json",`,
+      `  },`,
+      `  body: JSON.stringify(${indent(json, 2)}),`,
+      `});`,
+      isImage ? `const image = Buffer.from(await res.arrayBuffer());` : `const { data } = await res.json();`,
+    ].join("\n");
+  }
+  return [
+    ...(auth ? [`import os`] : []),
+    `import requests`,
+    ``,
+    `res = requests.post(`,
+    `    "${endpoint}",`,
+    ...(auth ? [`    headers={"Authorization": f"Bearer {os.environ['${TOKEN_ENV}']}"},`] : []),
+    `    json=${toPython(body, 2)},`,
+    `)`,
+    isImage ? `image = res.content` : `data = res.json()["data"]`,
+  ].join("\n");
+}
+
+function Reference({ tab, doc }: { tab: Endpoint; doc: EndpointDoc }) {
+  const [open, setOpen] = useState(false);
+  const Chevron = open ? ChevronDown : ChevronRight;
+  return (
+    <section aria-label="Reference" className="ui-card ui-card--plain">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-[18px] py-3.5 text-left"
+        aria-expanded={open}
+      >
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
+          <MethodChip />
+          <code className="font-mono text-[13px] [overflow-wrap:anywhere]">/v1/{tab}</code>
+          <span className="text-xs text-fg-3">Reference</span>
+        </span>
+        <Chevron aria-hidden="true" className="size-[15px] flex-none text-fg-3" strokeWidth={2} />
+      </button>
+      {open ? (
+        <div className="border-t border-line-divider px-[18px] pb-[18px] pt-3.5">
+          <EndpointReference doc={doc} />
+        </div>
+      ) : null}
+    </section>
+  );
 }

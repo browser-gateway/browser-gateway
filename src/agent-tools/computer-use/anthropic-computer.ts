@@ -71,7 +71,10 @@ export class AnthropicComputerExecutor {
       ? { action: String(call.input.action ?? ""), input: call.input }
       : { action: call.name, input: call.input };
     try {
-      return okResult(call.id, toolset, await this.dispatch(action, input));
+      await this.session.enforceUrlPolicy();
+      const content = await this.dispatch(action, input);
+      await this.session.enforceUrlPolicy();
+      return okResult(call.id, toolset, content);
     } catch (err) {
       return errorResult(call.id, toolset, `Error: ${messageOf(err)}`);
     }

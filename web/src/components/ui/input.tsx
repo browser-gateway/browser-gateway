@@ -1,20 +1,56 @@
-import * as React from "react"
-import { Input as InputPrimitive } from "@base-ui/react/input"
+import * as React from "react";
+import { Input as InputPrimitive } from "@base-ui/react/input";
+import { Search } from "lucide-react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
-  return (
-    <InputPrimitive
-      type={type}
-      data-slot="input"
-      className={cn(
-        "h-10 w-full min-w-0 rounded-lg border border-input bg-transparent px-3.5 py-2 text-base transition-colors outline-none file:inline-flex file:h-8 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
-        className
-      )}
-      {...props}
-    />
-  )
+/** Text input. Pass `font-mono` for technical values. */
+function Input({ className, ...props }: React.ComponentProps<"input">) {
+  return <InputPrimitive data-slot="input" className={cn("ui-input", className)} {...props} />;
 }
 
-export { Input }
+function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
+  return <textarea data-slot="textarea" className={cn("ui-input", className)} {...props} />;
+}
+
+/** Full-width search pill above a list. */
+function SearchField({
+  className,
+  label,
+  ...props
+}: Omit<React.ComponentProps<"input">, "type"> & { label: string }) {
+  return (
+    <label data-slot="search-field" className={cn("ui-search", className)}>
+      <Search className="h-[17px] w-[17px] flex-none" strokeWidth={2} aria-hidden="true" />
+      <input type="search" aria-label={label} placeholder={label} {...props} />
+    </label>
+  );
+}
+
+/** A number with its unit inside the right edge. Always human units. */
+function UnitInput({
+  className,
+  unit,
+  ...props
+}: React.ComponentProps<"input"> & { unit: string }) {
+  return (
+    <span className={cn("relative flex", className)}>
+      <InputPrimitive
+        data-slot="unit-input"
+        inputMode="numeric"
+        className="ui-input t-mono pr-[92px]"
+        {...props}
+      />
+      <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center border-l border-line-strong px-3.5 text-xs text-fg-3">
+        {unit}
+      </span>
+    </span>
+  );
+}
+
+/** Plain search box for dense admin tables. */
+function SearchInput({ className, ...props }: React.ComponentProps<"input">) {
+  return <InputPrimitive data-slot="search-input" type="search" className={cn("ui-input h-10 rounded-full", className)} {...props} />;
+}
+
+export { Input, Textarea, SearchField, SearchInput, UnitInput };

@@ -95,7 +95,7 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
     if (!m) return c.json({ error: "Invalid part name" }, 400);
     const path = deps.store.partPath(id, parseInt(m[1], 10));
     if (!existsSync(path)) return c.json({ error: "Part not found" }, 404);
-    return serveFile(path, "application/octet-stream", "public, max-age=31536000, immutable");
+    return serveFile(path, "application/octet-stream", "private, max-age=31536000, immutable");
   });
 
   app.get("/replays/:id/frames/:frame", (c) => {
@@ -113,7 +113,7 @@ export function createReplayRoutes(deps: ReplayRoutesDeps): Hono {
       headers: {
         "Content-Type": ext === "png" ? "image/png" : "image/jpeg",
         "Content-Length": String(bytes.length),
-        "Cache-Control": "public, max-age=31536000, immutable",
+        "Cache-Control": "private, max-age=31536000, immutable",
       },
     });
   });

@@ -67,6 +67,23 @@ describe.skipIf(!chromePath)("Gemini computer-use executor against a real Chrome
     }
   });
 
+  it("blanks the tab when a click lands on a host the URL policy forbids", async () => {
+    const away = chrome.baseUrl.replace("127.0.0.1", "localhost");
+    exec = await GeminiExecutor.connect({
+      endpoint: chrome.browserWsUrl,
+      startUrl: `${chrome.baseUrl}/page`,
+      urls: { allowedHosts: ["127.0.0.1"], blockPrivateNetworks: false },
+    });
+    try {
+      await exec.session.agent.evaluate(`document.body.innerHTML = '<a href="${away}/second" style="position:fixed;inset:0;display:block">away</a>'`);
+      const { results } = await exec.run([step("click", { x: 500, y: 500 })]);
+      expect(payload(results[0] as GeminiFunctionResult).error).toMatch(/may not open/);
+      expect(payload(results[0] as GeminiFunctionResult).url).toBe("about:blank");
+    } finally {
+      await exec.close();
+    }
+  });
+
   it("reports a failed action in its own result and still runs the rest", async () => {
     await fresh();
     try {

@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-10-21
+Generated: 2026-11-24
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -49,13 +49,16 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **class** `class Gateway` (line 42)
 ### `src/core/notifications/deliver.ts`
 
-- **interface** `interface WebhookPayload` (line 3) — Pure webhook delivery with retry. Isomorphic — Node, Cloudflare Workers, Bun, Deno.
-- **interface** `interface WebhookDeliverOptions` (line 12)
-- **interface** `interface WebhookDeliverResult` (line 25)
-- **fn** `deliverWebhook(url: string, payload: WebhookPayload, opts: WebhookDeliverOptions = {}) → Promise<WebhookDeliverResult>` (line 33)
+- **interface** `interface WebhookPayload` (line 5)
+- **interface** `interface WebhookDeliverOptions` (line 14)
+- **interface** `interface WebhookDeliverResult` (line 31)
+- **fn** `webhookSecretKey(secret: string) → Uint8Array<ArrayBuffer>` (line 59) — Decodes a `whsec_` secret to its key bytes, or throws a generic error that never includes the secret.
+- **fn** `generateWebhookSecret() → string` (line 70) — A new webhook signing secret: `whsec_` followed by 32 random bytes in base64.
+- **fn** `signWebhook(secret: string, messageId: string, timestampSec: number, body: string) → Promise<string>` (line 75) — Signs `id.timestamp.body` with HMAC-SHA256 and returns the `v1,<base64>` signature header value.
+- **fn** `deliverWebhook(url: string, payload: WebhookPayload, opts: WebhookDeliverOptions = {}) → Promise<WebhookDeliverResult>` (line 96)
 ### `src/core/notifications/webhooks.ts`
 
-- **class** `class WebhookNotifier` (line 10)
+- **class** `class WebhookNotifier` (line 12)
 ### `src/core/pool/session-pool.ts`
 
 - **interface** `interface OneShotOptions` (line 15)
@@ -323,8 +326,10 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/core/redact.ts`
 
 - **fn** `redactConnectionUrl(url: string) → string` (line 13) — Masks credentials in a connection URL: userinfo and any secret-looking query
-- **fn** `redactHeaders(headers: Record<string, string> | undefined) → Record<string, string>` (line 29) — Masks every header value whose name carries credentials.
-- **fn** `redactConnectionUrlsInText(text: string) → string` (line 40) — Masks `token=`, `apikey=`, `user:pass@` and friends inside a config blob.
+- **fn** `addressOrigin(url: string) → string` (line 29) — Scheme and host of an address, with nothing that could carry a credential. `***` when it does not parse.
+- **fn** `redactAddressesInText(text: string, address?: string) → string` (line 39) — Replaces `address` and every other address in `text` with its scheme and host.
+- **fn** `redactHeaders(headers: Record<string, string> | undefined) → Record<string, string>` (line 45) — Masks every header value whose name carries credentials.
+- **fn** `redactConnectionUrlsInText(text: string) → string` (line 59) — Masks `token=`, `apikey=`, `user:pass@`, and `secret:`/`token:`/`authorization:` style values inside a config blob.
 ### `src/core/router/selector.ts`
 
 - **type** `type Strategy` (line 8)
@@ -365,26 +370,26 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 - **fn** `isClientSessionKey(value: string | null | undefined) → value is string` (line 164) — True for a well-formed `sessionKey` a client chose itself: 8 to 64 letters, digits, `_` or `-`.
 ### `src/core/types.ts`
 
-- **const** `const ProviderConfigSchema` (line 6)
-- **const** `const WebhookSchema` (line 81)
-- **const** `const ProfilesConfigSchema` (line 94)
-- **type** `type ProfilesConfig` (line 110)
-- **const** `const ReplayConfigSchema` (line 122)
-- **type** `type ReplayConfig` (line 130)
-- **const** `const RestConfigSchema` (line 132)
-- **type** `type RestConfig` (line 140)
-- **const** `const GatewayConfigSchema` (line 142)
-- **type** `type ProviderConfig` (line 160)
-- **type** `type GatewayConfig` (line 161)
-- **interface** `interface ProviderState` (line 163)
-- **interface** `interface Session` (line 180)
+- **const** `const ProviderConfigSchema` (line 7)
+- **const** `const WebhookSchema` (line 82)
+- **const** `const ProfilesConfigSchema` (line 106)
+- **type** `type ProfilesConfig` (line 122)
+- **const** `const ReplayConfigSchema` (line 134)
+- **type** `type ReplayConfig` (line 142)
+- **const** `const RestConfigSchema` (line 144)
+- **type** `type RestConfig` (line 152)
+- **const** `const GatewayConfigSchema` (line 154)
+- **type** `type ProviderConfig` (line 172)
+- **type** `type GatewayConfig` (line 173)
+- **interface** `interface ProviderState` (line 175)
+- **interface** `interface Session` (line 192)
 
 ## Server layer (src/server/)
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 41)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 177)
+- **interface** `interface ProfileAppDeps` (line 44)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry, sessionHistory?: SessionHistory) → unknown` (line 180)
 ### `src/server/browse/cli.ts`
 
 - **fn** `runBrowseCli(argv: string[]) → Promise<number>` (line 13)
@@ -395,9 +400,9 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/browse/client.ts`
 
 - **fn** `socketPathFor(name: string) → string` (line 26)
-- **fn** `listSessions() → string[]` (line 42)
-- **fn** `sendToDaemon(socketPath: string, req: BrowseRequest) → Promise<BrowseResponse>` (line 49)
-- **fn** `ensureDaemon(name: string, endpoint: string, idleMs?: number) → Promise<string>` (line 70) — Starts a detached daemon for this session name and waits for its socket.
+- **fn** `listSessions() → string[]` (line 46)
+- **fn** `sendToDaemon(socketPath: string, req: BrowseRequest) → Promise<BrowseResponse>` (line 54)
+- **fn** `ensureDaemon(name: string, endpoint: string, idleMs?: number) → Promise<string>` (line 76) — Starts a detached daemon for this session name and waits for its socket.
 ### `src/server/browse/commands.ts`
 
 - **fn** `runBrowseCommand(session: AgentSession, req: BrowseRequest) → Promise<BrowseResponse>` (line 17) — Runs one CLI verb against a live session. Text output stays terse so an agent
@@ -444,6 +449,16 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/config/writer.ts`
 
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string, templates: EnvTemplates = loadedEnvTemplates) → void` (line 8)
+### `src/server/history/session-history.ts`
+
+- **const** `const SESSION_HISTORY_FILE` (line 7)
+- **const** `const SESSION_HISTORY_MAX_ENTRIES` (line 8)
+- **const** `const SESSION_HISTORY_DAYS` (line 9)
+- **const** `const SESSION_HISTORY_SAVE_DELAY_MS` (line 10)
+- **interface** `interface SessionHistoryEntry` (line 14)
+- **interface** `interface SessionHistoryDay` (line 25)
+- **interface** `interface SessionHistorySnapshot` (line 30)
+- **class** `class SessionHistory` (line 55) — Keeps a capped record of finished sessions and a per-day count, saved as one JSON file.
 ### `src/server/live/upgrade.ts`
 
 - **interface** `interface CreateLiveHandlerDeps` (line 43)
@@ -631,7 +646,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 - **fn** `resolvePort(cliOverride: string | undefined) → number | undefined` (line 1)
 - **fn** `resolveHost() → string` (line 13) — Bind interface. `HOST` always wins. Without `BG_TOKEN` every `/v1/*` route is
-- **fn** `resolvePublicUrl(port: number) → string` (line 27) — Public base URL the gateway advertises to clients, with no trailing slash.
+- **fn** `bindsBeyondLoopback(host: string) → boolean` (line 19) — True when a bind interface accepts connections from other machines.
+- **fn** `resolvePublicUrl(port: number) → string` (line 33) — Public base URL the gateway advertises to clients, with no trailing slash.
 ### `src/server/setup/profiles-setup.ts`
 
 - **interface** `interface ProfilesSetupInput` (line 5)
@@ -662,13 +678,13 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/validation.ts`
 
 - **fn** `formatZodErrors(error: z.ZodError) → string[]` (line 16) — Format a Zod error into a human-readable list of "path: message" strings.
-- **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 49) — Parse a provider config body (from POST or PUT /v1/providers/...).
-- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[] }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 90) — Validate a webhook request body against {@link WebhookSchema}.
+- **fn** `parseProviderConfigBody(body: Record<string, unknown>, existing?: ProviderConfig) → { data: ProviderConfig; errors?: undefined } | { data?: undefined; errors: string[] }` (line 52) — Parse a provider config body (from POST or PUT /v1/providers/...).
+- **fn** `parseWebhookBody(body: Record<string, unknown>) → { data: { url: string; events?: string[]; secret?: string }; errors?: undefined } | { data?: undefined; errors: string[] }` (line 96) — Validate a webhook request body against {@link WebhookSchema}.
 - **fn** `parseYamlGatewayConfig(yaml: string) → Promise<
   | { kind: "parse-error"; message: string }
   | { kind: "validation-error"; errors: string[] }
   | { kind: "ok"; data: GatewayConfig }
->` (line 108) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
+>` (line 114) — Parse a YAML string and validate it against {@link GatewayConfigSchema}.
 ### `src/server/ws/pipeline-relay.ts`
 
 - **interface** `interface PipelineRelayOpts` (line 15)

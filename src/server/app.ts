@@ -1,4 +1,4 @@
-import { redactConnectionUrl, redactConnectionUrlsInText, redactHeaders } from "../core/redact.js";
+import { redactConnectionUrl, redactHeaders } from "../core/redact.js";
 import { buildProxyConfig, describeProxies, isAllowedResourceName, isDirectBrowserProxy, parseProxyUrl, RESERVED_NONE_NAME, type ProxyConfig, type ProxyInput } from "../core/proxy-config.js";
 import { checkProxyExit } from "./proxy-check.js";
 import { parseAdvancedSettingsBody, parseSessionDefaultsBody } from "./settings-body.js";
@@ -33,9 +33,12 @@ import type { ProfileLifecycle } from "./profile/lifecycle.js";
 import { getEffectiveHost, getEffectiveProtocol, parseAllowedOrigins } from "./util/request.js";
 import { securityHeaders } from "./middleware/security-headers.js";
 import { mutatingRequestGuard } from "./middleware/mutating-request-guard.js";
+import type { SessionHistory } from "./history/session-history.js";
 
 /** YAML config size cap — prevents oversize POST/PUT to /v1/config from DoS-ing the YAML parser. */
 const MAX_CONFIG_YAML_BYTES = 1024 * 1024;
+const SESSION_HISTORY_LIMIT_DEFAULT = 10;
+const SESSION_HISTORY_LIMIT_MAX = 100;
 
 
 export interface ProfileAppDeps {
@@ -185,6 +188,7 @@ export function createApp(
   replayStore?: ReplayStore,
   dataDir?: string,
   reconnectRegistry?: ReconnectRegistry,
+  sessionHistory?: SessionHistory,
 ) {
   const app = new Hono();
   const sessionSecret = getSessionSecret(token);
@@ -294,6 +298,13 @@ export function createApp(
       count: sessions.length,
       sessions,
     });
+  });
+
+  app.get("/v1/sessions/history", (c) => {
+    const requested = Number.parseInt(c.req.query("limit") ?? "", 10);
+    const limit = Number.isInteger(requested) && requested > 0 ? Math.min(requested, SESSION_HISTORY_LIMIT_MAX) : SESSION_HISTORY_LIMIT_DEFAULT;
+    if (!sessionHistory) return c.json({ total: 0, days: [], sessions: [] });
+    return c.json(sessionHistory.snapshot(limit));
   });
 
   app.get("/v1/sessions/parked", (c) => {
@@ -410,6 +421,9 @@ export function createApp(
   app.post("/v1/webhooks", async (c) => {
     const parsed = await readWebhookBody(c);
     if (parsed.errors) return c.json({ error: "Invalid webhook", details: parsed.errors }, 400);
+    if (parsed.data.url.includes("***")) {
+      return c.json({ error: "Invalid webhook", details: ["The address still has a masked value (***). Enter the full address."] }, 400);
+    }
     gateway.config.webhooks.push(parsed.data);
     const failed = persistConfigOrRollback(gateway.config, () => gateway.config.webhooks.pop());
     if (failed) return c.json(failed, 500);
@@ -422,7 +436,12 @@ export function createApp(
     const parsed = await readWebhookBody(c);
     if (parsed.errors) return c.json({ error: "Invalid webhook", details: parsed.errors }, 400);
     const previous = gateway.config.webhooks[index];
-    gateway.config.webhooks[index] = parsed.data;
+    const keepsMaskedUrl = previous !== undefined && parsed.data.url === redactWebhookUrl(previous.url);
+    if (!keepsMaskedUrl && parsed.data.url.includes("***")) {
+      return c.json({ error: "Invalid webhook", details: ["The address still has a masked value (***). Enter the full address."] }, 400);
+    }
+    const next = keepsMaskedUrl ? { ...parsed.data, url: previous.url } : parsed.data;
+    gateway.config.webhooks[index] = next.secret === undefined && previous?.secret ? { ...next, secret: previous.secret } : next;
     const failed = persistConfigOrRollback(gateway.config, () => { gateway.config.webhooks[index] = previous; });
     if (failed) return c.json(failed, 500);
     return c.json({ ok: true });
@@ -505,7 +524,7 @@ export function createApp(
         return;
       }
       delete gateway.config.providers[id];
-      gateway.registry.remove(id);
+      gateway.removeProvider(id);
     });
   }
 
@@ -700,7 +719,7 @@ export function createApp(
     }
 
     delete gateway.config.providers[id];
-    gateway.registry.remove(id);
+    gateway.removeProvider(id);
 
     try {
       writeConfig(gateway.config);
@@ -778,23 +797,16 @@ export function createApp(
     });
   });
 
-  // Config editor endpoints. Raw YAML reveals provider tokens, so the
-  // unredacted view is gated behind the dashboard cookie session — Bearer
-  // callers get a redacted copy with `token=`, `apikey=`, etc. masked.
+  // The raw file holds provider and webhook credentials, so only a signed-in dashboard session reads it.
   app.get("/v1/config", (c) => {
     const path = loadedConfigPath;
     if (!path || !existsSync(path)) {
-      return c.json({ yaml: "", path: null, exists: false });
+      return c.json({ yaml: "", path: null, exists: false, hidden: false });
     }
-    const yaml = readFileSync(path, "utf-8");
     const cookie = getCookie(c.req.header("cookie"), COOKIE_NAME);
     const cookieAuth = !!(token && cookie && verifySession(cookie, sessionSecret, sessionEpoch.value()));
-    return c.json({
-      yaml: cookieAuth ? yaml : redactConnectionUrlsInText(yaml),
-      path,
-      exists: true,
-      redacted: !cookieAuth,
-    });
+    if (!cookieAuth) return c.json({ yaml: "", path: null, exists: true, hidden: true });
+    return c.json({ yaml: readFileSync(path, "utf-8"), path, exists: true, hidden: false });
   });
 
   app.post("/v1/config/validate", bodyLimit({ maxSize: MAX_CONFIG_YAML_BYTES }), async (c) => {
@@ -816,6 +828,9 @@ export function createApp(
     const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
     const yaml = body.yaml as string | undefined;
     if (!yaml) return c.json({ error: "No YAML content provided" }, 400);
+    if (yaml.includes("***")) {
+      return c.json({ error: "This config has a masked value (***). Enter the real value before saving, or edit the config file on disk." }, 400);
+    }
 
     const result = await parseYamlGatewayConfig(yaml);
     if (result.kind === "parse-error") {
