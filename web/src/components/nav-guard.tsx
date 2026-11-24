@@ -3,14 +3,12 @@
 import { useEffect } from "react";
 
 interface NavGuardProps {
-  /** True while we should block navigation away. */
   active: boolean;
-  /** Message shown in confirm dialog. */
   message: string;
-  /** Called when the user confirms leaving — cleanup hook. */
   onLeave?: () => void;
 }
 
+/** Asks before a reload, tab close or in-app link click while `active`. */
 export function NavGuard({ active, message, onLeave }: NavGuardProps) {
   useEffect(() => {
     if (!active) return;

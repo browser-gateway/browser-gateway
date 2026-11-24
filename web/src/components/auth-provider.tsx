@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { checkAuth, login as apiLogin, logout as apiLogout, AuthError } from "@/lib/api";
+import { checkAuth, login as apiLogin, logout as apiLogout } from "@/lib/api";
 
 interface AuthState {
   loading: boolean;

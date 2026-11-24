@@ -1,20 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
-import {
-  Check,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  Loader2,
-  Plug,
-  Plus,
-  X,
-} from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Check, ChevronRight, Eye, EyeOff, Loader2, Plug, X } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogHeader } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label, FieldHint } from "@/components/ui/label";
 import { Select, type SelectOption } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
@@ -22,6 +16,9 @@ import {
   updateProvider,
   testProvider,
   probeProvider,
+  fetchProviders,
+  fetchProfiles,
+  routableProviders,
   type ProviderConfigItem,
   type ProfileMetaItem,
 } from "@/lib/api";
@@ -49,12 +46,13 @@ interface Props {
   siblings: SiblingProvider[];
   availableProfiles: ProfileMetaItem[];
   profilesEnabled: boolean;
+  onDone: () => void;
+  onCancel: () => void;
 }
 
 const COPY = PROVIDER_FORM_COPY;
 
-export function ProviderForm({ initial, siblings, availableProfiles, profilesEnabled }: Props) {
-  const router = useRouter();
+export function ProviderForm({ initial, siblings, availableProfiles, profilesEnabled, onDone, onCancel }: Props) {
   const isEdit = initial !== null;
 
   const [name, setName] = React.useState(initial?.id ?? "");
@@ -94,13 +92,13 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
   React.useEffect(() => {
     const trimmed = url.trim();
     if (!isProbeableUrl(trimmed)) {
-      setProbe({ status: "idle" });
+      queueMicrotask(() => setProbe({ status: "idle" }));
       return;
     }
     const key = providerProbeCacheKey(trimmed, outboundHeadersForProbe);
     const cached = probeCacheRef.current.get(key);
     if (cached) {
-      setProbe(cached);
+      queueMicrotask(() => setProbe(cached));
       return;
     }
     const controller = new AbortController();
@@ -190,7 +188,7 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
         setSubmitError(result.error ?? result.details?.join("; ") ?? "Save failed.");
         return;
       }
-      router.push("/providers");
+      onDone();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Save failed.");
     } finally {
@@ -257,333 +255,377 @@ export function ProviderForm({ initial, siblings, availableProfiles, profilesEna
   }, [availableProfiles, profile]);
 
   const profileHint = selectProfileHint(profile, probe, COPY.profile);
+  const derivedId = !isEdit && name.trim() ? slugifyProviderName(name) : "";
 
   return (
-    <form onSubmit={handleSubmit}>
-      <Card>
-        <CardContent className="p-6 space-y-5">
-          {!isEdit && (
-            <div>
-              <label className="text-sm font-medium block mb-1.5" htmlFor="prov-name">
-                {COPY.name.label}
-              </label>
-              <input
-                id="prov-name"
-                value={name}
-                onChange={(e) => {
-                  setName(e.target.value);
-                  setErrors((p) => ({ ...p, name: "" }));
-                }}
-                placeholder={COPY.name.placeholder}
-                autoFocus
-                className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              {errors.name ? (
-                <p className="text-xs text-destructive mt-1">{errors.name}</p>
-              ) : (
-                <p className="text-xs text-muted-foreground mt-1.5">{COPY.name.hint}</p>
-              )}
-            </div>
+    <form onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
+      {!isEdit && (
+        <div>
+          <Label htmlFor="prov-name">{COPY.name.label}</Label>
+          <Input
+            id="prov-name"
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setErrors((p) => ({ ...p, name: "" }));
+            }}
+            placeholder={COPY.name.placeholder}
+            aria-invalid={Boolean(errors.name)}
+            autoFocus
+            className="font-mono"
+          />
+          {errors.name ? (
+            <p className="mt-[7px] text-xs text-bad">{errors.name}</p>
+          ) : (
+            <FieldHint>
+              {derivedId ? (
+                <>
+                  ID: <span className="t-mono text-fg">{derivedId}</span>.{" "}
+                </>
+              ) : null}
+              {COPY.name.hint}
+            </FieldHint>
           )}
+        </div>
+      )}
 
-          <div>
-            <label className="text-sm font-medium block mb-1.5" htmlFor="prov-url">
-              {COPY.url.label}
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="prov-url"
-                value={url}
-                onChange={(e) => {
-                  setUrl(e.target.value);
-                  setErrors((p) => ({ ...p, url: "" }));
-                  setTestResult(null);
-                }}
-                placeholder={COPY.url.placeholder}
-                autoFocus={isEdit}
-                className="flex-1 h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-9 text-xs gap-1.5 shrink-0"
-                onClick={() => void runTest()}
-                disabled={testing || !url.trim()}
-              >
-                {testing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Plug className="h-3.5 w-3.5" />
-                )}
-                {testing ? COPY.actions.testing : COPY.actions.test}
-              </Button>
-            </div>
-            {errors.url ? (
-              <p className="text-xs text-destructive mt-1">{errors.url}</p>
+      <div>
+        <Label htmlFor="prov-url">{COPY.url.label}</Label>
+        <div className="flex gap-2">
+          <Input
+            id="prov-url"
+            value={url}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setErrors((p) => ({ ...p, url: "" }));
+              setTestResult(null);
+            }}
+            placeholder={COPY.url.placeholder}
+            autoFocus={isEdit}
+            aria-invalid={Boolean(errors.url)}
+            className="min-w-0 flex-1 font-mono"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="flex-none"
+            onClick={() => void runTest()}
+            disabled={testing || !url.trim()}
+          >
+            {testing ? <Loader2 className="animate-spin" strokeWidth={2} /> : <Plug strokeWidth={2} />}
+            {testing ? COPY.actions.testing : COPY.actions.test}
+          </Button>
+        </div>
+        {errors.url ? (
+          <p className="mt-[7px] text-xs text-bad">{errors.url}</p>
+        ) : (
+          <FieldHint>{COPY.url.hint}</FieldHint>
+        )}
+        {testResult && (
+          <div
+            className={cn(
+              "mt-2 inline-flex items-center gap-1.5 text-xs font-semibold",
+              testResult.ok ? "text-good" : "text-bad",
+            )}
+          >
+            {testResult.ok ? (
+              <Check className="h-3.5 w-3.5" strokeWidth={2.4} />
             ) : (
-              <p className="text-xs text-muted-foreground mt-1.5">{COPY.url.hint}</p>
+              <X className="h-3.5 w-3.5" strokeWidth={2.4} />
             )}
-            {testResult && (
-              <p
-                className={cn(
-                  "text-xs mt-1.5 inline-flex items-center gap-1.5",
-                  testResult.ok ? "text-foreground" : "text-destructive",
-                )}
-              >
-                {testResult.ok ? (
-                  <Check className="h-3 w-3" />
-                ) : (
-                  <X className="h-3 w-3" />
-                )}
-                {testResult.ok
-                  ? COPY.testResult.ok(testResult.latencyMs)
-                  : COPY.testResult.fail(testResult.error ?? COPY.testResult.unknownReason)}
-              </p>
-            )}
+            {testResult.ok
+              ? COPY.testResult.ok(testResult.latencyMs)
+              : COPY.testResult.fail(testResult.error ?? COPY.testResult.unknownReason)}
           </div>
+        )}
+      </div>
 
-          {profilesEnabled && (
-            <div>
-              <label className="text-sm font-medium block mb-1.5">
-                {COPY.profile.label}
-              </label>
-              <Select
-                value={profile}
-                options={profileOptions}
-                onChange={setProfile}
-                fullWidth
-              />
-              <p className="text-xs text-muted-foreground mt-1.5">{profileHint}</p>
-            </div>
+      {profilesEnabled && (
+        <div>
+          <Label htmlFor="prov-profile">{COPY.profile.label}</Label>
+          <Select
+            id="prov-profile"
+            label={COPY.profile.label}
+            value={profile}
+            options={profileOptions}
+            onChange={setProfile}
+            fullWidth
+          />
+          <FieldHint>{profileHint}</FieldHint>
+        </div>
+      )}
+
+      <div className="ui-well flex items-center gap-3.5 px-4 py-3.5">
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="text-sm font-bold">{COPY.injectProxy.label}</span>
+          <span className="text-xs text-fg-3">{COPY.injectProxy.hint}</span>
+        </span>
+        <Switch
+          label={COPY.injectProxy.label}
+          checked={injectProxy}
+          onCheckedChange={(next) => setInjectProxy(next)}
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div>
+          <Label htmlFor="prov-max">{COPY.maxConcurrent.label}</Label>
+          <Input
+            id="prov-max"
+            type="number"
+            min={1}
+            value={maxConcurrent}
+            onChange={(e) => {
+              setMaxConcurrent(e.target.value);
+              setErrors((p) => ({ ...p, maxConcurrent: "" }));
+            }}
+            placeholder={COPY.maxConcurrent.placeholder}
+            aria-invalid={Boolean(errors.maxConcurrent)}
+            className="font-mono"
+          />
+          {errors.maxConcurrent ? (
+            <p className="mt-[7px] text-xs text-bad">{errors.maxConcurrent}</p>
+          ) : (
+            <FieldHint>{COPY.maxConcurrent.hint}</FieldHint>
           )}
+        </div>
 
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <label className="text-sm font-medium block" htmlFor="prov-inject-proxy">
-                {COPY.injectProxy.label}
-              </label>
-              <p className="text-xs text-muted-foreground mt-1.5">{COPY.injectProxy.hint}</p>
-            </div>
-            <Switch
-              id="prov-inject-proxy"
-              checked={injectProxy}
-              onCheckedChange={(next) => setInjectProxy(next)}
-              className="mt-0.5"
-            />
-          </div>
+        <div>
+          <Label htmlFor="prov-priority">{COPY.priority.label}</Label>
+          <Input
+            id="prov-priority"
+            type="number"
+            min={1}
+            value={priority}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n) && n >= 1) setPriority(n);
+            }}
+            placeholder="100"
+            className="font-mono"
+          />
+          {errors.priority ? (
+            <p className="mt-[7px] text-xs text-bad">{errors.priority}</p>
+          ) : (
+            <FieldHint>
+              <span className="text-fg-2">{priorityEffect.label}</span> {COPY.priority.hintStatic}
+            </FieldHint>
+          )}
+        </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label className="text-sm font-medium block mb-1.5" htmlFor="prov-max">
-                {COPY.maxConcurrent.label}
-              </label>
-              <input
-                id="prov-max"
-                type="number"
-                min="1"
-                value={maxConcurrent}
-                onChange={(e) => {
-                  setMaxConcurrent(e.target.value);
-                  setErrors((p) => ({ ...p, maxConcurrent: "" }));
-                }}
-                placeholder={COPY.maxConcurrent.placeholder}
-                className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              {errors.maxConcurrent ? (
-                <p className="text-xs text-destructive mt-1">{errors.maxConcurrent}</p>
-              ) : (
-                <p className="text-xs text-muted-foreground mt-1.5">{COPY.maxConcurrent.hint}</p>
-              )}
-            </div>
+        <div>
+          <Label htmlFor="prov-weight">{COPY.weight.label}</Label>
+          <Input
+            id="prov-weight"
+            type="number"
+            min={1}
+            value={weight}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (Number.isFinite(n) && n >= 1) setWeight(n);
+            }}
+            placeholder="100"
+            className="font-mono"
+          />
+          {errors.weight ? (
+            <p className="mt-[7px] text-xs text-bad">{errors.weight}</p>
+          ) : (
+            <FieldHint>
+              <span className="text-fg-2">{weightEffect.label}</span> {COPY.weight.hintStatic}
+            </FieldHint>
+          )}
+        </div>
+      </div>
 
-            <div>
-              <label className="text-sm font-medium block mb-1.5" htmlFor="prov-priority">
-                {COPY.priority.label}
-              </label>
-              <input
-                id="prov-priority"
-                type="number"
-                min="1"
-                value={priority}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  if (Number.isFinite(n) && n >= 1) setPriority(n);
-                }}
-                placeholder="100"
-                className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              {errors.priority ? (
-                <p className="text-xs text-destructive mt-1">{errors.priority}</p>
-              ) : (
-                <>
-                  <p className="text-xs text-foreground mt-1.5">{priorityEffect.label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{COPY.priority.hintStatic}</p>
-                </>
-              )}
-            </div>
-
-            <div>
-              <label className="text-sm font-medium block mb-1.5" htmlFor="prov-weight">
-                {COPY.weight.label}
-              </label>
-              <input
-                id="prov-weight"
-                type="number"
-                min="1"
-                value={weight}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  if (Number.isFinite(n) && n >= 1) setWeight(n);
-                }}
-                placeholder="100"
-                className="w-full h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-              {errors.weight ? (
-                <p className="text-xs text-destructive mt-1">{errors.weight}</p>
-              ) : (
-                <>
-                  <p className="text-xs text-foreground mt-1.5">{weightEffect.label}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{COPY.weight.hintStatic}</p>
-                </>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="mt-5">
+      <div className="ui-well overflow-hidden p-0">
         <button
           type="button"
           onClick={() => setAdvancedOpen((o) => !o)}
           aria-expanded={advancedOpen}
-          className="w-full inline-flex items-center gap-2 px-4 py-3 rounded-lg border border-border bg-card hover:bg-muted/40 transition-colors text-left"
+          className="flex w-full items-center gap-3 px-4 py-3.5 text-left"
         >
           <ChevronRight
-            className={cn(
-              "h-4 w-4 text-muted-foreground transition-transform",
-              advancedOpen && "rotate-90",
-            )}
+            className={cn("h-4 w-4 flex-none text-fg-3 transition-transform", advancedOpen && "rotate-90")}
             strokeWidth={2}
           />
-          <div className="flex-1">
-            <div className="text-sm font-medium">{COPY.advanced.label}</div>
-            <div className="text-xs text-muted-foreground mt-0.5">
-              Custom headers for Bearer, API-key, or reverse-proxy auth.
-              {filledHeaderCount > 0
-                ? ` ${filledHeaderCount} configured.`
-                : ""}
-            </div>
-          </div>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-sm font-bold">{COPY.advanced.label}</span>
+            <span className="text-xs text-fg-3">
+              Custom headers for Bearer, API key or reverse-proxy auth.
+              {filledHeaderCount > 0 ? ` ${filledHeaderCount} set.` : ""}
+            </span>
+          </span>
+          <span className="flex-none text-xs text-fg-3">Optional</span>
         </button>
 
         {advancedOpen && (
-          <Card className="mt-3">
-            <CardContent className="p-6 space-y-3">
-              <div>
-                <label className="text-sm font-medium block">
-                  {COPY.advanced.headersLabel}
-                </label>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {COPY.advanced.headersHint}
-                </p>
-              </div>
-
-              {headers.length > 0 && (
-                <div className="space-y-2">
-                  {headers.map((h) => {
-                    const shown = !!revealed[h.id];
-                    return (
-                      <div key={h.id} className="flex gap-2 items-start">
-                        <input
-                          value={h.key}
-                          onChange={(e) => updateHeader(h.id, { key: e.target.value })}
-                          placeholder={COPY.advanced.headerNamePlaceholder}
-                          className="w-1/3 h-9 px-3 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-                        />
-                        <div className="flex-1 relative">
-                          <input
-                            value={h.value}
-                            onChange={(e) => updateHeader(h.id, { value: e.target.value })}
-                            placeholder={COPY.advanced.headerValuePlaceholder}
-                            type={shown ? "text" : "password"}
-                            autoComplete="off"
-                            spellCheck={false}
-                            className="w-full h-9 px-3 pr-9 text-sm rounded-md border border-input bg-background font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-                          />
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setRevealed((prev) => ({ ...prev, [h.id]: !shown }))
-                            }
-                            aria-label={shown ? "Hide value" : "Show value"}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 inline-flex items-center justify-center rounded hover:bg-muted/60 text-muted-foreground"
-                          >
-                            {shown ? (
-                              <EyeOff className="h-3.5 w-3.5" strokeWidth={1.75} />
-                            ) : (
-                              <Eye className="h-3.5 w-3.5" strokeWidth={1.75} />
-                            )}
-                          </button>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => removeHeader(h.id)}
-                          aria-label="Remove header"
-                          className="h-9 w-9 inline-flex items-center justify-center rounded-md hover:bg-muted/60 text-muted-foreground shrink-0"
-                        >
-                          <X className="h-3.5 w-3.5" strokeWidth={2} />
-                        </button>
-                      </div>
-                    );
-                  })}
+          <div className="flex flex-col gap-3 border-t border-line px-4 py-4">
+            <div className="flex flex-col gap-1">
+              <span className="t-label">{COPY.advanced.headersLabel}</span>
+              <p className="t-small">{COPY.advanced.headersHint}</p>
+            </div>
+            {headers.map((h) => {
+              const shown = !!revealed[h.id];
+              return (
+                <div key={h.id} className="flex flex-wrap items-start gap-2">
+                  <Input
+                    value={h.key}
+                    onChange={(e) => updateHeader(h.id, { key: e.target.value })}
+                    placeholder={COPY.advanced.headerNamePlaceholder}
+                    aria-label="Header name"
+                    className="flex-[1_1_150px] font-mono"
+                  />
+                  <div className="relative min-w-0 flex-[2_1_220px]">
+                    <Input
+                      value={h.value}
+                      onChange={(e) => updateHeader(h.id, { value: e.target.value })}
+                      placeholder={COPY.advanced.headerValuePlaceholder}
+                      aria-label="Header value"
+                      type={shown ? "text" : "password"}
+                      autoComplete="off"
+                      spellCheck={false}
+                      className="pr-11 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setRevealed((prev) => ({ ...prev, [h.id]: !shown }))}
+                      aria-label={shown ? "Hide value" : "Show value"}
+                      className="absolute right-2.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-fg-3 hover:text-fg"
+                    >
+                      {shown ? <EyeOff className="h-4 w-4" strokeWidth={2} /> : <Eye className="h-4 w-4" strokeWidth={2} />}
+                    </button>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="lg"
+                    className="w-[46px] px-0"
+                    onClick={() => removeHeader(h.id)}
+                    aria-label="Remove header"
+                  >
+                    <X strokeWidth={2} />
+                  </Button>
                 </div>
-              )}
-
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-8 text-xs gap-1.5"
-                onClick={addHeaderRow}
-              >
-                <Plus className="h-3 w-3" strokeWidth={2} />
-                {COPY.advanced.addHeader}
-              </Button>
-
-              {errors.headers && (
-                <p className="text-xs text-destructive">{errors.headers}</p>
-              )}
-            </CardContent>
-          </Card>
+              );
+            })}
+            <button type="button" className="t-link w-fit" onClick={addHeaderRow}>
+              + {COPY.advanced.addHeader}
+            </button>
+            {errors.headers && <p className="text-xs text-bad">{errors.headers}</p>}
+          </div>
         )}
       </div>
 
-      {submitError && (
-        <p className="text-xs text-destructive mt-3">{submitError}</p>
-      )}
+      {submitError && <Alert title="The provider was not saved">{submitError}</Alert>}
 
-      <div className="mt-5 flex justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => router.push("/providers")}
-          disabled={saving}
-        >
+      <div className="ui-dialog__foot">
+        <Button type="button" variant="outline" size="lg" onClick={onCancel} disabled={saving}>
           {COPY.actions.cancel}
         </Button>
-        <Button type="submit" size="sm" disabled={saving}>
-          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-          {isEdit
-            ? saving
-              ? COPY.actions.saving
-              : COPY.actions.saveChanges
-            : saving
-            ? COPY.actions.adding
-            : COPY.actions.addProvider}
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          loading={saving}
+          loadingLabel={isEdit ? COPY.actions.saving : COPY.actions.adding}
+        >
+          {isEdit ? COPY.actions.saveChanges : COPY.actions.addProvider}
         </Button>
       </div>
     </form>
+  );
+}
+
+type Loaded =
+  | { status: "loading" }
+  | { status: "missing" }
+  | {
+      status: "ready";
+      initial: ProviderConfigItem | null;
+      siblings: SiblingProvider[];
+      profiles: ProfileMetaItem[];
+      profilesEnabled: boolean;
+    };
+
+interface DialogProps {
+  slug: string | null;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+export function ProviderFormDialog({ slug, onClose, onSaved }: DialogProps) {
+  const [state, setState] = React.useState<Loaded>({ status: "loading" });
+
+  React.useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      fetchProviders(),
+      fetchProfiles().catch(() => ({ enabled: false, count: 0, profiles: [] as ProfileMetaItem[] })),
+    ])
+      .then(([p, profs]) => {
+        if (cancelled) return;
+        const match = slug ? p.providers.find((x) => x.id === slug) ?? null : null;
+        if (slug && !match) {
+          setState({ status: "missing" });
+          return;
+        }
+        setState({
+          status: "ready",
+          initial: match,
+          siblings: routableProviders(p.providers).map((x) => ({
+            slug: x.id,
+            priority: x.priority,
+            weight: x.weight,
+          })),
+          profiles: profs.profiles,
+          profilesEnabled: profs.enabled,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setState(slug ? { status: "missing" } : {
+          status: "ready",
+          initial: null,
+          siblings: [],
+          profiles: [],
+          profilesEnabled: false,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  return (
+    <Dialog open onOpenChange={(open) => (open ? null : onClose())} width={680} label={slug ? `Edit ${slug}` : "Add provider"}>
+      <DialogHeader
+        title={slug ? <>Edit <span className="t-mono">{slug}</span></> : "Add provider"}
+        description={
+          slug
+            ? "Update the connection details for this provider."
+            : "Connect any remote browser that speaks the Chrome DevTools Protocol. The gateway picks between providers by priority and availability."
+        }
+        onClose={onClose}
+      />
+      {state.status === "loading" ? (
+        <div className="flex flex-col gap-4">
+          <Skeleton className="h-[46px] rounded-input" />
+          <Skeleton className="h-[46px] rounded-input" />
+          <Skeleton className="h-[46px] rounded-input" />
+        </div>
+      ) : state.status === "missing" ? (
+        <Alert title="Provider not found">It was removed from the config. Close this and pick another provider.</Alert>
+      ) : (
+        <ProviderForm
+          key={slug ?? "new"}
+          initial={state.initial}
+          siblings={state.siblings}
+          availableProfiles={state.profiles}
+          profilesEnabled={state.profilesEnabled}
+          onDone={onSaved}
+          onCancel={onClose}
+        />
+      )}
+    </Dialog>
   );
 }

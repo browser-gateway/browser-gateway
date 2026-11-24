@@ -1,18 +1,5 @@
 "use client";
 
-/**
- * Tabbed quickstart panel showing how to connect to browser-gateway from each
- * popular client. Tabs:
- *
- *   - Puppeteer (Node, Google) — most common CDP client
- *   - Playwright (Node, Microsoft) — connectOverCDP
- *   - Stagehand (Node, Browserbase) — natural-language layer
- *   - browser-use (Python) — AI agent framework
- *   - Raw CDP (curl + wscat) — lowest-level path
- *
- * Each tab carries the official logo, a syntax-highlighted code example, and
- * a copy button (via CodeBlock).
- */
 import { useState } from "react";
 import { Terminal } from "lucide-react";
 import { CodeBlock, type CodeLang } from "./code-block";
@@ -36,7 +23,7 @@ const INTEGRATIONS: Integration[] = [
   {
     id: "puppeteer",
     label: "Puppeteer",
-    logo: "/web/integrations/puppeteer.png",
+    logo: "/web/logos/puppeteer.png",
     lang: "typescript",
     filename: "puppeteer.ts",
     code: (gw, query) => `import puppeteer from "puppeteer-core";
@@ -56,7 +43,7 @@ await browser.disconnect();`,
   {
     id: "playwright",
     label: "Playwright",
-    logo: "/web/integrations/playwright.svg",
+    logo: "/web/logos/playwright.png",
     lang: "typescript",
     filename: "playwright.ts",
     code: (gw, query) => `import { chromium } from "playwright-core";
@@ -76,7 +63,7 @@ await browser.close();`,
   {
     id: "stagehand",
     label: "Stagehand",
-    logo: "/web/integrations/stagehand.png",
+    logo: "/web/logos/stagehand.png",
     lang: "typescript",
     filename: "stagehand.ts",
     code: (gw, query) => `import { Stagehand } from "@browserbasehq/stagehand";
@@ -98,7 +85,7 @@ await stagehand.close();`,
   {
     id: "browser-use",
     label: "browser-use",
-    logo: "/web/integrations/browser-use.png",
+    logo: "/web/logos/browseruse.png",
     lang: "python",
     filename: "main.py",
     code: (gw, query) => `from browser_use import Agent, Browser, BrowserConfig
@@ -146,8 +133,6 @@ export function IntegrationTabs({ wsBase, authEnabled, profileId }: IntegrationT
   const realToken = useGatewayToken();
   const gw = wsBase ?? deriveWsBase();
 
-  // The display version has the token masked (`abc•••xyz`). The copy version
-  // is the real token, baked into a small JSX trampoline (see CodeBlockWithRealCopy below).
   const displayParts: string[] = [];
   const copyParts: string[] = [];
   if (profileId) {
@@ -171,20 +156,16 @@ export function IntegrationTabs({ wsBase, authEnabled, profileId }: IntegrationT
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-1 flex-wrap" role="tablist">
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Client">
         {INTEGRATIONS.map((it) => {
           const isActive = it.id === active;
           return (
             <button
               key={it.id}
-              role="tab"
-              aria-selected={isActive}
+              type="button"
+              aria-pressed={isActive}
               onClick={() => setActive(it.id)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md border text-[12px] font-medium transition-colors ${
-                isActive
-                  ? "bg-foreground/10 border-foreground/30 text-foreground"
-                  : "bg-transparent border-border/30 text-muted-foreground hover:bg-muted/30 hover:text-foreground"
-              }`}
+              className="ui-pill"
             >
               {it.logo ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -211,11 +192,11 @@ export function IntegrationTabs({ wsBase, authEnabled, profileId }: IntegrationT
         filename={current!.filename}
       />
 
-      <p className="text-[11px] text-muted-foreground">
+      <p className="t-small">
         {profileId ? (
           <>
             Connecting with{" "}
-            <code className="font-mono text-foreground/80 bg-muted px-1 py-0.5 rounded text-[10.5px]">
+            <code className="t-mono rounded-md bg-raised px-1.5 py-0.5 text-[11.5px] text-fg-soft">
               ?profile={profileId}
             </code>
             {" "}captures cookies and per-origin storage when the session ends,
@@ -224,7 +205,7 @@ export function IntegrationTabs({ wsBase, authEnabled, profileId }: IntegrationT
         ) : (
           <>
             Add{" "}
-            <code className="font-mono text-foreground/80 bg-muted px-1 py-0.5 rounded text-[10.5px]">
+            <code className="t-mono rounded-md bg-raised px-1.5 py-0.5 text-[11.5px] text-fg-soft">
               ?profile=&lt;id&gt;
             </code>{" "}
             to persist cookies and storage between sessions.{" "}
@@ -240,11 +221,9 @@ export function IntegrationTabs({ wsBase, authEnabled, profileId }: IntegrationT
   );
 }
 
-function deriveWsBase(): string {
+export function deriveWsBase(): string {
   if (typeof window === "undefined") return "ws://localhost:9500";
   const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-  // Heuristic: the gateway port is the API origin. In dev mode the dashboard
-  // hot-reloads on :9501 but the gateway it talks to is :9500.
   const host = window.location.host.includes("9501")
     ? window.location.host.replace("9501", "9500")
     : window.location.host;
