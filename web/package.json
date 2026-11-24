@@ -12,29 +12,30 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
-    "@uiw/react-textarea-code-editor": "^3.1.2",
+    "@uiw/react-textarea-code-editor": "^3.1.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.61.0",
-    "next": "^16.4.5",
+    "lucide-react": "^1.76.0",
+    "next": "^16.4.6",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "shiki": "^4.5.0",
+    "shiki": "^4.6.0",
     "sonner": "2.0.8",
     "tailwind-merge": "^3.7.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/postcss": "^4.3.5",
     "@types/node": "^26.6.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.2.12",
-    "tailwindcss": "^4.3.3",
+    "tailwindcss": "^4.3.5",
     "typescript": "^5.9.3"
   },
   "overrides": {
-    "postcss": ">=8.5.10"
+    "postcss": ">=8.5.10",
+    "minimatch": "^11.0.9"
   }
 }
