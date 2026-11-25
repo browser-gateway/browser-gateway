@@ -20,6 +20,7 @@ import { withProfilePage } from "./profile-executor.js";
 import { RestApiError } from "../../rest-schemas/index.js";
 import { RESERVED_NONE_NAME } from "../../core/proxy-config.js";
 import { resolveRequestedProxy } from "../ws/proxy-request.js";
+import { profileProxyFor } from "../profile/profile-proxy.js";
 
 export interface DispatchDeps {
   pool: SessionPool;
@@ -45,7 +46,8 @@ export async function dispatchPageAction<T>(
     validateProviderPin(deps.gateway, options.provider, profileId !== undefined);
   }
 
-  const proxy = resolveRestProxy(deps.gateway, options);
+  const profileProxy = options.proxy ? null : await profileProxyFor(deps.profileLifecycle, deps.gateway.config, profileId ?? null, deps.logger);
+  const proxy = resolveRestProxy(deps.gateway, options, profileProxy);
   if (proxy) {
     if (profileId && !deps.profileLifecycle) throw profilesDisabled();
     return withBrowserPage(deps.pool, deps.logger, { ...options, proxy, profile: profileId, retries: profileId ? 0 : options.retries }, action, runOpts);
@@ -74,11 +76,11 @@ function profilesDisabled(): RestApiError {
 
 /**
  * The proxy a REST request runs through: the body's `proxy`, else the
- * gateway's default proxy; `none` means no proxy. Refused with the same
- * reasons as a connection asking for it.
+ * profile's proxy, else the gateway's default proxy; `none` means no proxy.
+ * Refused with the same reasons as a connection asking for it.
  */
-function resolveRestProxy(gateway: Gateway, options: PageOptions): string | undefined {
-  const requested = options.proxy ?? gateway.config.sessionDefaults.proxy ?? undefined;
+function resolveRestProxy(gateway: Gateway, options: PageOptions, profileProxy: string | null): string | undefined {
+  const requested = options.proxy ?? profileProxy ?? gateway.config.sessionDefaults.proxy ?? undefined;
   if (!requested || requested.toLowerCase() === RESERVED_NONE_NAME) return undefined;
   const url = new URL("http://rest.invalid/");
   url.searchParams.set("proxy", requested);

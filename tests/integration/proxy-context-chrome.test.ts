@@ -306,6 +306,29 @@ logging:
     }
   });
 
+  it("runs a profile through its own proxy when the connection names none, and keeps that proxy from being deleted", async () => {
+    const setProfileProxy = (proxy: string | null) =>
+      fetch(`http://127.0.0.1:${gatewayPort}/v1/profiles/${PROFILE_ID}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proxy }),
+      });
+    expect((await setProfileProxy("local")).status).toBe(200);
+    try {
+      expect(await visit(`?profile=${PROFILE_ID}&readOnly=1`, "/pp-a")).toBe("kept");
+      expect(proxiedHits("/pp-a")).toBeGreaterThan(0);
+      await visit(`?profile=${PROFILE_ID}&readOnly=1&proxy=none`, "/pp-b");
+      expect(proxiedHits("/pp-b")).toBe(0);
+      await visit("", "/pp-c");
+      expect(proxiedHits("/pp-c")).toBe(0);
+      const del = await fetch(`http://127.0.0.1:${gatewayPort}/v1/proxies/local`, { method: "DELETE" });
+      expect(del.status).toBe(409);
+      expect(((await del.json()) as { error: string }).error).toContain(PROFILE_ID);
+    } finally {
+      expect((await setProfileProxy(null)).status).toBe(200);
+    }
+  });
+
   it("records a connection when recording is on by default, and session_record=false opts out", async () => {
     await setDefaults({ record: true });
     try {
@@ -370,6 +393,24 @@ logging:
         expect(proxiedHits("/rest-c")).toBe(0);
       } finally {
         await setDefaults({});
+      }
+    });
+
+    it("loads a profile's page through the profile's proxy when the request names none", async () => {
+      await fetch(`http://127.0.0.1:${gatewayPort}/v1/profiles/${PROFILE_ID}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proxy: "local" }),
+      });
+      try {
+        expect((await content({ url: `${chrome.baseUrl}/rest-pp`, profile: PROFILE_ID })).status).toBe(200);
+        expect(proxiedHits("/rest-pp")).toBeGreaterThan(0);
+      } finally {
+        await fetch(`http://127.0.0.1:${gatewayPort}/v1/profiles/${PROFILE_ID}/settings`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ proxy: null }),
+        });
       }
     });
 

@@ -532,10 +532,20 @@ export default function PlaygroundPage() {
     () => [{ value: "", label: "None", hint: "Sessions start signed out" }, ...profiles.map((p) => ({ value: p.id, label: p.id }))],
     [profiles],
   );
+  const profileProxy = profiles.find((p) => p.id === selectedProfile)?.proxy ?? null;
   const proxySelectOptions = useMemo<SelectOption[]>(
-    () => [{ value: "", label: "None", hint: proxies.length === 0 ? "No proxies saved. Add one in Proxies." : undefined }, ...proxyPickerOptions(proxies)],
-    [proxies],
+    () => [
+      { value: "", label: "None", hint: proxies.length === 0 ? "No proxies saved. Add one in Proxies." : undefined },
+      ...proxyPickerOptions(proxies).map((o) => (o.value === profileProxy ? { ...o, hint: "This profile's proxy" } : o)),
+    ],
+    [proxies, profileProxy],
   );
+
+  function chooseProfile(id: string) {
+    setSelectedProfile(id);
+    const keep = profiles.find((p) => p.id === id)?.proxy;
+    if (keep) setSelectedProxy(keep);
+  }
 
   const provider = providers?.find((p) => p.id === selectedProvider);
   const providerAppliesProxy = provider?.injectProxy === true;
@@ -571,7 +581,7 @@ export default function PlaygroundPage() {
           <span className="text-xs text-fg-3">{providers === null ? "Loading providers" : "No providers configured."}</span>
         )}
         {profilesEnabled ? (
-          <Select label="Profile" value={selectedProfile} options={profileSelectOptions} onChange={setSelectedProfile} disabled={isLiveOrConnecting} footer={{ label: "Manage profiles", href: "/profiles/" }} />
+          <Select label="Profile" value={selectedProfile} options={profileSelectOptions} onChange={chooseProfile} disabled={isLiveOrConnecting} footer={{ label: "Manage profiles", href: "/profiles/" }} />
         ) : null}
         <Select label="Proxy" value={selectedProxy} options={proxySelectOptions} onChange={setSelectedProxy} disabled={isLiveOrConnecting} footer={{ label: "Manage proxies", href: "/proxies/" }} />
         <Select label="Length" value={String(keepAliveSeconds)} options={KEEP_ALIVE_OPTIONS} onChange={(v) => setKeepAliveSeconds(Number(v))} disabled={isLiveOrConnecting} />

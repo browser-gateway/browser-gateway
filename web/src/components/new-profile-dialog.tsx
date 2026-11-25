@@ -11,6 +11,7 @@ import { CopyRow } from "@/components/ui/copy-row";
 import { buildConnectUrl, maskUrlToken, validateProfileId } from "@/lib/connect-url";
 import { createProfile } from "@/lib/api";
 import { useGatewayToken } from "./token-autofill";
+import { ProfileProxyField } from "./profile-proxy-field";
 
 export type NewProfileMode = "empty" | "import";
 
@@ -35,6 +36,7 @@ export function NewProfileDialog(props: NewProfileDialogProps) {
 function NewProfileForm({ onOpenChange, mode, authEnabled, onCreated, onImport }: NewProfileDialogProps) {
   const realToken = useGatewayToken();
   const [id, setId] = useState("");
+  const [proxy, setProxy] = useState<string | null>(null);
   const [validationErr, setValidationErr] = useState<string | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -60,7 +62,7 @@ function NewProfileForm({ onOpenChange, mode, authEnabled, onCreated, onImport }
     setSaving(true);
     setServerErr(null);
     try {
-      await createProfile(id);
+      await createProfile(id, proxy);
       onCreated?.(id);
       onOpenChange(false);
     } catch (e) {
@@ -139,6 +141,7 @@ function NewProfileForm({ onOpenChange, mode, authEnabled, onCreated, onImport }
               aria-invalid={!!validationErr}
             />
           </Field>
+          <ProfileProxyField value={proxy} onChange={setProxy} />
           {realUrl ? (
             <div className="ui-field">
               <span className="t-label">Connect URL</span>

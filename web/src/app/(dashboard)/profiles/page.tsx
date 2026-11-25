@@ -29,6 +29,7 @@ import { IntegrationTabs } from "@/components/integration-tabs";
 import { NewProfileDialog, type NewProfileMode } from "@/components/new-profile-dialog";
 import { RestartNotice } from "@/components/restart-notice";
 import { SetupEncryptionKeyDialog } from "@/components/setup-encryption-key-dialog";
+import { ProfileSettingsDialog } from "@/components/profile-settings-dialog";
 import { useGatewayToken, useAuthEnabled } from "@/components/token-autofill";
 import { buildConnectUrl } from "@/lib/connect-url";
 import { formatBytes } from "@/lib/format-bytes";
@@ -60,6 +61,7 @@ export default function ProfilesPage() {
   const [dialogMode, setDialogMode] = useState<NewProfileMode>("empty");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState<ProfileMetaItem | null>(null);
+  const [editing, setEditing] = useState<ProfileMetaItem | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [disableOpen, setDisableOpen] = useState(false);
   const [disableBusy, setDisableBusy] = useState(false);
@@ -253,6 +255,7 @@ export default function ProfilesPage() {
                   isDefault={p.id === defaultProfile}
                   connectUrl={(readOnly) => buildConnectUrl(p.id, authEnabled ? realToken : null, readOnly)}
                   onDelete={() => setDeleting(p)}
+                  onEdit={() => setEditing(p)}
                 />
               ))}
             </div>
@@ -329,6 +332,17 @@ export default function ProfilesPage() {
         onImport={handleImport}
         onCreated={(id) => {
           toast.success(`Created ${id}.`);
+          void reload();
+        }}
+      />
+
+      <ProfileSettingsDialog
+        id={editing?.id ?? ""}
+        proxy={editing?.proxy ?? null}
+        open={editing !== null}
+        onOpenChange={(o) => !o && setEditing(null)}
+        onSaved={() => {
+          toast.success("Profile saved.");
           void reload();
         }}
       />
@@ -424,11 +438,13 @@ function ProfileCard({
   isDefault,
   connectUrl,
   onDelete,
+  onEdit,
 }: {
   profile: ProfileMetaItem;
   isDefault: boolean;
   connectUrl: (readOnly: boolean) => string;
   onDelete: () => void;
+  onEdit: () => void;
 }) {
   const [copyMode, setCopyMode] = useState<CopyMode>("rw");
   const param = `profile=${p.id}${copyMode === "ro" ? "&readOnly=1" : ""}`;
@@ -455,12 +471,16 @@ function ProfileCard({
             Updated {formatWhen(p.updatedAt)}
           </span>
         </div>
+        <Button variant="outline" size="sm" onClick={onEdit}>
+          Edit
+        </Button>
         <RowMenu items={[{ label: "Delete", danger: true, onSelect: onDelete }]} />
       </div>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2 min-[560px]:grid-cols-4">
         {[
           [formatBytes(p.sizeBytes), "stored"],
           [formatWhen(p.updatedAt), "last saved"],
+          [p.proxy ?? "None", "proxy"],
           [`v${p.dekVersion}`, "key version"],
         ].map(([value, label]) => (
           <div
