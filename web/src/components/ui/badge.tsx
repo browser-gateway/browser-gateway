@@ -1,52 +1,45 @@
-import { mergeProps } from "@base-ui/react/merge-props"
-import { useRender } from "@base-ui/react/use-render"
-import { cva, type VariantProps } from "class-variance-authority"
+import * as React from "react";
+import { cn } from "@/lib/utils";
 
-import { cn } from "@/lib/utils"
+export type Tone = "neutral" | "good" | "warn" | "bad" | "accent";
 
-const badgeVariants = cva(
-  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
-  {
-    variants: {
-      variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
-        secondary:
-          "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
-        destructive:
-          "bg-destructive/10 text-destructive focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40 [a]:hover:bg-destructive/20",
-        outline:
-          "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
-        ghost:
-          "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
-        link: "text-primary underline-offset-4 hover:underline",
-      },
-    },
-    defaultVariants: {
-      variant: "default",
-    },
-  }
-)
-
-function Badge({
-  className,
-  variant = "default",
-  render,
-  ...props
-}: useRender.ComponentProps<"span"> & VariantProps<typeof badgeVariants>) {
-  return useRender({
-    defaultTagName: "span",
-    props: mergeProps<"span">(
-      {
-        className: cn(badgeVariants({ variant }), className),
-      },
-      props
-    ),
-    render,
-    state: {
-      slot: "badge",
-      variant,
-    },
-  })
+interface BadgeProps extends React.ComponentProps<"span"> {
+  variant?: "kind" | "revoked";
 }
 
-export { Badge, badgeVariants }
+/** Tiny uppercase marker beside a name: DEFAULT, PREVIEW, SOON. */
+function Badge({ className, variant = "kind", ...props }: BadgeProps) {
+  return (
+    <span
+      data-slot="badge"
+      className={cn("ui-tag ml-1.5 align-middle", variant === "revoked" && "border-bad-line text-bad", className)}
+      {...props}
+    />
+  );
+}
+
+function Tag({ className, ...props }: React.ComponentProps<"span">) {
+  return <span data-slot="tag" className={cn("ui-tag", className)} {...props} />;
+}
+
+/** Small neutral label: provider names, parameters, counts. `mono` for IDs and code. */
+function DataChip({ className, mono, ...props }: React.ComponentProps<"span"> & { mono?: boolean }) {
+  return <span data-slot="data-chip" className={cn("ui-chip", mono && "t-mono font-medium", className)} {...props} />;
+}
+
+/** A dot and a word. Colour never carries the meaning alone. */
+function StatusBadge({
+  tone = "neutral",
+  className,
+  ...props
+}: React.ComponentProps<"span"> & { tone?: Tone }) {
+  return (
+    <span
+      data-slot="status-badge"
+      className={cn("ui-status", tone !== "neutral" && `ui-status--${tone}`, className)}
+      {...props}
+    />
+  );
+}
+
+export { Badge, Tag, DataChip, StatusBadge };

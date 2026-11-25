@@ -1,13 +1,19 @@
 "use client";
 
-import Link from "next/link";
-import { Check, Loader2, Pencil, Plug, Trash2, X } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Check, Loader2, X } from "lucide-react";
+import { StatusBadge, type Tone } from "@/components/ui/badge";
+import { LogoTile } from "@/components/ui/logo-tile";
+import { RowMenu } from "@/components/ui/row-menu";
 import { Switch } from "@/components/ui/switch";
 import { CapabilityStrip } from "@/components/capability-strip";
 import type { ProviderConfigItem, ProviderStatus } from "@/lib/api";
 import { computePriorityEffect, computeWeightEffect, type SiblingProvider } from "@shared/provider-form";
+import { cn } from "@/lib/utils";
+
+export const ROUTE_COLS =
+  "min-[1100px]:grid min-[1100px]:grid-cols-[44px_minmax(200px,1.6fr)_112px_104px_minmax(130px,1fr)_76px_48px_auto] min-[1100px]:items-center min-[1100px]:gap-x-3";
+
+const CHIP = "whitespace-nowrap rounded-[10px] border border-line bg-ground px-[9px] py-[3px] text-xs font-semibold text-fg-soft";
 
 interface Props {
   provider: ProviderConfigItem;
@@ -18,7 +24,24 @@ interface Props {
   toggling: boolean;
   onTest: () => void;
   onToggleEnabled: (enabled: boolean) => void;
+  onEdit: () => void;
   onDelete: () => void;
+}
+
+function briefHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+function stateOf(enabled: boolean, status: ProviderStatus | undefined): { label: string; tone: Tone } {
+  if (!enabled) return { label: "Off", tone: "warn" };
+  if (status?.cooldownUntil) return { label: "Paused", tone: "warn" };
+  if (status?.healthy === false) return { label: "Not reachable", tone: "bad" };
+  if (status) return { label: "Ready", tone: "good" };
+  return { label: "Checking", tone: "neutral" };
 }
 
 export function ProviderCard({
@@ -30,6 +53,7 @@ export function ProviderCard({
   toggling,
   onTest,
   onToggleEnabled,
+  onEdit,
   onDelete,
 }: Props) {
   const enabled = provider.enabled !== false;
@@ -37,186 +61,136 @@ export function ProviderCard({
     provider.priority,
     siblings.map((s) => s.priority),
   );
-  const weightEffect = computeWeightEffect(
-    provider.priority,
-    provider.weight,
-    siblings,
-  );
-
-  const dotClass = !enabled
-    ? "bg-muted-foreground/40"
-    : status?.cooldownUntil || status?.healthy === false
-    ? "bg-destructive animate-pulse"
-    : status
-    ? "bg-foreground"
-    : "bg-muted-foreground/40";
-
-  const stateLabel = !enabled
-    ? "Disabled"
-    : status?.cooldownUntil
-    ? "Paused"
-    : status?.healthy === false
-    ? "Not reachable"
-    : status
-    ? "Ready"
-    : "Checking";
-
+  const weightEffect = computeWeightEffect(provider.priority, provider.weight, siblings);
+  const state = stateOf(enabled, status);
   const headerCount = provider.headers ? Object.keys(provider.headers).length : 0;
+  const active = status?.active ?? 0;
+  const max = provider.maxConcurrent;
+  const usePct = max ? Math.min(100, Math.round((active / max) * 100)) : 0;
 
   return (
-    <Card>
-      <CardContent className="px-5 py-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0 space-y-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />
-              <Link
-                href={`/providers/edit?slug=${encodeURIComponent(provider.id)}`}
-                className="text-sm font-semibold font-mono truncate hover:underline"
-              >
-                {provider.id}
-              </Link>
-              <span className="text-[11px] text-muted-foreground shrink-0">
-                {stateLabel}
-              </span>
-            </div>
+    <div
+      className={cn(
+        ROUTE_COLS,
+        "flex flex-wrap items-center gap-x-4 gap-y-3 border-t border-line-divider px-1 py-3.5",
+        !enabled && "[&>*:not(.keep)]:opacity-60",
+      )}
+      data-testid={`provider-row-${provider.id}`}
+    >
+      <LogoTile name={provider.id} size={44} className="!rounded-xl shadow-none" />
+      <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-px">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="w-fit max-w-full truncate text-left font-mono text-[15px] font-medium hover:underline"
+        >
+          {provider.id}
+        </button>
+        <span className="truncate text-xs text-fg-3">
+          {provider.detectedKind === "browserserve" ? "Self-hosted browserserve" : "External browser service"} · {briefHost(provider.url)}
+        </span>
+      </div>
+      <span className="flex">
+        <StatusBadge tone={state.tone} className="whitespace-nowrap">{state.label}</StatusBadge>
+      </span>
+      <span className="font-mono text-[13px]" title="Priority · weight">
+        {provider.priority} · w{provider.weight}
+      </span>
+      <div className="flex min-w-[130px] flex-col gap-1.5">
+        <span className="font-mono text-[13px]">
+          {active} in use / {max ?? "no limit"}
+        </span>
+        {max ? (
+          <span
+            className="block h-1.5 rounded-[3px] bg-track"
+            role="meter"
+            aria-label={`${provider.id} sessions in use`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={usePct}
+          >
+            <span className="block h-1.5 rounded-[3px] bg-brand-text" style={{ width: `${usePct}%` }} />
+          </span>
+        ) : null}
+      </div>
+      <span
+        className="font-mono text-[13px] min-[1100px]:text-right"
+        title={testResult ? (testResult.ok ? "From the last test" : testResult.error) : "Average connect time of sessions sent here"}
+      >
+        {testing ? (
+          <Loader2 className="size-3.5 animate-spin min-[1100px]:ml-auto" />
+        ) : testResult?.ok ? (
+          `${testResult.latencyMs}ms`
+        ) : status && status.totalConnections > 0 ? (
+          `${status.avgLatencyMs}ms`
+        ) : (
+          "—"
+        )}
+      </span>
+      <div className="keep flex min-[1100px]:justify-end">
+        <Switch
+          checked={enabled}
+          disabled={toggling}
+          onCheckedChange={(next) => onToggleEnabled(next)}
+          label={enabled ? `Turn off ${provider.id}` : `Turn on ${provider.id}`}
+          title={enabled ? "Receiving sessions. Switch off to stop routing here." : "Not receiving sessions. Switch on to route here again."}
+          className="w-[42px]"
+        />
+      </div>
+      <div className="keep ml-auto flex items-center justify-end gap-1.5">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="h-[34px] rounded-[17px] border border-line-strong bg-transparent px-3.5 text-[13px] font-semibold text-fg hover:bg-raised"
+        >
+          Edit
+        </button>
+        <RowMenu
+          items={[
+            { label: testing ? "Testing connection" : "Test connection", onSelect: onTest },
+            { label: "Remove provider", danger: true, onSelect: onDelete },
+          ]}
+        />
+      </div>
 
-            <p className="text-xs text-muted-foreground font-mono truncate">
-              {provider.url}
-            </p>
-
-            <dl className="grid grid-cols-[6rem_1fr] gap-x-4 gap-y-1.5 text-xs">
-              <dt className="text-muted-foreground">Type</dt>
-              <dd className="text-foreground">
-                {provider.detectedKind === "browserserve"
-                  ? "Self-hosted browserserve"
-                  : "External browser service"}
-              </dd>
-
-              <dt className="text-muted-foreground">Priority</dt>
-              <dd className="text-foreground">
-                {provider.priority}
-                <span className="text-muted-foreground"> · {enabled ? priorityEffect.label : "Not routed while disabled."}</span>
-              </dd>
-
-              <dt className="text-muted-foreground">Weight</dt>
-              <dd className="text-foreground">
-                {provider.weight}
-                <span className="text-muted-foreground"> · {enabled ? weightEffect.label : "Not routed while disabled."}</span>
-              </dd>
-
-              <dt className="text-muted-foreground">Serves</dt>
-              <dd className="text-foreground">
-                {provider.profile && !provider.multiProfile ? (
-                  <>Only <span className="font-mono">{provider.profile}</span></>
-                ) : (
-                  "Any session"
-                )}
-              </dd>
-
-              {provider.injectProxy && (
-                <>
-                  <dt className="text-muted-foreground">Proxies</dt>
-                  <dd className="text-foreground">
-                    Applied to <span className="font-mono">?proxy=</span> connections
-                  </dd>
-                </>
-              )}
-
-              <dt className="text-muted-foreground">Capacity</dt>
-              <dd className="text-foreground">
-                {status?.active ?? 0} in use / {provider.maxConcurrent ?? "no limit"}
-                {provider.maxConcurrentSource === "discovered" && (
-                  <span className="text-muted-foreground"> · set automatically</span>
-                )}
-              </dd>
-
-              {headerCount > 0 && (
-                <>
-                  <dt className="text-muted-foreground">Custom headers</dt>
-                  <dd className="text-foreground">
-                    {headerCount} configured
-                  </dd>
-                </>
-              )}
-
-              {status && status.totalConnections > 0 && (
-                <>
-                  <dt className="text-muted-foreground">Traffic</dt>
-                  <dd className="text-foreground">
-                    {status.totalConnections} sent · {status.avgLatencyMs}ms average
-                  </dd>
-                </>
-              )}
-            </dl>
-
-            {status?.cooldownUntil && (
-              <p className="text-xs text-destructive">
-                Paused after repeated failures. Will be retried automatically.
-              </p>
+      <div className="flex w-full min-w-0 flex-col gap-2 min-[1100px]:col-[2/-1] min-[1100px]:pt-1">
+        <p className="m-0 text-xs text-fg-3">
+          {enabled ? `${priorityEffect.label} ${weightEffect.label}` : "Not routed while off."}
+        </p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className={CHIP}>
+            {provider.profile && !provider.multiProfile ? (
+              <>Only <span className="font-mono">{provider.profile}</span></>
+            ) : (
+              "Any session"
             )}
-
-            {testResult && (
-              <p
-                className={`inline-flex items-center gap-1.5 text-xs ${
-                  testResult.ok ? "text-foreground" : "text-destructive"
-                }`}
-              >
-                {testResult.ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
-                {testResult.ok
-                  ? `Connected in ${testResult.latencyMs}ms`
-                  : `Could not connect: ${testResult.error ?? "unknown"}`}
-              </p>
-            )}
-
-            <div className="space-y-1.5 pt-0.5">
-              <div className="text-[11px] text-muted-foreground">Supports</div>
-              <CapabilityStrip providerId={provider.id} />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1 shrink-0">
-            <Switch
-              size="sm"
-              checked={enabled}
-              disabled={toggling}
-              onCheckedChange={(next) => onToggleEnabled(next)}
-              aria-label={enabled ? `Disable ${provider.id}` : `Enable ${provider.id}`}
-              title={enabled ? "Receiving sessions. Switch off to stop routing here." : "Not receiving sessions. Switch on to route here again."}
-              className="mr-2"
-            />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={onTest}
-              disabled={testing}
-              title="Test connection"
-            >
-              {testing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Plug className="h-3.5 w-3.5" />
-              )}
-            </Button>
-            <Link
-              href={`/providers/edit?slug=${encodeURIComponent(provider.id)}`}
-              className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-muted/40 text-muted-foreground hover:text-foreground"
-              title="Edit provider"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </Link>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="text-destructive hover:text-destructive"
-              onClick={onDelete}
-              title="Remove provider"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+          </span>
+          {provider.injectProxy && (
+            <span className={CHIP}>
+              Applies proxies on <span className="font-mono">?proxy=</span>
+            </span>
+          )}
+          {provider.maxConcurrentSource === "discovered" && <span className={CHIP}>Limit set automatically</span>}
+          {headerCount > 0 && <span className={CHIP}>{headerCount} custom {headerCount === 1 ? "header" : "headers"}</span>}
+          {status && status.totalConnections > 0 && (
+            <span className={CHIP}>
+              {status.totalConnections} sent · {status.avgLatencyMs}ms average
+            </span>
+          )}
         </div>
-      </CardContent>
-    </Card>
+        <CapabilityStrip providerId={provider.id} />
+        {status?.cooldownUntil && (
+          <p className="m-0 text-xs text-warn">Paused after repeated failures. It is retried automatically.</p>
+        )}
+        {testResult && (
+          <p className={cn("m-0 inline-flex items-center gap-1.5 text-xs font-semibold", testResult.ok ? "text-good" : "text-bad")}>
+            {testResult.ok ? <Check className="h-3.5 w-3.5" strokeWidth={2.4} /> : <X className="h-3.5 w-3.5" strokeWidth={2.4} />}
+            {testResult.ok
+              ? `Connected in ${testResult.latencyMs}ms`
+              : `Could not connect: ${testResult.error ?? "unknown"}`}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }

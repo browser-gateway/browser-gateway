@@ -1,24 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { CheckRow } from "@/components/ui/choice-card";
+import { ChipInput } from "@/components/ui/chip-input";
+import { DialogActions } from "@/components/ui/dialog";
+import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { addProxy, updateProxy, type ProxySummary } from "@/lib/api";
 
 interface Props {
   initial: ProxySummary | null;
   onSaved: () => Promise<void>;
+  onCancel: () => void;
 }
 
 const NAME_PATTERN = /^[a-zA-Z0-9_-]{1,64}$/;
 
-export function ProxyForm({ initial, onSaved }: Props) {
+export function ProxyForm({ initial, onSaved, onCancel }: Props) {
   const isEdit = initial !== null;
   const [name, setName] = useState(initial?.name ?? "");
   const [address, setAddress] = useState(initial?.server ?? "");
   const [clearLogin, setClearLogin] = useState(false);
-  const [bypass, setBypass] = useState(initial?.bypass.join(", ") ?? "");
+  const [bypass, setBypass] = useState<string[]>(initial?.bypass ?? []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,7 +40,7 @@ export function ProxyForm({ initial, onSaved }: Props) {
     setError(null);
     const data = {
       address: address.trim(),
-      bypass: bypass.split(",").map((b) => b.trim()).filter(Boolean),
+      bypass: bypass.map((b) => b.trim()).filter(Boolean),
       clearCredentials: clearLogin || undefined,
     };
     const res = isEdit ? await updateProxy(initial.name, data) : await addProxy(name.trim(), data);
@@ -44,52 +49,80 @@ export function ProxyForm({ initial, onSaved }: Props) {
     else setError([res.error, ...(res.details ?? [])].filter(Boolean).join(": ") || "Could not save proxy");
   }
 
-  const field = "text-sm font-medium block mb-1.5";
-  const hint = "text-xs text-muted-foreground mt-1";
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
       {!isEdit && (
-        <div>
-          <label htmlFor="proxy-name" className={field}>Name</label>
-          <Input id="proxy-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="home" autoFocus className="font-mono" />
-          <p className={hint}>Used on the connection URL as <span className="font-mono">?proxy={name.trim() || "name"}</span></p>
-        </div>
+        <Field
+          id="proxy-name"
+          label="Name"
+          help={
+            <>
+              Used on the connection URL as <span className="font-mono">?proxy={name.trim() || "home"}</span>
+            </>
+          }
+        >
+          <Input id="proxy-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="home" autoFocus className="font-mono" autoComplete="off" />
+        </Field>
       )}
 
-      <div>
-        <label htmlFor="proxy-address" className={field}>Address</label>
-        <Input id="proxy-address" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="http://proxy.example.com:3128" className="font-mono" autoFocus={isEdit} />
-        <p className={hint}>http or socks5, with the port. No username or password.</p>
-      </div>
+      <Field
+        id="proxy-address"
+        label="Proxy address"
+        help={
+          <>
+            http or socks5, with the port. No username or password. Example: <span className="font-mono">socks5://10.0.4.12:1080</span>
+          </>
+        }
+      >
+        <Input
+          id="proxy-address"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          placeholder="http://proxy.example.com:3128"
+          className="font-mono"
+          autoComplete="off"
+          autoFocus={isEdit}
+        />
+      </Field>
 
       {isEdit && initial.hasCredentials && (
-        <label className="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" checked={clearLogin} onChange={(e) => setClearLogin(e.target.checked)} className="size-4 rounded border-input accent-foreground" />
-          Remove the saved login
-        </label>
+        <CheckRow
+          checked={clearLogin}
+          onChange={setClearLogin}
+          title="Remove the saved login"
+          note="The proxy is then used without a username and password."
+        />
       )}
 
-      <div>
-        <label htmlFor="proxy-bypass" className={field}>Skip the proxy for</label>
-        <Input id="proxy-bypass" value={bypass} onChange={(e) => setBypass(e.target.value)} placeholder="localhost, *.internal" className="font-mono" />
-        <p className={hint}>Hosts that connect directly, separated by commas. Optional.</p>
-      </div>
+      <Field
+        id="proxy-bypass"
+        label="Sites that skip the proxy"
+        optional
+        help={
+          <>
+            These hosts connect directly. Press Enter or a comma after each one. Example: <span className="font-mono">localhost, *.internal</span>
+          </>
+        }
+      >
+        <ChipInput id="proxy-bypass" value={bypass} onChange={setBypass} placeholder="*.internal" />
+      </Field>
 
       {cannotApply && (
-        <div className="rounded-md border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
-          A browser cannot use a proxy with a username, password or an https address on its own, so this gateway does not accept one. Use an http or socks5 proxy that allows your address without a login.
-        </div>
+        <Alert variant="warn" title="This gateway cannot apply this proxy">
+          A browser cannot use a proxy with a username, password or an https address on its own. Use an http or socks5 proxy that allows your address without a login.
+        </Alert>
       )}
 
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <Alert title="The proxy was not saved">{error}</Alert>}
 
-      <div className="flex justify-end">
-        <Button type="submit" size="sm" disabled={saving || !address.trim()} className="gap-1.5">
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+      <DialogActions>
+        <Button type="button" variant="outline" size="lg" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+        <Button type="submit" variant="primary" size="lg" loading={saving} disabled={!address.trim()}>
           {isEdit ? "Save changes" : "Add proxy"}
         </Button>
-      </div>
+      </DialogActions>
     </form>
   );
 }

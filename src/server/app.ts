@@ -32,9 +32,12 @@ import type { ProfileLifecycle } from "./profile/lifecycle.js";
 import { getEffectiveHost, getEffectiveProtocol, parseAllowedOrigins } from "./util/request.js";
 import { securityHeaders } from "./middleware/security-headers.js";
 import { mutatingRequestGuard } from "./middleware/mutating-request-guard.js";
+import type { SessionHistory } from "./history/session-history.js";
 
 /** YAML config size cap — prevents oversize POST/PUT to /v1/config from DoS-ing the YAML parser. */
 const MAX_CONFIG_YAML_BYTES = 1024 * 1024;
+const SESSION_HISTORY_LIMIT_DEFAULT = 10;
+const SESSION_HISTORY_LIMIT_MAX = 100;
 
 
 export interface ProfileAppDeps {
@@ -184,6 +187,7 @@ export function createApp(
   replayStore?: ReplayStore,
   dataDir?: string,
   reconnectRegistry?: ReconnectRegistry,
+  sessionHistory?: SessionHistory,
 ) {
   const app = new Hono();
   const sessionSecret = getSessionSecret(token);
@@ -293,6 +297,13 @@ export function createApp(
       count: sessions.length,
       sessions,
     });
+  });
+
+  app.get("/v1/sessions/history", (c) => {
+    const requested = Number.parseInt(c.req.query("limit") ?? "", 10);
+    const limit = Number.isInteger(requested) && requested > 0 ? Math.min(requested, SESSION_HISTORY_LIMIT_MAX) : SESSION_HISTORY_LIMIT_DEFAULT;
+    if (!sessionHistory) return c.json({ total: 0, days: [], sessions: [] });
+    return c.json(sessionHistory.snapshot(limit));
   });
 
   app.get("/v1/sessions/parked", (c) => {

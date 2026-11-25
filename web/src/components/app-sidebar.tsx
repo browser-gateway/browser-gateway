@@ -2,96 +2,116 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, Server, Plug, FileText, Settings, ExternalLink, IdCard, Code2, MonitorPlay, Webhook, Globe, SlidersHorizontal } from "lucide-react";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/sidebar";
-import { ThemeToggle } from "@/components/theme-toggle";
+  LayoutGrid,
+  Server,
+  Globe,
+  Plug,
+  SquareTerminal,
+  Play,
+  CircleUser,
+  ScrollText,
+  Zap,
+  SlidersHorizontal,
+  FileCode2,
+  BookOpen,
+  ExternalLink,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { GatewayLogo } from "./gateway-logo";
 
-const navItems = [
-  { title: "Overview", href: "/", icon: LayoutGrid },
-  { title: "Providers", href: "/providers/", icon: Server },
-  { title: "Proxies", href: "/proxies/", icon: Globe },
-  { title: "Sessions", href: "/sessions/", icon: Plug },
-  { title: "API", href: "/api/", icon: Code2 },
-  { title: "Playground", href: "/playground/", icon: MonitorPlay },
-  { title: "Profiles", href: "/profiles/", icon: IdCard },
-  { title: "Logs", href: "/logs/", icon: FileText },
-  { title: "Webhooks", href: "/webhooks/", icon: Webhook },
-  { title: "Settings", href: "/settings/", icon: SlidersHorizontal },
-  { title: "Config", href: "/config/", icon: Settings },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+export const NAV_ITEMS: NavItem[] = [
+  { href: "/", label: "Overview", icon: LayoutGrid },
+  { href: "/providers/", label: "Providers", icon: Server },
+  { href: "/proxies/", label: "Proxies", icon: Globe },
+  { href: "/sessions/", label: "Sessions", icon: Plug },
+  { href: "/profiles/", label: "Profiles", icon: CircleUser },
+  { href: "/playground/", label: "Playground", icon: Play },
+  { href: "/api/", label: "REST API", icon: SquareTerminal },
+  { href: "/webhooks/", label: "Webhooks", icon: Zap },
+  { href: "/logs/", label: "Logs", icon: ScrollText },
+  { href: "/settings/", label: "Settings", icon: SlidersHorizontal },
+  { href: "/config/", label: "Config", icon: FileCode2 },
 ];
 
-export function AppSidebar() {
-  const pathname = usePathname();
+function isActive(pathname: string, href: string): boolean {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(href);
+}
+
+interface AppSidebarProps {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export function AppSidebar({ mobileOpen = false, onMobileClose }: AppSidebarProps) {
+  const pathname = usePathname() ?? "/";
+
+  const body = (
+    <>
+      <Link href="/" className="mb-2 flex items-center gap-2.5 border-b border-line-faint px-2 pb-3 pt-1.5">
+        <GatewayLogo size={26} className="h-[26px] w-[26px] shrink-0" />
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-sm font-bold">browser-gateway</span>
+          <span className="t-mono text-[10.5px] text-fg-3">v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
+        </span>
+      </Link>
+      {NAV_ITEMS.map((item) => {
+        const Icon = item.icon;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="ui-nav"
+            aria-current={isActive(pathname, item.href) ? "page" : undefined}
+          >
+            <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <span className="truncate">{item.label}</span>
+          </Link>
+        );
+      })}
+      <div className="mt-auto flex flex-col gap-0.5 pt-3">
+        <a href="https://docs.browsergateway.com" target="_blank" rel="noopener noreferrer" className="ui-nav">
+          <BookOpen className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+          <span className="flex-1 truncate">Docs</span>
+          <ExternalLink className="h-3 w-3 shrink-0 text-fg-3" strokeWidth={1.8} />
+        </a>
+      </div>
+    </>
+  );
 
   return (
-    <Sidebar className="border-r border-sidebar-border">
-      <SidebarHeader className="px-4 py-5">
-        <Link href="/" className="flex items-center gap-2.5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/web/browser-gateway.svg"
-            alt="browser-gateway"
-            width={28}
-            height={28}
-            className="h-7 w-7 shrink-0"
+    <>
+      <nav aria-label="Main" className="ui-sidebar sticky top-0 h-screen overflow-y-auto">
+        {body}
+      </nav>
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-[85] min-[861px]:hidden" role="dialog" aria-modal="true" aria-label="Menu">
+          <button
+            type="button"
+            aria-label="Close menu"
+            className="absolute inset-0"
+            style={{ background: "var(--scrim)" }}
+            onClick={onMobileClose}
           />
-          <span className="text-sm font-semibold tracking-tight">
-            browser-gateway
-          </span>
-        </Link>
-      </SidebarHeader>
-
-      <SidebarContent className="px-3">
-        <SidebarGroup className="py-0">
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      render={<Link href={item.href} />}
-                      isActive={pathname === item.href}
-                      className="h-9 px-3 text-sm font-normal"
-                    >
-                      <Icon className="!h-4 !w-4" strokeWidth={1.5} />
-                      <span>{item.title}</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
-
-      <SidebarFooter className="px-4 py-4">
-        <div className="flex items-center justify-between">
-          <a
-            href="https://docs.browsergateway.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          <nav
+            aria-label="Main"
+            className="ui-sidebar"
+            data-drawer="true"
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest("a")) onMobileClose?.();
+            }}
           >
-            docs.browsergateway.com
-            <ExternalLink className="h-3 w-3" />
-          </a>
-          <ThemeToggle />
+            {body}
+          </nav>
         </div>
-        <p className="text-[11px] text-muted-foreground/50 font-mono mt-1">
-          v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}
-        </p>
-      </SidebarFooter>
-    </Sidebar>
+      ) : null}
+    </>
   );
 }

@@ -1,39 +1,23 @@
 "use client";
 
-/**
- * Syntax-highlighted code block with copy button.
- *
- * Uses `shiki` (VS Code's exact TextMate engine) so the colors match what
- * developers see in their editor. Theme is `vitesse-dark` to match our dark
- * Vercel-style UI.
- *
- * Languages loaded on demand (lazy `import("shiki")`) so the dashboard's
- * initial bundle stays small. A 1-line plain `<pre>` fallback renders
- * synchronously while shiki loads.
- */
 import { useEffect, useState } from "react";
 import { Check, Copy } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 export type CodeLang = "typescript" | "python" | "bash" | "yaml" | "json";
 
 interface CodeBlockProps {
   code: string;
   lang: CodeLang;
-  /** Optional filename or label shown in the header bar. */
+  /** Label in the header bar. Defaults to the language. */
   filename?: string;
-  /** Limit visible height; long blocks scroll. */
+  /** Longer blocks scroll inside this height. */
   maxHeight?: string;
-  /** Hide the copy button (rarely useful). */
   noCopy?: boolean;
-  /**
-   * If provided, this is what the copy button writes to the clipboard instead
-   * of `code`. Useful when you want to display a masked/redacted version on
-   * screen but copy the real value (e.g. tokens in WS URLs).
-   */
+  /** What Copy writes when it differs from what is shown, such as a masked token. */
   copyValue?: string;
 }
 
+/** Highlighted code with a copy button. Shiki loads lazily; a plain block shows until it does. */
 export function CodeBlock({ code, lang, filename, maxHeight, noCopy, copyValue }: CodeBlockProps) {
   const [html, setHtml] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -43,14 +27,10 @@ export function CodeBlock({ code, lang, filename, maxHeight, noCopy, copyValue }
     (async () => {
       try {
         const { codeToHtml } = await import("shiki");
-        const result = await codeToHtml(code.trim(), {
-          lang,
-          theme: "vitesse-dark",
-        });
+        const result = await codeToHtml(code.trim(), { lang, theme: "vitesse-dark" });
         if (!cancelled) setHtml(result);
       } catch {
-        // Network or import failure — fall back to the plain pre. No reason
-        // to block rendering on the highlighter.
+        return;
       }
     })();
     return () => {
@@ -62,64 +42,33 @@ export function CodeBlock({ code, lang, filename, maxHeight, noCopy, copyValue }
     try {
       await navigator.clipboard.writeText((copyValue ?? code).trim());
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setTimeout(() => setCopied(false), 2000);
     } catch {
-      // ignore — some browsers gate clipboard behind permissions/HTTPS
+      return;
     }
   }
 
   return (
-    // min-w-0 lets this shrink inside flex/grid parents (e.g. dialogs). Without
-    // it, long pre lines would push the parent container wider than its
-    // max-width constraint — that was the "modal overflow" bug.
-    <div className="rounded-lg border border-border/40 bg-black/40 overflow-hidden text-[12.5px] min-w-0 max-w-full">
-      {(filename || !noCopy) && (
-        <div className="flex items-center justify-between px-3 py-1.5 border-b border-border/40 bg-muted/20 min-w-0">
-          <span className="font-mono text-[11px] text-muted-foreground truncate">
-            {filename ?? lang}
-          </span>
-          {!noCopy && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleCopy}
-              className="h-6 px-2 text-muted-foreground hover:text-foreground shrink-0 ml-2"
-              aria-label="Copy code"
-            >
-              {copied ? (
-                <>
-                  <Check className="size-3 mr-1" />
-                  <span className="text-[11px]">copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="size-3 mr-1" />
-                  <span className="text-[11px]">copy</span>
-                </>
-              )}
-            </Button>
-          )}
+    <div className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-line bg-ground text-[12.5px]">
+      {filename || !noCopy ? (
+        <div className="flex min-w-0 items-center justify-between gap-2 border-b border-line py-1.5 pl-4 pr-1.5">
+          <span className="t-mono truncate text-[11px] text-fg-3">{filename ?? lang}</span>
+          {!noCopy ? (
+            <button type="button" onClick={handleCopy} aria-label="Copy code" className="ui-btn ui-btn--sm ui-btn--ghost h-7 flex-none px-2.5">
+              {copied ? <Check className="size-3" strokeWidth={2.2} /> : <Copy className="size-3" strokeWidth={2} />}
+              <span className="text-[11px]">{copied ? "Copied" : "Copy"}</span>
+            </button>
+          ) : null}
         </div>
-      )}
-      {/*
-        The scrollable region. `min-w-0` is critical — combined with the parent
-        flex/grid, it allows shrinking; overflow-x-auto then scrolls the long
-        line horizontally inside the box rather than pushing the box wider.
-      */}
-      <div
-        className="overflow-x-auto min-w-0 max-w-full"
-        style={maxHeight ? { maxHeight, overflowY: "auto" } : undefined}
-      >
+      ) : null}
+      <div className="min-w-0 max-w-full overflow-x-auto" style={maxHeight ? { maxHeight, overflowY: "auto" } : undefined}>
         {html ? (
           <div
-            className="font-mono [&_pre]:!bg-transparent [&_pre]:p-3 [&_pre]:leading-relaxed [&_pre]:m-0 [&_pre]:min-w-fit"
-            // Trusted: shiki only emits HTML it generated from the input.
+            className="t-mono [&_pre]:m-0 [&_pre]:min-w-fit [&_pre]:!bg-transparent [&_pre]:px-4 [&_pre]:py-3.5 [&_pre]:leading-[1.65]"
             dangerouslySetInnerHTML={{ __html: html }}
           />
         ) : (
-          <pre className="p-3 font-mono leading-relaxed text-foreground/90 m-0 min-w-fit">
-            {code.trim()}
-          </pre>
+          <pre className="t-mono m-0 min-w-fit px-4 py-3.5 leading-[1.65] text-[var(--text-code)]">{code.trim()}</pre>
         )}
       </div>
     </div>

@@ -383,8 +383,8 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 
 ### `src/server/app.ts`
 
-- **interface** `interface ProfileAppDeps` (line 40)
-- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry) → unknown` (line 176)
+- **interface** `interface ProfileAppDeps` (line 43)
+- **fn** `createApp(gateway: Gateway, token?: string, webDir?: string, logger?: Logger, pool?: SessionPool, profile?: ProfileAppDeps, profileBootstrapError?: string, replayStore?: ReplayStore, dataDir?: string, reconnectRegistry?: ReconnectRegistry, sessionHistory?: SessionHistory) → unknown` (line 179)
 ### `src/server/browse/cli.ts`
 
 - **fn** `runBrowseCli(argv: string[]) → Promise<number>` (line 13)
@@ -444,6 +444,16 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/config/writer.ts`
 
 - **fn** `writeConfig(config: GatewayConfig, configPath?: string, templates: EnvTemplates = loadedEnvTemplates) → void` (line 8)
+### `src/server/history/session-history.ts`
+
+- **const** `const SESSION_HISTORY_FILE` (line 7)
+- **const** `const SESSION_HISTORY_MAX_ENTRIES` (line 8)
+- **const** `const SESSION_HISTORY_DAYS` (line 9)
+- **const** `const SESSION_HISTORY_SAVE_DELAY_MS` (line 10)
+- **interface** `interface SessionHistoryEntry` (line 14)
+- **interface** `interface SessionHistoryDay` (line 25)
+- **interface** `interface SessionHistorySnapshot` (line 30)
+- **class** `class SessionHistory` (line 55) — Keeps a capped record of finished sessions and a per-day count, saved as one JSON file.
 ### `src/server/live/upgrade.ts`
 
 - **interface** `interface CreateLiveHandlerDeps` (line 42)

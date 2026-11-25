@@ -1,15 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2 } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Dialog, DialogActions, DialogBody, DialogHeader } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
 interface Props {
@@ -33,30 +25,26 @@ export function ProviderDeleteDialog({ open, onOpenChange, providerId, onConfirm
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Remove provider</DialogTitle>
-          <DialogDescription>
-            Removes <span className="font-mono">{providerId}</span> from routing. Any active
-            sessions on this provider stay connected until the client disconnects.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={busy}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => void handleConfirm()}
-            disabled={busy}
-          >
-            {busy && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
-            Remove provider
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+    <Dialog open={open} onOpenChange={onOpenChange} width={560} label="Remove provider">
+      <DialogHeader
+        title={
+          <>
+            Remove <span className="t-mono">{providerId}</span>?
+          </>
+        }
+        onClose={() => onOpenChange(false)}
+      />
+      <DialogBody>
+        New sessions stop going to this provider. Sessions open on it right now stay connected until the client disconnects.
+      </DialogBody>
+      <DialogActions>
+        <Button variant="outline" size="lg" onClick={() => onOpenChange(false)} disabled={busy}>
+          Cancel
+        </Button>
+        <Button variant="destructive" size="lg" onClick={() => void handleConfirm()} loading={busy}>
+          Remove provider
+        </Button>
+      </DialogActions>
     </Dialog>
   );
 }

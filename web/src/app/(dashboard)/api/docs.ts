@@ -1,10 +1,3 @@
-/**
- * Reference documentation for the three /v1 REST endpoints, in a shape the
- * `EndpointReference` component can render. Keeping these as plain data
- * (instead of inside the page component) makes the reference content easier
- * to maintain and would let us validate it against the Zod schemas in a future
- * test.
- */
 import type { EndpointDoc } from "@/components/endpoint-reference";
 
 const COMMON_HEADERS: EndpointDoc["headers"] = [
@@ -36,7 +29,7 @@ const COMMON_PARAMS_BEFORE_PROFILE = [
     description: "CSS selector to wait for after navigation, up to 10s.",
   },
   { name: "waitForTimeout", type: "number", description: "Additional ms to wait after load (0-30000)." },
-  { name: "timeout", type: "number", default: "30000", description: "Total navigation timeout in ms (1000-60000)." },
+  { name: "timeout", type: "number", default: "30000", description: "Total navigation timeout in ms (1000-120000)." },
   { name: "retries", type: "number", default: "2", description: "Retry attempts on retryable errors (0-5)." },
   { name: "headers", type: "object", description: "Extra HTTP headers as { name: value }." },
   { name: "userAgent", type: "string", description: "Override the browser's user agent." },

@@ -39,6 +39,7 @@ import { createApp } from "./app.js";
 import { createWebSocketHandler } from "./ws/upgrade.js";
 import { bootstrapProfiles, ProfileBootstrapError } from "./profile/bootstrap.js";
 import { ReplayRetention, ReplayStore } from "./replay/index.js";
+import { SessionHistory } from "./history/session-history.js";
 import { resolveDataDir } from "./setup/data-dir.js";
 import { resolveEncryptionKey } from "./setup/encryption-key.js";
 import { bindsBeyondLoopback, resolvePort, resolveHost, resolvePublicUrl } from "./setup/port.js";
@@ -256,6 +257,9 @@ async function startServer() {
   const reconnectRegistry = new ReconnectRegistry(reconnectTtl);
   reconnectRegistry.startCleanup();
 
+  const sessionHistory = new SessionHistory(resolveDataDir(), logger);
+  sessionHistory.attach(gateway);
+
   const webDir = findWebDir();
   const app = createApp(
     gateway,
@@ -274,6 +278,7 @@ async function startServer() {
     replayStore,
     resolveDataDir(),
     reconnectRegistry,
+    sessionHistory,
   );
 
   if (token) {
@@ -507,6 +512,7 @@ async function startServer() {
     }
 
     replayRetention.stop();
+    sessionHistory.flush();
 
     logger.info("server stopped");
     process.exit(0);
