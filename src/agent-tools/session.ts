@@ -134,6 +134,7 @@ const DEFAULT_NAVIGATION_TIMEOUT_MS = 30_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 const DEFAULT_SETTLE_MS = 500;
 const MAX_SETTLE_MS = 10_000;
+const MAX_COMMAND_TIMEOUT_MS = 120_000;
 const LOAD_AFTER_ACTION_MS = 5_000;
 const WAIT_REPLY_GRACE_MS = 5_000;
 const READ_PAGE_DEFAULT_DEPTH = 15;
@@ -145,6 +146,12 @@ const SCRIPT_NAME = /^[A-Za-z0-9_-]{1,40}$/;
 const WINDOW_MIN = { width: 320, height: 240 };
 const WINDOW_MAX = { width: 3840, height: 2160 };
 const WINDOW_SLACK_PX = 2;
+
+/** Caps a timer length that came from a request. */
+function capMs(ms: number, max: number): number {
+  if (ms > max) return max;
+  return ms;
+}
 
 export interface WindowSizeResult {
   requested: { width: number; height: number };
@@ -811,7 +818,7 @@ export class AgentSession {
   }
 
   private async settle(tab: TabHandle, settleMs: number): Promise<void> {
-    const wait = Math.min(settleMs, MAX_SETTLE_MS);
+    const wait = capMs(settleMs, MAX_SETTLE_MS);
     if (!Number.isFinite(wait) || wait <= 0) return;
     let navigated = false;
     let loading = false;
@@ -850,7 +857,7 @@ export class AgentSession {
     sessionId: string | undefined,
     minTimeoutMs = 0,
   ): Promise<unknown> {
-    const timeoutMs = Math.max(this.opts.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS, minTimeoutMs);
+    const timeoutMs = Math.max(this.opts.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS, capMs(minTimeoutMs, MAX_COMMAND_TIMEOUT_MS));
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
