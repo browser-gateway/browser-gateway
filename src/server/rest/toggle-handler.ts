@@ -10,7 +10,7 @@ export function makeToggleHandler<R>(
   flow: ToggleFlow<R>,
   missingConfigError: string,
   failureLabel: string,
-) {
+): (c: Context) => Promise<Response> {
   return async (c: Context) => {
     const config = getConfig();
     if (!config) {

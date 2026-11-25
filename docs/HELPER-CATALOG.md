@@ -619,7 +619,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/rest/toggle-handler.ts`
 
 - **type** `type ToggleFlow` (line 6)
-- **fn** `makeToggleHandler(getConfig: () => GatewayConfig | undefined, flow: ToggleFlow<R>, missingConfigError: string, failureLabel: string) → unknown` (line 8)
+- **fn** `makeToggleHandler(getConfig: () => GatewayConfig | undefined, flow: ToggleFlow<R>, missingConfigError: string, failureLabel: string) → (c: Context) => Promise<Response>` (line 8)
 ### `src/server/settings-body.ts`
 
 - **fn** `parseSessionDefaultsBody(body: Record<string, unknown>, config: GatewayConfig) → Parsed<SessionDefaults>` (line 10) — Validates a full session-defaults body against what this gateway can apply.

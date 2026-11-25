@@ -166,7 +166,8 @@ describe("H1: drain() awaits in-flight commits before resolving", () => {
     await lifecycle.drain(500);
     const drainMs = Date.now() - t0;
 
-    expect(drainMs).toBeGreaterThanOrEqual(500);
+    // A timer can fire a hair before its nominal delay as measured by Date.now.
+    expect(drainMs).toBeGreaterThanOrEqual(490);
     expect(drainMs).toBeLessThan(1_500);
   });
 });
