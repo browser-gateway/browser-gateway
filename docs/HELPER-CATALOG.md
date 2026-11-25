@@ -5,7 +5,7 @@
 
 # Helper catalog
 
-Generated: 2026-11-24
+Generated: 2026-11-25
 
 **Read this BEFORE writing any new helper function.** If something similar exists, modify or compose with it. If you truly need a new one, add it to the appropriate file and re-run `npm run catalog:gen`.
 
@@ -629,7 +629,7 @@ Why: AI sessions reset; grep is unreliable; private knowledge of "what exists" d
 ### `src/server/rest/toggle-handler.ts`
 
 - **type** `type ToggleFlow` (line 6)
-- **fn** `makeToggleHandler(getConfig: () => GatewayConfig | undefined, flow: ToggleFlow<R>, missingConfigError: string, failureLabel: string) → unknown` (line 8)
+- **fn** `makeToggleHandler(getConfig: () => GatewayConfig | undefined, flow: ToggleFlow<R>, missingConfigError: string, failureLabel: string) → (c: Context) => Promise<Response>` (line 8)
 ### `src/server/settings-body.ts`
 
 - **fn** `parseSessionDefaultsBody(body: Record<string, unknown>, config: GatewayConfig) → Parsed<SessionDefaults>` (line 10) — Validates a full session-defaults body against what this gateway can apply.
